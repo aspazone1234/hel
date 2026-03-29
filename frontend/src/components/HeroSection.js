@@ -81,13 +81,37 @@ function FloatingParticles() {
 }
 
 export default function HeroSection() {
+  const [doorsOpen, setDoorsOpen] = useState(false);
   const calendarUrl = "https://calendar.google.com/calendar/render?action=TEMPLATE&text=Shrimad%20Bhagavat%20Katha%20Mahotsav%202026&dates=20260528T094500Z/20260603T134500Z&location=Shri%20Gautam%20Ashram%2C%20Pushkar%2C%20Rajasthan&details=A%20sacred%20family%20offering%20of%20devotion%2C%20faith%2C%20and%20divine%20knowledge";
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDoorsOpen(true), 3500);
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <section
       data-testid="hero-section"
       className="relative min-h-screen flex items-center overflow-hidden bg-[#0B1C3D]"
     >
+      {/* Temple Doors Animation */}
+      <div className={doorsOpen ? "doors-hidden" : ""}>
+        <div className="temple-door temple-door-left" data-testid="temple-door-left">
+          <div className="door-pattern">
+            <div className="door-arch" />
+            <div className="door-arch" />
+            <div className="door-arch" />
+          </div>
+        </div>
+        <div className="temple-door temple-door-right" data-testid="temple-door-right">
+          <div className="door-pattern">
+            <div className="door-arch" />
+            <div className="door-arch" />
+            <div className="door-arch" />
+          </div>
+        </div>
+        <div className="door-center-glow" />
+      </div>
       {/* Mandala texture overlay */}
       <div
         className="absolute inset-0 mandala-overlay"

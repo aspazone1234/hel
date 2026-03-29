@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Download, Users, Home, Utensils, Car, LogOut, Eye, EyeOff } from "lucide-react";
+import { ChevronLeft, Download, Users, Home, Utensils, Car, LogOut, Eye, EyeOff, X as XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import axios from "axios";
 
@@ -78,10 +80,119 @@ function SummaryCard({ icon: Icon, label, value, color = "#D4AF37" }) {
   );
 }
 
+function RegistrationDetail({ registration, open, onClose }) {
+  if (!registration) return null;
+  const r = registration;
+  const totalPeople = (r.adults || 0) + (r.children || 0) + (r.senior_citizens || 0);
+
+  const Section = ({ title, children }) => (
+    <div className="space-y-2">
+      <h4 className="text-sm font-semibold text-[#D4AF37] uppercase tracking-wider">{title}</h4>
+      {children}
+      <Separator className="mt-3" />
+    </div>
+  );
+
+  const Field = ({ label, value }) => (
+    <div className="flex justify-between text-sm py-0.5">
+      <span className="text-[#0B1C3D]/50">{label}</span>
+      <span className="text-[#0B1C3D] font-medium text-right max-w-[60%]">{value || "-"}</span>
+    </div>
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto bg-white" data-testid="registration-detail-dialog">
+        <DialogHeader>
+          <DialogTitle className="text-2xl text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+            Registration Details
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-5 mt-2">
+          <Section title="Contact Information">
+            <Field label="Full Name" value={r.full_name} />
+            <Field label="Mobile" value={r.mobile} />
+            <Field label="WhatsApp" value={r.whatsapp} />
+            <Field label="Email" value={r.email} />
+            <Field label="City / Country" value={r.city_country} />
+          </Section>
+
+          <Section title="Attendance">
+            <Field label="Will Attend" value={r.will_attend} />
+            <Field label="Arrival Date" value={r.arrival_date} />
+            <Field label="Departure Date" value={r.departure_date} />
+            <Field label="Days Attending" value={Array.isArray(r.days_attending) ? r.days_attending.join(", ") : r.days_attending} />
+          </Section>
+
+          <Section title="People">
+            <Field label="Adults" value={r.adults} />
+            <Field label="Children" value={r.children} />
+            <Field label="Senior Citizens" value={r.senior_citizens} />
+            <Field label="Total" value={totalPeople} />
+          </Section>
+
+          {r.attendee_details && r.attendee_details.length > 0 && (
+            <Section title="Attendee Details">
+              {r.attendee_details.map((att, i) => (
+                <div key={i} className="bg-[#F8F1E5]/50 rounded-lg p-3 mb-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="font-medium text-[#0B1C3D]">{att.name || `Person ${i + 1}`}</span>
+                    <span className="text-[#0B1C3D]/50">{att.age ? `Age: ${att.age}` : ""} {att.gender ? `| ${att.gender}` : ""}</span>
+                  </div>
+                  {att.special_needs && <p className="text-[#E67E22] text-xs mt-1">Needs: {att.special_needs}</p>}
+                </div>
+              ))}
+            </Section>
+          )}
+
+          <Section title="Accommodation">
+            <Field label="Need Accommodation" value={r.need_accommodation ? "Yes" : "No"} />
+            {r.need_accommodation && (
+              <>
+                <Field label="Room Type" value={r.room_type} />
+                <Field label="AC Preference" value={r.ac_preference} />
+                <Field label="Number of Rooms" value={r.num_rooms} />
+                <Field label="Check-in" value={r.check_in} />
+                <Field label="Check-out" value={r.check_out} />
+              </>
+            )}
+          </Section>
+
+          <Section title="Food Preferences">
+            <Field label="Meals per day" value={r.num_meals} />
+            <Field label="Jain Food" value={r.jain_food ? "Yes" : "No"} />
+            <Field label="No Onion/Garlic" value={r.no_onion_garlic ? "Yes" : "No"} />
+            <Field label="Allergies" value={r.allergies} />
+          </Section>
+
+          <Section title="Travel">
+            <Field label="Mode" value={r.travel_mode} />
+            <Field label="Arrival Time" value={r.arrival_time} />
+            <Field label="Pickup Required" value={r.pickup_required ? "Yes" : "No"} />
+            <Field label="Parking Needed" value={r.parking_needed ? "Yes" : "No"} />
+          </Section>
+
+          {r.message && (
+            <Section title="Message">
+              <p className="text-sm text-[#0B1C3D]/70 italic">{r.message}</p>
+            </Section>
+          )}
+
+          <div className="text-xs text-[#0B1C3D]/30 text-right">
+            Registered: {r.created_at ? new Date(r.created_at).toLocaleString() : "-"}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function AdminDashboard({ user, onLogout }) {
   const [registrations, setRegistrations] = useState([]);
   const [summary, setSummary] = useState({});
   const [loading, setLoading] = useState(true);
+  const [selectedReg, setSelectedReg] = useState(null);
 
   useEffect(() => {
     document.title = "Admin Dashboard - Katha Mahotsav 2026";
@@ -199,18 +310,19 @@ function AdminDashboard({ user, onLogout }) {
                   <TableHead className="text-[#0B1C3D]/60">Accommodation</TableHead>
                   <TableHead className="text-[#0B1C3D]/60">Travel</TableHead>
                   <TableHead className="text-[#0B1C3D]/60">Date</TableHead>
+                  <TableHead className="text-[#0B1C3D]/60">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {registrations.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-[#0B1C3D]/40 py-12">
+                    <TableCell colSpan={9} className="text-center text-[#0B1C3D]/40 py-12">
                       No registrations yet
                     </TableCell>
                   </TableRow>
                 ) : (
                   registrations.map((reg, i) => (
-                    <TableRow key={i} className="hover:bg-[#D4AF37]/5">
+                    <TableRow key={i} className="hover:bg-[#D4AF37]/5 cursor-pointer" onClick={() => setSelectedReg(reg)} data-testid={`reg-row-${i}`}>
                       <TableCell className="font-medium text-[#0B1C3D]">{reg.full_name}</TableCell>
                       <TableCell>{reg.mobile}</TableCell>
                       <TableCell>{reg.city_country || "-"}</TableCell>
@@ -223,6 +335,11 @@ function AdminDashboard({ user, onLogout }) {
                       <TableCell>{reg.need_accommodation ? `Yes (${reg.num_rooms} rooms)` : "No"}</TableCell>
                       <TableCell>{reg.travel_mode || "-"}</TableCell>
                       <TableCell className="text-xs text-[#0B1C3D]/50">{reg.created_at ? new Date(reg.created_at).toLocaleDateString() : "-"}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" className="text-[#D4AF37] hover:text-[#D4AF37]/80 hover:bg-[#D4AF37]/10" data-testid={`view-reg-${i}`} onClick={(e) => { e.stopPropagation(); setSelectedReg(reg); }}>
+                          <Eye size={14} className="mr-1" /> View
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))
                 )}
@@ -230,6 +347,9 @@ function AdminDashboard({ user, onLogout }) {
             </Table>
           </div>
         </div>
+
+        {/* Registration Detail Dialog */}
+        <RegistrationDetail registration={selectedReg} open={!!selectedReg} onClose={() => setSelectedReg(null)} />
       </div>
     </div>
   );

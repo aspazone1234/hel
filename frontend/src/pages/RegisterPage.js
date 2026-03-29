@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, ChevronLeft, Plus, Trash2, CalendarIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronLeft, Plus, Trash2, CalendarIcon, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -118,6 +118,9 @@ export default function RegisterPage() {
   };
 
   if (submitted) {
+    const whatsappMsg = `Jai Shri Krishna! New Registration for Bhagavat Katha 2026:%0A%0AName: ${form.full_name}%0AMobile: ${form.mobile}%0ACity: ${form.city_country || 'N/A'}%0AAttendance: ${form.will_attend}%0ATotal People: ${totalPeople} (Adults: ${form.adults}, Children: ${form.children}, Seniors: ${form.senior_citizens})%0AAccommodation: ${form.need_accommodation ? 'Yes (' + form.num_rooms + ' rooms, ' + form.room_type + ')' : 'No'}%0ATravel: ${form.travel_mode || 'Not specified'}%0A%0ARegistered via Katha Website`;
+    const whatsappUrl = `https://wa.me/917229900422?text=${whatsappMsg}`;
+
     return (
       <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl p-8 sm:p-12 border border-[#D4AF37]/20 max-w-lg w-full text-center sacred-border" data-testid="registration-success">
@@ -128,8 +131,23 @@ export default function RegisterPage() {
             Registration Complete
           </h2>
           <p className="text-[#0B1C3D]/60 mb-6">Thank you, {form.full_name}! Your attendance has been registered. We look forward to your presence at the Katha Mahotsav.</p>
-          <p className="text-[#E67E22] text-sm mb-8">All arrangements will be guided post registration.</p>
-          <Link to="/" className="bg-[#D4AF37] text-[#0B1C3D] px-8 py-3 rounded-full font-semibold hover:bg-[#D4AF37]/90 transition-all inline-block">
+          <p className="text-[#E67E22] text-sm mb-6">All arrangements will be guided post registration.</p>
+
+          {/* WhatsApp Notification */}
+          <div className="bg-[#F8F1E5] rounded-xl p-4 border border-[#D4AF37]/10 mb-6">
+            <p className="text-[#0B1C3D]/60 text-sm mb-3">Notify the organizer about your registration via WhatsApp:</p>
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="whatsapp-notify-btn"
+              className="inline-flex items-center gap-2 bg-[#25D366] text-white px-6 py-3 rounded-full font-semibold hover:bg-[#25D366]/90 transition-all shadow-md"
+            >
+              <MessageCircle size={18} /> Send WhatsApp Notification
+            </a>
+          </div>
+
+          <Link to="/" className="bg-[#D4AF37] text-[#0B1C3D] px-8 py-3 rounded-full font-semibold hover:bg-[#D4AF37]/90 transition-all inline-block" data-testid="back-home-btn">
             Back to Home
           </Link>
         </div>

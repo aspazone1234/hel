@@ -161,6 +161,105 @@ html { scroll-behavior: smooth; }
   box-shadow: 0 0 0 2px rgba(212,175,55,0.3);
 }
 
+/* Temple Doors */
+@keyframes door-open-left {
+  0% { transform: translateX(0) perspective(1200px) rotateY(0deg); }
+  100% { transform: translateX(-30%) perspective(1200px) rotateY(-85deg); }
+}
+@keyframes door-open-right {
+  0% { transform: translateX(0) perspective(1200px) rotateY(0deg); }
+  100% { transform: translateX(30%) perspective(1200px) rotateY(85deg); }
+}
+@keyframes door-glow {
+  0% { opacity: 0; }
+  50% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.temple-door {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 30;
+  background: linear-gradient(180deg, #0a1628, #0d2040, #0a1628);
+  border: 2px solid rgba(212,175,55,0.3);
+  overflow: hidden;
+}
+.temple-door::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 1px solid rgba(212,175,55,0.15);
+  border-radius: 4px;
+}
+.temple-door::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(212,175,55,0.5);
+  transform: translateY(-50%);
+  box-shadow: 0 0 15px rgba(212,175,55,0.3);
+}
+.temple-door-left {
+  left: 0;
+  transform-origin: left center;
+  animation: door-open-left 2.5s cubic-bezier(0.4, 0, 0.2, 1) 0.8s forwards;
+  border-right: 1px solid rgba(212,175,55,0.4);
+}
+.temple-door-left::after { right: 16px; }
+.temple-door-right {
+  right: 0;
+  transform-origin: right center;
+  animation: door-open-right 2.5s cubic-bezier(0.4, 0, 0.2, 1) 0.8s forwards;
+  border-left: 1px solid rgba(212,175,55,0.4);
+}
+.temple-door-right::after { left: 16px; }
+
+.temple-door .door-pattern {
+  position: absolute;
+  inset: 20px;
+  border: 1px solid rgba(212,175,55,0.1);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  align-items: center;
+  padding: 30px 0;
+}
+.temple-door .door-arch {
+  width: 60%;
+  height: 0;
+  padding-bottom: 30%;
+  border: 1px solid rgba(212,175,55,0.15);
+  border-radius: 50% 50% 0 0;
+  position: relative;
+}
+.temple-door .door-arch::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: rgba(212,175,55,0.1);
+}
+.door-center-glow {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 100%;
+  z-index: 31;
+  background: linear-gradient(180deg, transparent, rgba(212,175,55,0.8), rgba(212,175,55,0.3), rgba(212,175,55,0.8), transparent);
+  animation: door-glow 2.5s ease 0.8s forwards;
+  pointer-events: none;
+}
+.doors-hidden { display: none; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: #F8F1E5; }

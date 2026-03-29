@@ -1,11 +1,86 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Menu, X, Volume2, VolumeX } from "lucide-react";
+
+// Indian pentatonic scale (Sa Re Ga Ma Pa) in different octaves
+const FLUTE_NOTES = [523.25, 587.33, 659.25, 739.99, 783.99, 739.99, 659.25, 587.33, 523.25, 493.88, 523.25, 587.33];
+
+function createFlutePlayer() {
+  let ctx = null;
+  let masterGain = null;
+  let oscillators = [];
+  let melodyTimer = null;
+
+  const start = () => {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Main oscillator
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(FLUTE_NOTES[0], ctx.currentTime);
+
+    // Vibrato LFO
+    const lfo = ctx.createOscillator();
+    lfo.type = "sine";
+    lfo.frequency.setValueAtTime(4.5, ctx.currentTime);
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.setValueAtTime(4, ctx.currentTime);
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+
+    // Breathy layer
+    const breathOsc = ctx.createOscillator();
+    breathOsc.type = "triangle";
+    breathOsc.frequency.setValueAtTime(FLUTE_NOTES[0] * 2, ctx.currentTime);
+    const breathGain = ctx.createGain();
+    breathGain.gain.setValueAtTime(0.015, ctx.currentTime);
+    breathOsc.connect(breathGain);
+
+    // Master volume
+    masterGain = ctx.createGain();
+    masterGain.gain.setValueAtTime(0, ctx.currentTime);
+    masterGain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 2);
+
+    osc.connect(masterGain);
+    breathGain.connect(masterGain);
+    masterGain.connect(ctx.destination);
+
+    osc.start();
+    lfo.start();
+    breathOsc.start();
+    oscillators = [osc, lfo, breathOsc];
+
+    // Melody loop
+    let noteIdx = 0;
+    melodyTimer = setInterval(() => {
+      if (!ctx) return;
+      noteIdx = (noteIdx + 1) % FLUTE_NOTES.length;
+      const note = FLUTE_NOTES[noteIdx];
+      osc.frequency.linearRampToValueAtTime(note, ctx.currentTime + 1.2);
+      breathOsc.frequency.linearRampToValueAtTime(note * 2, ctx.currentTime + 1.2);
+    }, 2500);
+  };
+
+  const stop = () => {
+    if (melodyTimer) { clearInterval(melodyTimer); melodyTimer = null; }
+    if (masterGain && ctx) {
+      masterGain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.5);
+    }
+    setTimeout(() => {
+      oscillators.forEach(o => { try { o.stop(); } catch {} });
+      oscillators = [];
+      if (ctx) { try { ctx.close(); } catch {} ctx = null; }
+    }, 600);
+  };
+
+  return { start, stop };
+}
 
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [soundOn, setSoundOn] = useState(false);
+  const fluteRef = useRef(null);
   const location = useLocation();
   const isHome = location.pathname === "/";
 
@@ -13,6 +88,20 @@ export default function Navbar() {
     const onScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener("scroll", onScroll);
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const toggleSound = useCallback(() => {
+    if (!fluteRef.current) fluteRef.current = createFlutePlayer();
+    if (soundOn) {
+      fluteRef.current.stop();
+    } else {
+      fluteRef.current.start();
+    }
+    setSoundOn(s => !s);
+  }, [soundOn]);
+
+  useEffect(() => {
+    return () => { if (fluteRef.current) fluteRef.current.stop(); };
   }, []);
 
   const scrollTo = (id) => {
@@ -60,10 +149,10 @@ export default function Navbar() {
               </button>
             ))}
             <button
-              onClick={() => setSoundOn(!soundOn)}
-              className="text-[#F8F1E5]/60 hover:text-[#D4AF37] transition-colors p-2"
+              onClick={toggleSound}
+              className={`${soundOn ? "text-[#D4AF37]" : "text-[#F8F1E5]/60"} hover:text-[#D4AF37] transition-colors p-2`}
               data-testid="sound-toggle"
-              title={soundOn ? "Mute" : "Unmute"}
+              title={soundOn ? "Mute Flute" : "Play Flute"}
             >
               {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
             </button>
@@ -100,8 +189,8 @@ export default function Navbar() {
             ))}
             <div className="flex items-center gap-4 pt-2">
               <button
-                onClick={() => setSoundOn(!soundOn)}
-                className="text-[#F8F1E5]/60 hover:text-[#D4AF37] transition-colors p-2"
+                onClick={toggleSound}
+                className={`${soundOn ? "text-[#D4AF37]" : "text-[#F8F1E5]/60"} hover:text-[#D4AF37] transition-colors p-2`}
               >
                 {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
               </button>
