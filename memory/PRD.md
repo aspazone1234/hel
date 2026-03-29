@@ -45,16 +45,17 @@ Premium devotional event website for Shrimad Bhagavat Katha Mahotsav 2026, Pushk
 - [x] Backend APIs (auth, registrations, admin)
 - [x] Countdown timer
 - [x] Responsive design
+- [x] Actual flute audio toggle (Web Audio API synthesized Indian pentatonic melody)
+- [x] WhatsApp notification to +917229900422 on registration
+- [x] Temple doors opening animation in hero section
+- [x] Individual registration detail view in admin (Dialog)
 
 ## P1 - Backlog
-- [ ] Actual flute audio integration for sound toggle
-- [ ] Temple doors opening animation in hero
 - [ ] Photo gallery section
-- [ ] Email/WhatsApp notification on new registration
-- [ ] Individual registration detail view in admin
+- [ ] Real-time attendee counter on homepage
+- [ ] Print-friendly registration confirmation
 
 ## P2 - Future
 - [ ] Multi-language toggle (full Hindi/English)
-- [ ] Print-friendly registration confirmation
 - [ ] QR code for each registration
-- [ ] Real-time attendee counter on homepage
+- [ ] Push notifications for event updates
