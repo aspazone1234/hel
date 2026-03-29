@@ -71,31 +71,19 @@ class LoginRequest(BaseModel):
 class RegistrationCreate(BaseModel):
     full_name: str
     mobile: str
-    whatsapp: str = ""
     email: str = ""
-    city_country: str = ""
-    will_attend: str = "Yes"
+    city: str = ""
+    country: str = ""
+    attendance_intent: str = "Yes"
     arrival_date: str = ""
     departure_date: str = ""
+    arrival_time: str = ""
     days_attending: List[str] = []
-    adults: int = 1
-    children: int = 0
-    senior_citizens: int = 0
-    attendee_details: List[dict] = []
+    num_people: int = 1
+    attendees: List[dict] = []
     need_accommodation: bool = False
     room_type: str = ""
-    ac_preference: str = ""
     num_rooms: int = 0
-    check_in: str = ""
-    check_out: str = ""
-    num_meals: int = 0
-    jain_food: bool = False
-    no_onion_garlic: bool = False
-    allergies: str = ""
-    travel_mode: str = ""
-    arrival_time: str = ""
-    pickup_required: bool = False
-    parking_needed: bool = False
     message: str = ""
     consent: bool = False
 
@@ -149,14 +137,12 @@ async def get_summary(request: Request):
     total = await db.registrations.count_documents({})
     pipeline = [{"$group": {
         "_id": None,
-        "total_adults": {"$sum": "$adults"},
-        "total_children": {"$sum": "$children"},
-        "total_seniors": {"$sum": "$senior_citizens"},
+        "total_people": {"$sum": "$num_people"},
         "total_rooms": {"$sum": "$num_rooms"},
         "accommodation_needed": {"$sum": {"$cond": ["$need_accommodation", 1, 0]}},
-        "jain_food_count": {"$sum": {"$cond": ["$jain_food", 1, 0]}},
-        "no_onion_garlic_count": {"$sum": {"$cond": ["$no_onion_garlic", 1, 0]}},
-        "pickup_needed": {"$sum": {"$cond": ["$pickup_required", 1, 0]}},
+        "attend_yes": {"$sum": {"$cond": [{"$eq": ["$attendance_intent", "Yes"]}, 1, 0]}},
+        "attend_probably": {"$sum": {"$cond": [{"$eq": ["$attendance_intent", "Most Probably"]}, 1, 0]}},
+        "attend_maybe": {"$sum": {"$cond": [{"$eq": ["$attendance_intent", "Maybe"]}, 1, 0]}},
     }}]
     result = await db.registrations.aggregate(pipeline).to_list(1)
     summary = result[0] if result else {}
@@ -171,14 +157,14 @@ async def export_csv(request: Request):
     if not regs:
         return StreamingResponse(io.StringIO("No registrations"), media_type="text/csv")
     output = io.StringIO()
-    fields = ["id","full_name","mobile","whatsapp","email","city_country","will_attend","arrival_date","departure_date","days_attending","adults","children","senior_citizens","need_accommodation","room_type","ac_preference","num_rooms","check_in","check_out","num_meals","jain_food","no_onion_garlic","allergies","travel_mode","arrival_time","pickup_required","parking_needed","message","created_at"]
+    fields = ["id","full_name","mobile","email","city","country","attendance_intent","arrival_date","departure_date","arrival_time","days_attending","num_people","need_accommodation","room_type","num_rooms","message","created_at"]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
     for reg in regs:
         if isinstance(reg.get("days_attending"), list):
             reg["days_attending"] = ", ".join(reg["days_attending"])
-        if isinstance(reg.get("attendee_details"), list):
-            pass  # skip complex field for CSV
+        if isinstance(reg.get("attendees"), list):
+            pass
         writer.writerow(reg)
     output.seek(0)
     return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=registrations.csv"})

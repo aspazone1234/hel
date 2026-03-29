@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Menu, X, Volume2, VolumeX } from "lucide-react";
+import { Menu, X, Volume2, VolumeX, Globe } from "lucide-react";
+import { useLang } from "@/context/LanguageContext";
 
-// Indian pentatonic scale (Sa Re Ga Ma Pa) in different octaves
 const FLUTE_NOTES = [523.25, 587.33, 659.25, 739.99, 783.99, 739.99, 659.25, 587.33, 523.25, 493.88, 523.25, 587.33];
 
 function createFlutePlayer() {
@@ -13,13 +13,9 @@ function createFlutePlayer() {
 
   const start = () => {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-
-    // Main oscillator
     const osc = ctx.createOscillator();
     osc.type = "sine";
     osc.frequency.setValueAtTime(FLUTE_NOTES[0], ctx.currentTime);
-
-    // Vibrato LFO
     const lfo = ctx.createOscillator();
     lfo.type = "sine";
     lfo.frequency.setValueAtTime(4.5, ctx.currentTime);
@@ -27,30 +23,22 @@ function createFlutePlayer() {
     lfoGain.gain.setValueAtTime(4, ctx.currentTime);
     lfo.connect(lfoGain);
     lfoGain.connect(osc.frequency);
-
-    // Breathy layer
     const breathOsc = ctx.createOscillator();
     breathOsc.type = "triangle";
     breathOsc.frequency.setValueAtTime(FLUTE_NOTES[0] * 2, ctx.currentTime);
     const breathGain = ctx.createGain();
     breathGain.gain.setValueAtTime(0.015, ctx.currentTime);
     breathOsc.connect(breathGain);
-
-    // Master volume
     masterGain = ctx.createGain();
     masterGain.gain.setValueAtTime(0, ctx.currentTime);
     masterGain.gain.linearRampToValueAtTime(0.06, ctx.currentTime + 2);
-
     osc.connect(masterGain);
     breathGain.connect(masterGain);
     masterGain.connect(ctx.destination);
-
     osc.start();
     lfo.start();
     breathOsc.start();
     oscillators = [osc, lfo, breathOsc];
-
-    // Melody loop
     let noteIdx = 0;
     melodyTimer = setInterval(() => {
       if (!ctx) return;
@@ -76,6 +64,14 @@ function createFlutePlayer() {
   return { start, stop };
 }
 
+export const flutePlayerRef = { current: null, soundOn: false };
+
+export function startFluteOnDoorOpen() {
+  if (!flutePlayerRef.current) flutePlayerRef.current = createFlutePlayer();
+  flutePlayerRef.current.start();
+  flutePlayerRef.soundOn = true;
+}
+
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -83,6 +79,7 @@ export default function Navbar() {
   const fluteRef = useRef(null);
   const location = useLocation();
   const isHome = location.pathname === "/";
+  const { lang, toggleLang, t } = useLang();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 50);
@@ -90,18 +87,36 @@ export default function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const toggleSound = useCallback(() => {
-    if (!fluteRef.current) fluteRef.current = createFlutePlayer();
-    if (soundOn) {
-      fluteRef.current.stop();
-    } else {
-      fluteRef.current.start();
-    }
-    setSoundOn(s => !s);
-  }, [soundOn]);
-
   useEffect(() => {
-    return () => { if (fluteRef.current) fluteRef.current.stop(); };
+    const checkFlute = setInterval(() => {
+      setSoundOn(flutePlayerRef.soundOn);
+    }, 500);
+    return () => clearInterval(checkFlute);
+  }, []);
+
+  const toggleSound = useCallback(() => {
+    if (!fluteRef.current) {
+      if (flutePlayerRef.current) {
+        fluteRef.current = flutePlayerRef.current;
+      } else {
+        fluteRef.current = createFlutePlayer();
+        flutePlayerRef.current = fluteRef.current;
+      }
+    }
+    if (flutePlayerRef.soundOn) {
+      fluteRef.current.stop();
+      flutePlayerRef.soundOn = false;
+      flutePlayerRef.current = null;
+      fluteRef.current = null;
+    } else {
+      if (!fluteRef.current) {
+        fluteRef.current = createFlutePlayer();
+        flutePlayerRef.current = fluteRef.current;
+      }
+      fluteRef.current.start();
+      flutePlayerRef.soundOn = true;
+    }
+    setSoundOn(flutePlayerRef.soundOn);
   }, []);
 
   const scrollTo = (id) => {
@@ -111,10 +126,11 @@ export default function Navbar() {
   };
 
   const navLinks = [
-    { label: "About", id: "about" },
-    { label: "Schedule", id: "schedule" },
-    { label: "Venue", id: "venue" },
-    { label: "Contact", id: "contact" },
+    { label: t.nav.about, id: "about" },
+    { label: t.nav.schedule, id: "schedule" },
+    { label: t.nav.venue, id: "venue" },
+    { label: t.nav.family, id: "family" },
+    { label: t.nav.contact, id: "contact" },
   ];
 
   return (
@@ -133,11 +149,11 @@ export default function Navbar() {
               Om
             </span>
             <span className="text-[#F8F1E5] text-sm sm:text-base font-light tracking-wider hidden sm:block">
-              Bhagavat Katha 2026
+              {lang === "hi" ? "भागवत कथा २०२६" : "Bhagavat Katha 2026"}
             </span>
           </Link>
 
-          <div className="hidden md:flex items-center gap-8">
+          <div className="hidden md:flex items-center gap-6">
             {navLinks.map((link) => (
               <button
                 key={link.id}
@@ -148,6 +164,17 @@ export default function Navbar() {
                 {link.label}
               </button>
             ))}
+
+            {/* Language Toggle - PROMINENT */}
+            <button
+              onClick={toggleLang}
+              data-testid="lang-toggle"
+              className="flex items-center gap-1.5 bg-[#D4AF37]/15 border border-[#D4AF37]/40 rounded-full px-3.5 py-1.5 text-sm font-semibold transition-all hover:bg-[#D4AF37]/25 hover:border-[#D4AF37]/60"
+            >
+              <Globe size={14} className="text-[#D4AF37]" />
+              <span className="text-[#D4AF37]">{lang === "en" ? "हिंदी" : "English"}</span>
+            </button>
+
             <button
               onClick={toggleSound}
               className={`${soundOn ? "text-[#D4AF37]" : "text-[#F8F1E5]/60"} hover:text-[#D4AF37] transition-colors p-2`}
@@ -161,17 +188,27 @@ export default function Navbar() {
               data-testid="nav-register-btn"
               className="bg-[#D4AF37] text-[#0B1C3D] px-6 py-2.5 rounded-full text-sm font-semibold hover:bg-[#D4AF37]/90 transition-all shadow-lg shadow-[#D4AF37]/20 hover:shadow-[#D4AF37]/40"
             >
-              Register Now
+              {t.nav.register}
             </Link>
           </div>
 
-          <button
-            onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden text-[#F8F1E5] p-2"
-            data-testid="mobile-menu-toggle"
-          >
-            {mobileOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <div className="flex items-center gap-3 md:hidden">
+            <button
+              onClick={toggleLang}
+              data-testid="lang-toggle-mobile"
+              className="flex items-center gap-1 bg-[#D4AF37]/15 border border-[#D4AF37]/40 rounded-full px-3 py-1.5 text-xs font-semibold"
+            >
+              <Globe size={12} className="text-[#D4AF37]" />
+              <span className="text-[#D4AF37]">{lang === "en" ? "हिं" : "EN"}</span>
+            </button>
+            <button
+              onClick={() => setMobileOpen(!mobileOpen)}
+              className="text-[#F8F1E5] p-2"
+              data-testid="mobile-menu-toggle"
+            >
+              {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -199,7 +236,7 @@ export default function Navbar() {
                 onClick={() => setMobileOpen(false)}
                 className="flex-1 bg-[#D4AF37] text-[#0B1C3D] px-6 py-2.5 rounded-full text-sm font-semibold text-center"
               >
-                Register Now
+                {t.nav.register}
               </Link>
             </div>
           </div>

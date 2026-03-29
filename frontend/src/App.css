@@ -8,7 +8,6 @@ html { scroll-behavior: smooth; }
   85% { opacity: 0.6; }
   100% { transform: translateY(-100vh) translateX(30px); opacity: 0; }
 }
-
 @keyframes float-up-alt {
   0% { transform: translateY(0) translateX(0); opacity: 0; }
   15% { opacity: 0.6; }
@@ -29,34 +28,26 @@ html { scroll-behavior: smooth; }
   0%, 100% { box-shadow: 0 0 20px rgba(212,175,55,0.3), 0 0 40px rgba(212,175,55,0.1); }
   50% { box-shadow: 0 0 30px rgba(212,175,55,0.5), 0 0 60px rgba(212,175,55,0.2); }
 }
-
 @keyframes text-glow {
   0%, 100% { text-shadow: 0 0 20px rgba(212,175,55,0.3); }
   50% { text-shadow: 0 0 40px rgba(212,175,55,0.6), 0 0 80px rgba(212,175,55,0.3); }
 }
 
-/* Aura Waves */
+/* Aura */
 @keyframes aura-wave {
   0% { transform: scale(1); opacity: 0.3; }
   50% { transform: scale(1.1); opacity: 0.15; }
   100% { transform: scale(1); opacity: 0.3; }
 }
 
-/* Gentle Bell Swing */
+/* Bell Swing */
 @keyframes bell-swing {
   0%, 100% { transform: rotate(0deg); }
   25% { transform: rotate(3deg); }
   75% { transform: rotate(-3deg); }
 }
 
-/* Lotus Drift */
-@keyframes lotus-drift {
-  0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0.5; }
-  50% { transform: translateY(-20px) translateX(10px) rotate(5deg); opacity: 0.3; }
-  100% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0.5; }
-}
-
-/* Shimmer Effect */
+/* Shimmer */
 @keyframes shimmer {
   0% { background-position: -200% center; }
   100% { background-position: 200% center; }
@@ -66,6 +57,12 @@ html { scroll-behavior: smooth; }
 @keyframes fade-in-up {
   from { opacity: 0; transform: translateY(30px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Fade out */
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 /* Scale In */
@@ -86,7 +83,6 @@ html { scroll-behavior: smooth; }
 .animate-text-glow { animation: text-glow 4s ease-in-out infinite; }
 .animate-aura { animation: aura-wave 6s ease-in-out infinite; }
 .animate-bell { animation: bell-swing 4s ease-in-out infinite; transform-origin: top center; }
-.animate-lotus { animation: lotus-drift 8s ease-in-out infinite; }
 .animate-shimmer {
   background: linear-gradient(90deg, transparent, rgba(212,175,55,0.3), transparent);
   background-size: 200% 100%;
@@ -117,9 +113,7 @@ html { scroll-behavior: smooth; }
 }
 
 /* Card hover glow */
-.card-glow {
-  transition: all 0.4s ease;
-}
+.card-glow { transition: all 0.4s ease; }
 .card-glow:hover {
   box-shadow: 0 0 25px rgba(212,175,55,0.2), 0 8px 32px rgba(11,28,61,0.1);
   border-color: rgba(212,175,55,0.5);
@@ -161,104 +155,83 @@ html { scroll-behavior: smooth; }
   box-shadow: 0 0 0 2px rgba(212,175,55,0.3);
 }
 
-/* Temple Doors */
-@keyframes door-open-left {
-  0% { transform: translateX(0) perspective(1200px) rotateY(0deg); }
-  100% { transform: translateX(-30%) perspective(1200px) rotateY(-85deg); }
-}
-@keyframes door-open-right {
-  0% { transform: translateX(0) perspective(1200px) rotateY(0deg); }
-  100% { transform: translateX(30%) perspective(1200px) rotateY(85deg); }
-}
-@keyframes door-glow {
-  0% { opacity: 0; }
-  50% { opacity: 1; }
-  100% { opacity: 0; }
-}
-
-.temple-door {
+/* ====== GOLDEN DOOR OVERLAY ====== */
+.golden-door {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 50%;
-  z-index: 30;
-  background: linear-gradient(180deg, #0a1628, #0d2040, #0a1628);
-  border: 2px solid rgba(212,175,55,0.3);
+  background: linear-gradient(180deg, #1a1208, #231a0c, #1a1208);
+  border: 3px solid rgba(212,175,55,0.35);
+  z-index: 101;
   overflow: hidden;
 }
-.temple-door::before {
+.golden-door::before {
   content: '';
   position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(212,175,55,0.15);
+  inset: 10px;
+  border: 2px solid rgba(212,175,55,0.2);
   border-radius: 4px;
 }
-.temple-door::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 2px solid rgba(212,175,55,0.5);
-  transform: translateY(-50%);
-  box-shadow: 0 0 15px rgba(212,175,55,0.3);
-}
-.temple-door-left {
-  left: 0;
-  transform-origin: left center;
-  animation: door-open-left 2.5s cubic-bezier(0.4, 0, 0.2, 1) 0.8s forwards;
-  border-right: 1px solid rgba(212,175,55,0.4);
-}
-.temple-door-left::after { right: 16px; }
-.temple-door-right {
-  right: 0;
-  transform-origin: right center;
-  animation: door-open-right 2.5s cubic-bezier(0.4, 0, 0.2, 1) 0.8s forwards;
-  border-left: 1px solid rgba(212,175,55,0.4);
-}
-.temple-door-right::after { left: 16px; }
+.golden-door-left { left: 0; border-right: 1px solid rgba(212,175,55,0.4); }
+.golden-door-right { right: 0; border-left: 1px solid rgba(212,175,55,0.4); }
 
-.temple-door .door-pattern {
+/* Door ornaments */
+.door-ornament {
   position: absolute;
   inset: 20px;
-  border: 1px solid rgba(212,175,55,0.1);
   display: flex;
   flex-direction: column;
-  justify-content: space-around;
   align-items: center;
-  padding: 30px 0;
-}
-.temple-door .door-arch {
-  width: 60%;
-  height: 0;
-  padding-bottom: 30%;
-  border: 1px solid rgba(212,175,55,0.15);
-  border-radius: 50% 50% 0 0;
-  position: relative;
-}
-.temple-door .door-arch::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 10%;
-  right: 10%;
-  height: 1px;
-  background: rgba(212,175,55,0.1);
-}
-.door-center-glow {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: 100%;
-  z-index: 31;
-  background: linear-gradient(180deg, transparent, rgba(212,175,55,0.8), rgba(212,175,55,0.3), rgba(212,175,55,0.8), transparent);
-  animation: door-glow 2.5s ease 0.8s forwards;
+  justify-content: space-evenly;
   pointer-events: none;
 }
-.doors-hidden { display: none; }
+.door-mandala {
+  width: 60%;
+  aspect-ratio: 1;
+  border: 2px solid rgba(212,175,55,0.15);
+  border-radius: 50%;
+  position: relative;
+}
+.door-mandala::after {
+  content: '';
+  position: absolute;
+  inset: 15%;
+  border: 1px solid rgba(212,175,55,0.1);
+  border-radius: 50%;
+}
+
+/* Door handles */
+.door-handle-left, .door-handle-right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid rgba(212,175,55,0.6);
+  box-shadow: 0 0 20px rgba(212,175,55,0.3), inset 0 0 8px rgba(212,175,55,0.2);
+}
+.door-handle-left { right: 18px; }
+.door-handle-right { left: 18px; }
+
+/* Door Opening Animation */
+@keyframes golden-door-open-left {
+  0% { transform: perspective(1200px) rotateY(0deg); }
+  100% { transform: perspective(1200px) rotateY(-100deg); }
+}
+@keyframes golden-door-open-right {
+  0% { transform: perspective(1200px) rotateY(0deg); }
+  100% { transform: perspective(1200px) rotateY(100deg); }
+}
+.door-opening-left {
+  transform-origin: left center;
+  animation: golden-door-open-left 1.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.door-opening-right {
+  transform-origin: right center;
+  animation: golden-door-open-right 1.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; }

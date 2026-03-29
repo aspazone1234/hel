@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Download, Users, Home, Utensils, Car, LogOut, Eye, EyeOff, X as XIcon } from "lucide-react";
+import { ChevronLeft, Download, Users, Home, LogOut, Eye, EyeOff, X as XIcon, CheckCircle, HelpCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,7 +83,6 @@ function SummaryCard({ icon: Icon, label, value, color = "#D4AF37" }) {
 function RegistrationDetail({ registration, open, onClose }) {
   if (!registration) return null;
   const r = registration;
-  const totalPeople = (r.adults || 0) + (r.children || 0) + (r.senior_citizens || 0);
 
   const Section = ({ title, children }) => (
     <div className="space-y-2">
@@ -92,7 +91,6 @@ function RegistrationDetail({ registration, open, onClose }) {
       <Separator className="mt-3" />
     </div>
   );
-
   const Field = ({ label, value }) => (
     <div className="flex justify-between text-sm py-0.5">
       <span className="text-[#0B1C3D]/50">{label}</span>
@@ -108,77 +106,49 @@ function RegistrationDetail({ registration, open, onClose }) {
             Registration Details
           </DialogTitle>
         </DialogHeader>
-
         <div className="space-y-5 mt-2">
           <Section title="Contact Information">
             <Field label="Full Name" value={r.full_name} />
-            <Field label="Mobile" value={r.mobile} />
-            <Field label="WhatsApp" value={r.whatsapp} />
+            <Field label="Mobile / WhatsApp" value={r.mobile} />
             <Field label="Email" value={r.email} />
-            <Field label="City / Country" value={r.city_country} />
+            <Field label="City" value={r.city} />
+            <Field label="Country" value={r.country} />
           </Section>
-
           <Section title="Attendance">
-            <Field label="Will Attend" value={r.will_attend} />
+            <Field label="Intent" value={r.attendance_intent} />
             <Field label="Arrival Date" value={r.arrival_date} />
             <Field label="Departure Date" value={r.departure_date} />
+            <Field label="Arrival Time" value={r.arrival_time} />
             <Field label="Days Attending" value={Array.isArray(r.days_attending) ? r.days_attending.join(", ") : r.days_attending} />
+            <Field label="Total People" value={r.num_people} />
           </Section>
-
-          <Section title="People">
-            <Field label="Adults" value={r.adults} />
-            <Field label="Children" value={r.children} />
-            <Field label="Senior Citizens" value={r.senior_citizens} />
-            <Field label="Total" value={totalPeople} />
-          </Section>
-
-          {r.attendee_details && r.attendee_details.length > 0 && (
-            <Section title="Attendee Details">
-              {r.attendee_details.map((att, i) => (
+          {r.attendees && r.attendees.length > 0 && (
+            <Section title="Attendees">
+              {r.attendees.map((att, i) => (
                 <div key={i} className="bg-[#F8F1E5]/50 rounded-lg p-3 mb-2 text-sm">
                   <div className="flex justify-between">
                     <span className="font-medium text-[#0B1C3D]">{att.name || `Person ${i + 1}`}</span>
-                    <span className="text-[#0B1C3D]/50">{att.age ? `Age: ${att.age}` : ""} {att.gender ? `| ${att.gender}` : ""}</span>
+                    <span className="text-[#0B1C3D]/50 text-xs">{att.category || ""}</span>
                   </div>
                   {att.special_needs && <p className="text-[#E67E22] text-xs mt-1">Needs: {att.special_needs}</p>}
                 </div>
               ))}
             </Section>
           )}
-
           <Section title="Accommodation">
             <Field label="Need Accommodation" value={r.need_accommodation ? "Yes" : "No"} />
             {r.need_accommodation && (
               <>
                 <Field label="Room Type" value={r.room_type} />
-                <Field label="AC Preference" value={r.ac_preference} />
                 <Field label="Number of Rooms" value={r.num_rooms} />
-                <Field label="Check-in" value={r.check_in} />
-                <Field label="Check-out" value={r.check_out} />
               </>
             )}
           </Section>
-
-          <Section title="Food Preferences">
-            <Field label="Meals per day" value={r.num_meals} />
-            <Field label="Jain Food" value={r.jain_food ? "Yes" : "No"} />
-            <Field label="No Onion/Garlic" value={r.no_onion_garlic ? "Yes" : "No"} />
-            <Field label="Allergies" value={r.allergies} />
-          </Section>
-
-          <Section title="Travel">
-            <Field label="Mode" value={r.travel_mode} />
-            <Field label="Arrival Time" value={r.arrival_time} />
-            <Field label="Pickup Required" value={r.pickup_required ? "Yes" : "No"} />
-            <Field label="Parking Needed" value={r.parking_needed ? "Yes" : "No"} />
-          </Section>
-
           {r.message && (
             <Section title="Message">
               <p className="text-sm text-[#0B1C3D]/70 italic">{r.message}</p>
             </Section>
           )}
-
           <div className="text-xs text-[#0B1C3D]/30 text-right">
             Registered: {r.created_at ? new Date(r.created_at).toLocaleString() : "-"}
           </div>
@@ -207,7 +177,7 @@ function AdminDashboard({ user, onLogout }) {
       ]);
       setRegistrations(regsRes.data);
       setSummary(sumRes.data);
-    } catch (err) {
+    } catch {
       toast.error("Failed to load data");
     } finally {
       setLoading(false);
@@ -223,39 +193,26 @@ function AdminDashboard({ user, onLogout }) {
       a.download = "registrations.csv";
       a.click();
       window.URL.revokeObjectURL(url);
-      toast.success("CSV exported successfully");
+      toast.success("CSV exported");
     } catch {
       toast.error("Failed to export CSV");
     }
   };
 
   const handleLogout = async () => {
-    try {
-      await axios.post(`${API}/auth/logout`, {}, { withCredentials: true });
-    } catch { /* ignore */ }
+    try { await axios.post(`${API}/auth/logout`, {}, { withCredentials: true }); } catch {}
     onLogout();
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center">
-        <div className="text-[#D4AF37] text-lg">Loading...</div>
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center"><div className="text-[#D4AF37] text-lg">Loading...</div></div>;
 
   return (
     <div className="min-h-screen bg-[#F8F1E5] py-8 px-4" data-testid="admin-dashboard">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 gap-4">
           <div>
-            <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-2">
-              <ChevronLeft size={16} /> Back to Home
-            </Link>
-            <h1 className="text-3xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-              Admin Dashboard
-            </h1>
+            <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-2"><ChevronLeft size={16} /> Back to Home</Link>
+            <h1 className="text-3xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Admin Dashboard</h1>
             <p className="text-[#0B1C3D]/50 text-sm">Welcome, {user.name || user.email}</p>
           </div>
           <div className="flex gap-3">
@@ -268,30 +225,27 @@ function AdminDashboard({ user, onLogout }) {
           </div>
         </div>
 
-        {/* Summary Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8" data-testid="admin-summary">
           <SummaryCard icon={Users} label="Total Registrations" value={summary.total_registrations || 0} />
-          <SummaryCard icon={Users} label="Total Attendees" value={(summary.total_adults || 0) + (summary.total_children || 0) + (summary.total_seniors || 0)} color="#E67E22" />
-          <SummaryCard icon={Home} label="Rooms Needed" value={summary.total_rooms || 0} color="#F1948A" />
-          <SummaryCard icon={Car} label="Pickup Needed" value={summary.pickup_needed || 0} color="#0B1C3D" />
+          <SummaryCard icon={Users} label="Total People" value={summary.total_people || 0} color="#E67E22" />
+          <SummaryCard icon={Home} label="Accommodation Needed" value={summary.accommodation_needed || 0} color="#F1948A" />
+          <SummaryCard icon={Home} label="Total Rooms" value={summary.total_rooms || 0} color="#0B1C3D" />
         </div>
 
-        {/* Extra stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
           {[
-            { label: "Adults", value: summary.total_adults || 0 },
-            { label: "Children", value: summary.total_children || 0 },
-            { label: "Seniors", value: summary.total_seniors || 0 },
-            { label: "Jain Food", value: summary.jain_food_count || 0 },
+            { label: "Confirmed (Yes)", value: summary.attend_yes || 0, icon: CheckCircle, color: "text-green-600" },
+            { label: "Most Probably", value: summary.attend_probably || 0, icon: Clock, color: "text-yellow-600" },
+            { label: "Maybe", value: summary.attend_maybe || 0, icon: HelpCircle, color: "text-orange-500" },
           ].map((s, i) => (
             <div key={i} className="bg-white rounded-xl p-4 border border-[#D4AF37]/10 text-center">
+              <s.icon className={`${s.color} mx-auto mb-2`} size={20} />
               <p className="text-[#0B1C3D]/40 text-xs uppercase tracking-wider">{s.label}</p>
               <p className="text-2xl font-bold text-[#0B1C3D] mt-1" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{s.value}</p>
             </div>
           ))}
         </div>
 
-        {/* Registrations Table */}
         <div className="bg-white rounded-2xl border border-[#D4AF37]/20 overflow-hidden" data-testid="admin-registrations-table">
           <div className="p-4 sm:p-6 border-b border-[#D4AF37]/10">
             <h2 className="text-xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
@@ -305,10 +259,9 @@ function AdminDashboard({ user, onLogout }) {
                   <TableHead className="text-[#0B1C3D]/60">Name</TableHead>
                   <TableHead className="text-[#0B1C3D]/60">Mobile</TableHead>
                   <TableHead className="text-[#0B1C3D]/60">City</TableHead>
-                  <TableHead className="text-[#0B1C3D]/60">Attend</TableHead>
+                  <TableHead className="text-[#0B1C3D]/60">Intent</TableHead>
                   <TableHead className="text-[#0B1C3D]/60">People</TableHead>
                   <TableHead className="text-[#0B1C3D]/60">Accommodation</TableHead>
-                  <TableHead className="text-[#0B1C3D]/60">Travel</TableHead>
                   <TableHead className="text-[#0B1C3D]/60">Date</TableHead>
                   <TableHead className="text-[#0B1C3D]/60">Action</TableHead>
                 </TableRow>
@@ -316,24 +269,23 @@ function AdminDashboard({ user, onLogout }) {
               <TableBody>
                 {registrations.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center text-[#0B1C3D]/40 py-12">
-                      No registrations yet
-                    </TableCell>
+                    <TableCell colSpan={8} className="text-center text-[#0B1C3D]/40 py-12">No registrations yet</TableCell>
                   </TableRow>
                 ) : (
                   registrations.map((reg, i) => (
                     <TableRow key={i} className="hover:bg-[#D4AF37]/5 cursor-pointer" onClick={() => setSelectedReg(reg)} data-testid={`reg-row-${i}`}>
                       <TableCell className="font-medium text-[#0B1C3D]">{reg.full_name}</TableCell>
                       <TableCell>{reg.mobile}</TableCell>
-                      <TableCell>{reg.city_country || "-"}</TableCell>
+                      <TableCell>{reg.city || "-"}</TableCell>
                       <TableCell>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${reg.will_attend === "Yes" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
-                          {reg.will_attend}
-                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          reg.attendance_intent === "Yes" ? "bg-green-100 text-green-700" :
+                          reg.attendance_intent === "Most Probably" ? "bg-yellow-100 text-yellow-700" :
+                          "bg-orange-100 text-orange-700"
+                        }`}>{reg.attendance_intent}</span>
                       </TableCell>
-                      <TableCell>{(reg.adults || 0) + (reg.children || 0) + (reg.senior_citizens || 0)}</TableCell>
+                      <TableCell>{reg.num_people}</TableCell>
                       <TableCell>{reg.need_accommodation ? `Yes (${reg.num_rooms} rooms)` : "No"}</TableCell>
-                      <TableCell>{reg.travel_mode || "-"}</TableCell>
                       <TableCell className="text-xs text-[#0B1C3D]/50">{reg.created_at ? new Date(reg.created_at).toLocaleDateString() : "-"}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" className="text-[#D4AF37] hover:text-[#D4AF37]/80 hover:bg-[#D4AF37]/10" data-testid={`view-reg-${i}`} onClick={(e) => { e.stopPropagation(); setSelectedReg(reg); }}>
@@ -347,8 +299,6 @@ function AdminDashboard({ user, onLogout }) {
             </Table>
           </div>
         </div>
-
-        {/* Registration Detail Dialog */}
         <RegistrationDetail registration={selectedReg} open={!!selectedReg} onClose={() => setSelectedReg(null)} />
       </div>
     </div>
@@ -367,14 +317,7 @@ export default function AdminPage() {
       .finally(() => setChecking(false));
   }, []);
 
-  if (checking) {
-    return (
-      <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center">
-        <div className="text-[#D4AF37]">Checking authentication...</div>
-      </div>
-    );
-  }
-
+  if (checking) return <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center"><div className="text-[#D4AF37]">Checking authentication...</div></div>;
   if (!user) return <AdminLogin onLogin={setUser} />;
   return <AdminDashboard user={user} onLogout={() => setUser(null)} />;
 }
