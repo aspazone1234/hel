@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, ChevronLeft, Plus, Trash2, CalendarIcon, MessageCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronLeft, Plus, Trash2, CalendarIcon, MessageCircle, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,7 +52,7 @@ function DatePicker({ value, onChange, label, testId }) {
 }
 
 export default function RegisterPage() {
-  const { t, lang } = useLang();
+  const { t, lang, toggleLang } = useLang();
   const STEPS = t.register.steps;
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(initial);
@@ -130,9 +130,19 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-[#F8F1E5] py-8 px-4">
       <div className="max-w-2xl mx-auto">
         <div className="mb-8">
-          <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-4" data-testid="back-to-home">
-            <ChevronLeft size={16} /> {t.register.backHome}
-          </Link>
+          <div className="flex items-center justify-between mb-4">
+            <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1" data-testid="back-to-home">
+              <ChevronLeft size={16} /> {t.register.backHome}
+            </Link>
+            <button
+              onClick={toggleLang}
+              data-testid="form-lang-toggle"
+              className="flex items-center gap-1.5 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-full px-4 py-2 text-sm font-semibold transition-all hover:bg-[#D4AF37]/20 hover:border-[#D4AF37]/50"
+            >
+              <Globe size={14} className="text-[#D4AF37]" />
+              <span className="text-[#D4AF37]">{lang === "en" ? "हिंदी" : "English"}</span>
+            </button>
+          </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.pageTitle}</h1>
           <p className="text-[#0B1C3D]/50 text-sm mt-2">
             {lang === "hi" ? `चरण ${step + 1} / ${STEPS.length}: ${STEPS[step]}` : `Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`}

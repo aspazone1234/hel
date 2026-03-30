@@ -26,8 +26,8 @@ subtle animations, flute sound toggle, and bilingual (Hindi + English) text.
 7. Special Programs (Bhajan→Kalash→Havan)
 8. Sacred Episodes (7 individual day images)
 9. Venue (slideshow carousel with 3 images + Google Maps)
-10. Registration CTA (strong visible button)
-11. Family (Panchariya Parivar)
+10. Family (Panchariya Parivar)
+11. Registration CTA (strong visible button)
 12. Contact Strip
 13. Footer (no admin link)
 
@@ -59,7 +59,12 @@ subtle animations, flute sound toggle, and bilingual (Hindi + English) text.
 - [x] **WhatsApp**: Updated to +91 9825423650
 - [x] **Footer**: Admin link removed (admin only via direct /admin URL)
 
-## Prioritized Backlog
+### V3.1 (Session 4 - 30 March 2026)
+- [x] **Mobile hero opacity**: Increased Krishna image visibility (opacity 0.30, lighter gradient overlay)
+- [x] **Sticky language toggle**: Globe + EN/हिंदी button above sticky Register button at bottom-right
+- [x] **Announcement strip**: Animated golden marquee below navbar with scrolling registration message + CTA button
+- [x] **Form language toggle**: Globe toggle at top-right of registration form page
+- [x] **Section reorder**: Registration CTA moved below Family, above Contact Strip
 
 ### P1 - Next
 - [ ] Hindi content for "About" section when user provides it

@@ -126,15 +126,15 @@ export default function HeroSection() {
         </div>
       )}
 
-      <section data-testid="hero-section" className="relative min-h-screen flex items-center overflow-hidden bg-[#0B1C3D]">
+      <section data-testid="hero-section" className="relative min-h-screen flex items-center overflow-hidden bg-[#0B1C3D] pt-8 sm:pt-9">
         <div className="absolute inset-0 mandala-overlay" style={{ backgroundImage: `url(${MANDALA_URL})` }} />
         <div className="absolute inset-0 bg-gradient-to-b from-[#0B1C3D]/30 via-transparent to-[#0B1C3D]/80" />
         <FloatingParticles />
 
         {/* Mobile hero image background */}
         <div className="absolute inset-0 lg:hidden">
-          <img src={KRISHNA_URL} alt="" className="w-full h-full object-cover opacity-15" />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0B1C3D]/60 via-[#0B1C3D]/70 to-[#0B1C3D]/90" />
+          <img src={KRISHNA_URL} alt="" className="w-full h-full object-cover opacity-30" />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0B1C3D]/50 via-[#0B1C3D]/55 to-[#0B1C3D]/85" />
         </div>
 
         <div className="absolute top-1/2 right-1/4 w-[400px] h-[400px] rounded-full bg-[#D4AF37]/10 blur-[100px] animate-aura hidden lg:block" />
