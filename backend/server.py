@@ -178,7 +178,7 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=[o.strip() for o in os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(',')],
+    allow_origins=[o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',')],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -196,9 +196,12 @@ async def startup():
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
         logger.info(f"Admin password updated: {admin_email}")
     await db.users.create_index("email", unique=True)
-    os.makedirs("/app/memory", exist_ok=True)
-    with open("/app/memory/test_credentials.md", "w") as f:
-        f.write(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n- Role: admin\n\n## Endpoints\n- Login: POST /api/auth/login\n- Me: GET /api/auth/me\n- Logout: POST /api/auth/logout\n- Register: POST /api/registrations\n- Admin Registrations: GET /api/admin/registrations\n- Admin Summary: GET /api/admin/summary\n- Admin Export CSV: GET /api/admin/export-csv\n")
+    try:
+        os.makedirs("/app/memory", exist_ok=True)
+        with open("/app/memory/test_credentials.md", "w") as f:
+            f.write(f"# Test Credentials\n\n## Admin\n- Email: {admin_email}\n- Password: {admin_password}\n")
+    except OSError:
+        logger.info("Skipping test_credentials.md write (read-only filesystem)")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
