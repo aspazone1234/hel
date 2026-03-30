@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { ChevronLeft, Download, Users, Home, LogOut, Eye, EyeOff, X as XIcon, CheckCircle, HelpCircle, Clock } from "lucide-react";
+import { ChevronLeft, Download, Users, Home, LogOut, Eye, EyeOff, CheckCircle, HelpCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,15 @@ import { toast } from "sonner";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+function getToken() { return localStorage.getItem("admin_token"); }
+function setToken(t) { localStorage.setItem("admin_token", t); }
+function clearToken() { localStorage.removeItem("admin_token"); }
+
+function authHeaders() {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 function AdminLogin({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -24,7 +33,8 @@ function AdminLogin({ onLogin }) {
     setLoading(true);
     setError("");
     try {
-      const { data } = await axios.post(`${API}/auth/login`, { email, password }, { withCredentials: true });
+      const { data } = await axios.post(`${API}/auth/login`, { email, password });
+      setToken(data.token);
       onLogin(data);
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -118,7 +128,6 @@ function RegistrationDetail({ registration, open, onClose }) {
             <Field label="Intent" value={r.attendance_intent} />
             <Field label="Arrival Date" value={r.arrival_date} />
             <Field label="Departure Date" value={r.departure_date} />
-            <Field label="Arrival Time" value={r.arrival_time} />
             <Field label="Days Attending" value={Array.isArray(r.days_attending) ? r.days_attending.join(", ") : r.days_attending} />
             <Field label="Total People" value={r.num_people} />
           </Section>
@@ -137,12 +146,6 @@ function RegistrationDetail({ registration, open, onClose }) {
           )}
           <Section title="Accommodation">
             <Field label="Need Accommodation" value={r.need_accommodation ? "Yes" : "No"} />
-            {r.need_accommodation && (
-              <>
-                <Field label="Room Type" value={r.room_type} />
-                <Field label="Number of Rooms" value={r.num_rooms} />
-              </>
-            )}
           </Section>
           {r.message && (
             <Section title="Message">
@@ -171,9 +174,10 @@ function AdminDashboard({ user, onLogout }) {
 
   const loadData = async () => {
     try {
+      const headers = authHeaders();
       const [regsRes, sumRes] = await Promise.all([
-        axios.get(`${API}/admin/registrations`, { withCredentials: true }),
-        axios.get(`${API}/admin/summary`, { withCredentials: true }),
+        axios.get(`${API}/admin/registrations`, { headers }),
+        axios.get(`${API}/admin/summary`, { headers }),
       ]);
       setRegistrations(regsRes.data);
       setSummary(sumRes.data);
@@ -186,7 +190,7 @@ function AdminDashboard({ user, onLogout }) {
 
   const handleExportCSV = async () => {
     try {
-      const response = await axios.get(`${API}/admin/export-csv`, { withCredentials: true, responseType: "blob" });
+      const response = await axios.get(`${API}/admin/export-csv`, { headers: authHeaders(), responseType: "blob" });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const a = document.createElement("a");
       a.href = url;
@@ -199,8 +203,8 @@ function AdminDashboard({ user, onLogout }) {
     }
   };
 
-  const handleLogout = async () => {
-    try { await axios.post(`${API}/auth/logout`, {}, { withCredentials: true }); } catch {}
+  const handleLogout = () => {
+    clearToken();
     onLogout();
   };
 
@@ -285,7 +289,7 @@ function AdminDashboard({ user, onLogout }) {
                         }`}>{reg.attendance_intent}</span>
                       </TableCell>
                       <TableCell>{reg.num_people}</TableCell>
-                      <TableCell>{reg.need_accommodation ? `Yes (${reg.num_rooms} rooms)` : "No"}</TableCell>
+                      <TableCell>{reg.need_accommodation ? "Yes" : "No"}</TableCell>
                       <TableCell className="text-xs text-[#0B1C3D]/50">{reg.created_at ? new Date(reg.created_at).toLocaleDateString() : "-"}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" className="text-[#D4AF37] hover:text-[#D4AF37]/80 hover:bg-[#D4AF37]/10" data-testid={`view-reg-${i}`} onClick={(e) => { e.stopPropagation(); setSelectedReg(reg); }}>
@@ -311,9 +315,11 @@ export default function AdminPage() {
 
   useEffect(() => {
     document.title = "Admin - Katha Mahotsav 2026";
-    axios.get(`${API}/auth/me`, { withCredentials: true })
+    const token = getToken();
+    if (!token) { setChecking(false); return; }
+    axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => setUser(res.data))
-      .catch(() => setUser(null))
+      .catch(() => { clearToken(); setUser(null); })
       .finally(() => setChecking(false));
   }, []);
 

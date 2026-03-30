@@ -8,7 +8,7 @@ import HomePage from "@/pages/HomePage";
 import RegisterPage from "@/pages/RegisterPage";
 import AdminPage from "@/pages/AdminPage";
 
-axios.defaults.withCredentials = true;
+axios.defaults.withCredentials = false;
 
 function App() {
   return (

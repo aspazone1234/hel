@@ -41,11 +41,10 @@ def create_access_token(user_id: str, email: str) -> str:
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 async def get_current_user(request: Request):
-    token = request.cookies.get("access_token")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
+    token = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     try:
@@ -89,15 +88,14 @@ class RegistrationCreate(BaseModel):
 
 # --- Auth Endpoints ---
 @api_router.post("/auth/login")
-async def login(req: LoginRequest, response: Response):
+async def login(req: LoginRequest):
     email = req.email.lower().strip()
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(req.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     user_id = str(user["_id"])
     access_token = create_access_token(user_id, email)
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=86400, path="/")
-    return {"id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "")}
+    return {"token": access_token, "id": user_id, "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "")}
 
 @api_router.get("/auth/me")
 async def get_me(request: Request):
@@ -105,8 +103,7 @@ async def get_me(request: Request):
     return {"id": user["_id"], "email": user["email"], "name": user.get("name", ""), "role": user.get("role", "")}
 
 @api_router.post("/auth/logout")
-async def logout(response: Response):
-    response.delete_cookie("access_token", path="/")
+async def logout():
     return {"message": "Logged out"}
 
 # --- Registration ---
@@ -128,7 +125,7 @@ async def get_registration_count():
 @api_router.get("/admin/registrations")
 async def get_registrations(request: Request):
     await get_current_user(request)
-    regs = await db.registrations.find({}, {"_id": 0}).sort("created_at", -1).to_list(10000)
+    regs = await db.registrations.find({}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     return regs
 
 @api_router.get("/admin/summary")
@@ -153,7 +150,7 @@ async def get_summary(request: Request):
 @api_router.get("/admin/export-csv")
 async def export_csv(request: Request):
     await get_current_user(request)
-    regs = await db.registrations.find({}, {"_id": 0}).to_list(10000)
+    regs = await db.registrations.find({}, {"_id": 0}).to_list(5000)
     if not regs:
         return StreamingResponse(io.StringIO("No registrations"), media_type="text/csv")
     output = io.StringIO()
@@ -163,8 +160,6 @@ async def export_csv(request: Request):
     for reg in regs:
         if isinstance(reg.get("days_attending"), list):
             reg["days_attending"] = ", ".join(reg["days_attending"])
-        if isinstance(reg.get("attendees"), list):
-            pass
         writer.writerow(reg)
     output.seek(0)
     return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=registrations.csv"})
@@ -177,8 +172,8 @@ app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=[o.strip() for o in os.environ.get('CORS_ORIGINS', '*').split(',')],
+    allow_credentials=False,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
