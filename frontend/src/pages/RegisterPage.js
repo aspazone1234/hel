@@ -18,15 +18,15 @@ import { useLang } from "@/context/LanguageContext";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-
 const DAYS = ["28 May", "29 May", "30 May", "31 May", "1 June", "2 June", "3 June"];
 
 const initial = {
   full_name: "", mobile: "", email: "", city: "", country: "",
-  attendance_intent: "Yes", arrival_date: "", departure_date: "", arrival_time: "",
-  days_attending: [], num_people: 1,
+  attendance_intent: "Yes", arrival_date: "", departure_date: "",
+  days_attending: [],
+  num_people: 1,
   attendees: [{ name: "", category: "Adult", special_needs: "" }],
-  need_accommodation: false, room_type: "", num_rooms: 0,
+  need_accommodation: true,
   message: "", consent: false,
 };
 
@@ -64,18 +64,10 @@ export default function RegisterPage() {
 
   const set = (key, val) => { setForm(f => ({ ...f, [key]: val })); setErrors(e => ({ ...e, [key]: undefined })); };
   const toggleDay = (day) => {
-    setForm(f => ({
-      ...f,
-      days_attending: f.days_attending.includes(day) ? f.days_attending.filter(d => d !== day) : [...f.days_attending, day]
-    }));
+    setForm(f => ({ ...f, days_attending: f.days_attending.includes(day) ? f.days_attending.filter(d => d !== day) : [...f.days_attending, day] }));
   };
-
   const setAttendee = (idx, key, val) => {
-    setForm(f => {
-      const atts = [...f.attendees];
-      atts[idx] = { ...atts[idx], [key]: val };
-      return { ...f, attendees: atts };
-    });
+    setForm(f => { const atts = [...f.attendees]; atts[idx] = { ...atts[idx], [key]: val }; return { ...f, attendees: atts }; });
   };
   const addAttendee = () => setForm(f => ({ ...f, attendees: [...f.attendees, { name: "", category: "Adult", special_needs: "" }] }));
   const removeAttendee = (idx) => setForm(f => ({ ...f, attendees: f.attendees.filter((_, i) => i !== idx) }));
@@ -92,37 +84,30 @@ export default function RegisterPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleNext = () => {
-    if (validate()) setStep(s => s + 1);
-  };
+  const handleNext = () => { if (validate()) setStep(s => s + 1); };
 
   const handleSubmit = async () => {
     if (!validate()) return;
     setSubmitting(true);
     try {
-      await axios.post(`${API}/registrations`, form);
+      const payload = { ...form, arrival_time: "", room_type: "", num_rooms: 0 };
+      await axios.post(`${API}/registrations`, payload);
       setSubmitted(true);
       toast.success(lang === "hi" ? "पंजीकरण सफल!" : "Registration submitted successfully!");
-    } catch (e) {
-      toast.error(lang === "hi" ? "पंजीकरण विफल। पुनः प्रयास करें।" : "Failed to submit registration. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
+    } catch {
+      toast.error(lang === "hi" ? "पंजीकरण विफल। पुनः प्रयास करें।" : "Failed to submit. Please try again.");
+    } finally { setSubmitting(false); }
   };
 
   if (submitted) {
-    const whatsappMsg = `Jai Shri Krishna! New Registration for Bhagwat Katha 2026:%0A%0AName: ${form.full_name}%0AMobile: ${form.mobile}%0ACity: ${form.city || 'N/A'}%0AAttendance: ${form.attendance_intent}%0ATotal People: ${form.num_people}%0AAccommodation: ${form.need_accommodation ? 'Yes (' + form.num_rooms + ' rooms)' : 'No'}%0A%0ARegistered via Katha Website`;
-    const whatsappUrl = `https://wa.me/917229900422?text=${whatsappMsg}`;
+    const whatsappMsg = `Jai Shri Krishna! New Registration for Bhagwat Katha 2026:%0A%0AName: ${form.full_name}%0AMobile: ${form.mobile}%0ACity: ${form.city || 'N/A'}%0AAttendance: ${form.attendance_intent}%0ATotal People: ${form.num_people}%0AAccommodation: ${form.need_accommodation ? 'Yes' : 'No'}%0A%0ARegistered via Katha Website`;
+    const whatsappUrl = `https://wa.me/919825423650?text=${whatsappMsg}`;
 
     return (
       <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center px-4">
         <div className="bg-white rounded-2xl p-8 sm:p-12 border border-[#D4AF37]/20 max-w-lg w-full text-center sacred-border" data-testid="registration-success">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-            <Check size={32} className="text-green-600" />
-          </div>
-          <h2 className="text-3xl font-bold text-[#0B1C3D] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            {t.register.successTitle}
-          </h2>
+          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6"><Check size={32} className="text-green-600" /></div>
+          <h2 className="text-3xl font-bold text-[#0B1C3D] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.successTitle}</h2>
           <p className="text-[#0B1C3D]/60 mb-6">{t.register.successMsg}</p>
           <div className="bg-[#F8F1E5] rounded-xl p-4 border border-[#D4AF37]/10 mb-6">
             <p className="text-[#0B1C3D]/60 text-sm mb-3">{lang === "hi" ? "WhatsApp द्वारा आयोजक को सूचित करें:" : "Notify the organizer via WhatsApp:"}</p>
@@ -148,9 +133,7 @@ export default function RegisterPage() {
           <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-4" data-testid="back-to-home">
             <ChevronLeft size={16} /> {t.register.backHome}
           </Link>
-          <h1 className="text-3xl sm:text-4xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            {t.register.pageTitle}
-          </h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.pageTitle}</h1>
           <p className="text-[#0B1C3D]/50 text-sm mt-2">
             {lang === "hi" ? `चरण ${step + 1} / ${STEPS.length}: ${STEPS[step]}` : `Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`}
           </p>
@@ -160,15 +143,14 @@ export default function RegisterPage() {
           <Progress value={progress} className="h-2 bg-[#D4AF37]/10" />
           <div className="flex justify-between mt-2">
             {STEPS.map((s, i) => (
-              <span key={i} className={`text-xs ${i <= step ? "text-[#D4AF37] font-semibold" : "text-[#0B1C3D]/30"}`}>
-                {i + 1}. {s}
-              </span>
+              <span key={i} className={`text-xs ${i <= step ? "text-[#D4AF37] font-semibold" : "text-[#0B1C3D]/30"}`}>{i + 1}. {s}</span>
             ))}
           </div>
         </div>
 
         <div className="bg-white rounded-2xl p-6 sm:p-8 border border-[#D4AF37]/20 sacred-border form-sacred" data-testid="registration-form">
-          {/* Step 1: Contact Info */}
+
+          {/* Step 1: Contact Info (unchanged) */}
           {step === 0 && (
             <div className="space-y-5" data-testid="form-step-1">
               <h3 className="text-xl font-bold text-[#0B1C3D] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.step1Title}</h3>
@@ -200,7 +182,7 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* Step 2: Attendance + People */}
+          {/* Step 2: Attendance (REMOVED: arrival_time, num_people) */}
           {step === 1 && (
             <div className="space-y-5" data-testid="form-step-2">
               <h3 className="text-xl font-bold text-[#0B1C3D] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.step2Title}</h3>
@@ -220,10 +202,6 @@ export default function RegisterPage() {
                 <DatePicker label={t.register.departureDate} value={form.departure_date} onChange={v => set("departure_date", v)} testId="input-departure-date" />
               </div>
               <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{t.register.arrivalTime}</Label>
-                <Input data-testid="input-arrival-time" value={form.arrival_time} onChange={e => set("arrival_time", e.target.value)} placeholder={lang === "hi" ? "उदा: सुबह 10 बजे, 28 मई" : "e.g., 10:00 AM on 28 May"} className="mt-1.5 bg-white border-[#D4AF37]/20" />
-              </div>
-              <div>
                 <Label className="text-[#0B1C3D]/70 text-sm mb-3 block">{t.register.daysAttending}</Label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {DAYS.map(day => (
@@ -234,17 +212,19 @@ export default function RegisterPage() {
                   ))}
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Step 3: Attendees + Accommodation (num_people FIRST, accommodation default ON, no room fields) */}
+          {step === 2 && (
+            <div className="space-y-5" data-testid="form-step-3">
+              <h3 className="text-xl font-bold text-[#0B1C3D] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.step3Title}</h3>
+
+              {/* Number of People - FIRST FIELD */}
               <div>
                 <Label className="text-[#0B1C3D]/70 text-sm">{t.register.numPeople}</Label>
                 <Input data-testid="input-num-people" type="number" min={1} value={form.num_people} onChange={e => set("num_people", Math.max(1, parseInt(e.target.value) || 1))} className="mt-1.5 bg-white border-[#D4AF37]/20 max-w-[150px]" />
               </div>
-            </div>
-          )}
-
-          {/* Step 3: Attendees + Accommodation */}
-          {step === 2 && (
-            <div className="space-y-5" data-testid="form-step-3">
-              <h3 className="text-xl font-bold text-[#0B1C3D] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.step3Title}</h3>
 
               {/* Attendees */}
               {form.attendees.map((att, i) => (
@@ -273,31 +253,12 @@ export default function RegisterPage() {
                 <Plus size={16} className="mr-1" /> {t.register.addPerson}
               </Button>
 
-              {/* Accommodation */}
+              {/* Accommodation - Simple Toggle, default ON */}
               <div className="border-t border-[#D4AF37]/10 pt-5 mt-5">
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3">
                   <Switch checked={form.need_accommodation} onCheckedChange={v => set("need_accommodation", v)} data-testid="switch-accommodation" />
                   <Label className="text-base font-medium">{t.register.accommodation}</Label>
                 </div>
-                {form.need_accommodation && (
-                  <div className="space-y-4 animate-[fade-in-up_0.3s_ease]">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label className="text-[#0B1C3D]/70 text-sm">{t.register.roomType}</Label>
-                        <Select value={form.room_type} onValueChange={v => set("room_type", v)}>
-                          <SelectTrigger data-testid="select-room-type" className="mt-1.5 bg-white border-[#D4AF37]/20"><SelectValue placeholder={lang === "hi" ? "चुनें" : "Select"} /></SelectTrigger>
-                          <SelectContent>
-                            {["Single", "Double", "Family", "Dormitory"].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label className="text-[#0B1C3D]/70 text-sm">{t.register.numRooms}</Label>
-                        <Input data-testid="input-num-rooms" type="number" min={0} value={form.num_rooms} onChange={e => set("num_rooms", Math.max(0, parseInt(e.target.value) || 0))} className="mt-1.5 bg-white border-[#D4AF37]/20 max-w-[150px]" />
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Message */}
@@ -315,14 +276,59 @@ export default function RegisterPage() {
               </div>
               {errors.consent && <p className="text-red-500 text-xs">{lang === "hi" ? "कृपया सहमति दें" : "Please confirm consent"}</p>}
 
-              {/* Summary */}
-              <div className="bg-[#F8F1E5] rounded-xl p-4 border border-[#D4AF37]/10">
-                <h4 className="text-sm font-semibold text-[#0B1C3D] mb-2">{lang === "hi" ? "सारांश" : "Summary"}</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs text-[#0B1C3D]/60">
-                  <span>{lang === "hi" ? "नाम" : "Name"}: <strong className="text-[#0B1C3D]">{form.full_name}</strong></span>
-                  <span>{lang === "hi" ? "मोबाइल" : "Mobile"}: <strong className="text-[#0B1C3D]">{form.mobile}</strong></span>
-                  <span>{lang === "hi" ? "उपस्थिति" : "Attendance"}: <strong className="text-[#0B1C3D]">{form.attendance_intent}</strong></span>
-                  <span>{lang === "hi" ? "लोग" : "People"}: <strong className="text-[#0B1C3D]">{form.num_people}</strong></span>
+              {/* Full Detailed Summary */}
+              <div className="bg-[#F8F1E5] rounded-xl p-5 border border-[#D4AF37]/15" data-testid="registration-summary">
+                <h4 className="text-base font-bold text-[#0B1C3D] mb-4 pb-2 border-b border-[#D4AF37]/20" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                  {lang === "hi" ? "पंजीकरण सारांश" : "Registration Summary"}
+                </h4>
+
+                {/* Part 1 Summary */}
+                <div className="mb-4">
+                  <p className="text-xs text-[#D4AF37] font-semibold uppercase tracking-wider mb-2">{t.register.step1Title}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.fullName}:</span><span className="text-[#0B1C3D] font-medium">{form.full_name || "-"}</span></div>
+                    <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.mobile}:</span><span className="text-[#0B1C3D] font-medium">{form.mobile || "-"}</span></div>
+                    {form.email && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "ईमेल" : "Email"}:</span><span className="text-[#0B1C3D] font-medium">{form.email}</span></div>}
+                    {form.city && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "शहर" : "City"}:</span><span className="text-[#0B1C3D] font-medium">{form.city}</span></div>}
+                    {form.country && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "देश" : "Country"}:</span><span className="text-[#0B1C3D] font-medium">{form.country}</span></div>}
+                  </div>
+                </div>
+
+                {/* Part 2 Summary */}
+                <div className="mb-4">
+                  <p className="text-xs text-[#D4AF37] font-semibold uppercase tracking-wider mb-2">{t.register.step2Title}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.willAttend}:</span><span className="text-[#0B1C3D] font-medium">{form.attendance_intent}</span></div>
+                    {form.arrival_date && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.arrivalDate}:</span><span className="text-[#0B1C3D] font-medium">{form.arrival_date}</span></div>}
+                    {form.departure_date && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.departureDate}:</span><span className="text-[#0B1C3D] font-medium">{form.departure_date}</span></div>}
+                    {form.days_attending.length > 0 && <div className="flex justify-between col-span-full"><span className="text-[#0B1C3D]/50">{t.register.daysAttending}:</span><span className="text-[#0B1C3D] font-medium">{form.days_attending.join(", ")}</span></div>}
+                  </div>
+                </div>
+
+                {/* Part 3 Summary */}
+                <div>
+                  <p className="text-xs text-[#D4AF37] font-semibold uppercase tracking-wider mb-2">{t.register.step3Title}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                    <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.numPeople}:</span><span className="text-[#0B1C3D] font-medium">{form.num_people}</span></div>
+                    <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.accommodation}:</span><span className="text-[#0B1C3D] font-medium">{form.need_accommodation ? (lang === "hi" ? "हाँ" : "Yes") : (lang === "hi" ? "नहीं" : "No")}</span></div>
+                  </div>
+                  {form.attendees.filter(a => a.name).length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-[#0B1C3D]/50 text-xs mb-1">{lang === "hi" ? "सदस्य:" : "Attendees:"}</p>
+                      {form.attendees.filter(a => a.name).map((att, i) => (
+                        <p key={i} className="text-sm text-[#0B1C3D]">
+                          {att.name} <span className="text-[#0B1C3D]/40">({att.category})</span>
+                          {att.special_needs && <span className="text-[#E67E22] text-xs ml-1">- {att.special_needs}</span>}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {form.message && (
+                    <div className="mt-2">
+                      <p className="text-[#0B1C3D]/50 text-xs">{t.register.message}:</p>
+                      <p className="text-sm text-[#0B1C3D] italic">{form.message}</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -330,30 +336,17 @@ export default function RegisterPage() {
 
           {/* Navigation */}
           <div className="flex justify-between mt-8 pt-6 border-t border-[#D4AF37]/10">
-            <Button
-              variant="outline"
-              onClick={() => setStep(s => s - 1)}
-              disabled={step === 0}
-              className="border-[#D4AF37]/30 text-[#0B1C3D] hover:bg-[#D4AF37]/10"
-              data-testid="form-prev-btn"
-            >
+            <Button variant="outline" onClick={() => setStep(s => s - 1)} disabled={step === 0}
+              className="border-[#D4AF37]/30 text-[#0B1C3D] hover:bg-[#D4AF37]/10" data-testid="form-prev-btn">
               <ArrowLeft size={16} className="mr-1" /> {t.register.previous}
             </Button>
             {step < STEPS.length - 1 ? (
-              <Button
-                onClick={handleNext}
-                className="bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90 font-semibold"
-                data-testid="form-next-btn"
-              >
+              <Button onClick={handleNext} className="bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90 font-semibold" data-testid="form-next-btn">
                 {t.register.next} <ArrowRight size={16} className="ml-1" />
               </Button>
             ) : (
-              <Button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="bg-[#E67E22] hover:bg-[#E67E22]/90 text-white font-bold text-base px-8 py-3 shadow-lg shadow-[#E67E22]/30"
-                data-testid="form-submit-btn"
-              >
+              <Button onClick={handleSubmit} disabled={submitting}
+                className="bg-[#E67E22] hover:bg-[#E67E22]/90 text-white font-bold text-base px-8 py-3 shadow-lg shadow-[#E67E22]/30" data-testid="form-submit-btn">
                 {submitting ? t.register.submitting : t.register.submit}
               </Button>
             )}
