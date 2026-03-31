@@ -100,11 +100,11 @@ export function VenueSection() {
                 </div>
                 <p className="text-[#0B1C3D]/70 text-sm leading-relaxed mb-6" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{t.venue.description}</p>
                 <div className="flex gap-3">
-                  <a href="https://maps.google.com/maps?q=Shri+Gautam+Ashram+Pushkar+Rajasthan" target="_blank" rel="noopener noreferrer" data-testid="venue-maps-btn"
+                  <a href="https://maps.app.goo.gl/j7XgU5MSCiScR21w6" target="_blank" rel="noopener noreferrer" data-testid="venue-maps-btn"
                     className="bg-[#D4AF37] text-[#0B1C3D] px-5 py-2.5 rounded-full text-sm font-semibold hover:bg-[#D4AF37]/90 transition-all flex items-center gap-2">
                     <ExternalLink size={14} /> {t.venue.openMaps}
                   </a>
-                  <a href="https://maps.google.com/maps/dir//Shri+Gautam+Ashram+Pushkar+Rajasthan" target="_blank" rel="noopener noreferrer" data-testid="venue-directions-btn"
+                  <a href="https://maps.app.goo.gl/j7XgU5MSCiScR21w6" target="_blank" rel="noopener noreferrer" data-testid="venue-directions-btn"
                     className="border border-[#D4AF37]/40 text-[#0B1C3D] px-5 py-2.5 rounded-full text-sm font-medium hover:bg-[#D4AF37]/10 transition-all">
                     {t.venue.getDirections}
                   </a>
@@ -112,7 +112,7 @@ export function VenueSection() {
               </div>
             </div>
             <div className="rounded-2xl overflow-hidden border border-[#D4AF37]/20 h-[400px]">
-              <iframe src="https://maps.google.com/maps?q=Pushkar+Rajasthan+India&t=&z=14&ie=UTF8&iwloc=&output=embed"
+              <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3554.5!2d74.5553!3d26.4897!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x396be70668bcc025%3A0x5e71cdbc42e6e86d!2sShri%20Gautam%20Ashram!5e0!3m2!1sen!2sin!4v1"
                 width="100%" height="100%" style={{ border: 0 }} allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade" title="Venue Map" data-testid="venue-map-embed" />
             </div>
           </div>
@@ -134,8 +134,7 @@ export function RegistrationCTA() {
         <FadeIn>
           <p className="text-[#D4AF37] text-sm tracking-[0.3em] uppercase mb-3">{t.registrationCTA.subtitle}</p>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#F8F1E5] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.registrationCTA.title}</h2>
-          <p className="text-[#F8F1E5]/60 text-base sm:text-lg leading-relaxed mb-6" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{t.registrationCTA.description}</p>
-          <p className="text-[#E67E22] text-sm mb-8 italic">{t.registrationCTA.note}</p>
+          <p className="text-[#F8F1E5]/60 text-base sm:text-lg leading-relaxed mb-8" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{t.registrationCTA.description}</p>
           <Link to="/register" data-testid="cta-register-btn"
             className="inline-block bg-[#D4AF37] text-[#0B1C3D] px-12 py-4.5 rounded-full font-bold text-lg hover:bg-[#E6C348] transition-all shadow-xl shadow-[#D4AF37]/40 hover:shadow-[#D4AF37]/60 border-2 border-[#D4AF37]">
             {t.registrationCTA.btn}
@@ -146,7 +145,7 @@ export function RegistrationCTA() {
   );
 }
 
-/* === FAMILY SECTION with Timeline === */
+/* === FAMILY SECTION with Timeline + Contact at bottom === */
 export function FamilySection() {
   const { t, lang } = useLang();
   const fontHi = lang === "hi" ? "'Tiro Devanagari Hindi', serif" : "'Cormorant Garamond', serif";
@@ -172,12 +171,14 @@ export function FamilySection() {
               </div>
             ))}
           </div>
-          <p className="text-center text-[#0B1C3D]/60 text-sm mb-12" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{t.family.note}</p>
+          <div className="max-w-3xl mx-auto text-center text-[#0B1C3D]/70 text-sm sm:text-base leading-relaxed mb-12 whitespace-pre-line" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>
+            {t.family.note}
+          </div>
         </FadeIn>
 
         {/* Timeline */}
         <FadeIn delay={400}>
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-3xl mx-auto mb-16">
             <h3 className="text-center text-xl sm:text-2xl font-bold text-[#0B1C3D] mb-8" style={{ fontFamily: fontHi }}>
               {t.family.timelineTitle}
             </h3>
@@ -221,6 +222,31 @@ export function FamilySection() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        </FadeIn>
+
+        {/* Contact block at bottom of Family section */}
+        <FadeIn delay={500}>
+          <div id="contact" className="max-w-4xl mx-auto" data-testid="contact-section">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-6 bg-white border border-[#D4AF37]/20 rounded-2xl p-6 sm:p-8">
+              <div className="text-center sm:text-left">
+                <p className="text-[#D4AF37] text-xs tracking-[0.3em] uppercase mb-1">{t.contact.subtitle}</p>
+                <h3 className="text-xl sm:text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.contact.name}</h3>
+                <p className="text-[#D4AF37] text-lg font-semibold flex items-center gap-2 justify-center sm:justify-start mt-1">
+                  <Phone size={16} /> {t.contact.phone}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <a href="tel:+919825423650" data-testid="contact-call-btn"
+                  className="bg-[#D4AF37] text-[#0B1C3D] px-6 py-2.5 rounded-full font-semibold hover:bg-[#D4AF37]/90 transition-all flex items-center gap-2 text-sm">
+                  <Phone size={14} /> {t.contact.callBtn}
+                </a>
+                <a href="https://wa.me/919825423650" target="_blank" rel="noopener noreferrer" data-testid="contact-whatsapp-btn"
+                  className="bg-[#25D366] text-white px-6 py-2.5 rounded-full font-semibold hover:bg-[#25D366]/90 transition-all flex items-center gap-2 text-sm">
+                  <MessageCircle size={14} /> {t.contact.whatsappBtn}
+                </a>
               </div>
             </div>
           </div>

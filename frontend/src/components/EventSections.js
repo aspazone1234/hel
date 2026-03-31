@@ -39,27 +39,42 @@ function FadeIn({ children, className = "", delay = 0 }) {
   );
 }
 
-/* === QUOTE (SHLOKA) SECTION - Compact Horizontal === */
+/* === QUOTE (SHLOKA) SECTION - Ancient Parchment Aesthetic === */
 export function QuoteSection() {
   const { t, lang } = useLang();
   return (
     <section data-testid="quote-section" className="py-8 sm:py-10 bg-[#0B1C3D] relative">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
         <FadeIn>
-          <div className="flex items-center gap-4 sm:gap-6 bg-[#0B1C3D] border border-[#D4AF37]/20 rounded-xl px-5 sm:px-8 py-4 sm:py-5">
-            <div className="hidden sm:block text-[#D4AF37]/30 text-5xl leading-none" style={{ fontFamily: "serif" }}>&ldquo;</div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[#D4AF37] text-sm sm:text-base italic leading-relaxed" style={{ fontFamily: "'Tiro Devanagari Hindi', serif" }}>
+          <div className="relative flex items-center gap-4 sm:gap-6 rounded-xl px-5 sm:px-8 py-5 sm:py-6 overflow-hidden border border-[#D4AF37]/30"
+            style={{
+              background: "linear-gradient(135deg, #2a1f0e 0%, #1a1408 30%, #2a1f0e 60%, #1a1408 100%)",
+              boxShadow: "inset 0 0 40px rgba(0,0,0,0.3), 0 4px 20px rgba(0,0,0,0.4)",
+            }}>
+            {/* Parchment texture overlay */}
+            <div className="absolute inset-0 opacity-[0.06]" style={{
+              backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23noise)' opacity='0.5'/%3E%3C/svg%3E\")",
+              backgroundSize: "150px 150px",
+            }} />
+            {/* Decorative corner accents */}
+            <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-[#D4AF37]/40 rounded-tl-lg" />
+            <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-[#D4AF37]/40 rounded-tr-lg" />
+            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-[#D4AF37]/40 rounded-bl-lg" />
+            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-[#D4AF37]/40 rounded-br-lg" />
+
+            <div className="hidden sm:block text-[#D4AF37]/50 text-5xl leading-none relative z-10" style={{ fontFamily: "serif", textShadow: "0 2px 4px rgba(0,0,0,0.3)" }}>&ldquo;</div>
+            <div className="flex-1 min-w-0 relative z-10">
+              <p className="text-[#D4AF37] text-sm sm:text-base italic leading-relaxed" style={{ fontFamily: "'Tiro Devanagari Hindi', serif", textShadow: "0 1px 2px rgba(0,0,0,0.2)" }}>
                 {t.verse.sanskrit}
               </p>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2">
-                <span className="text-[#F8F1E5]/30 text-xs">{t.verse.source}</span>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
+                <span className="text-[#D4AF37]/40 text-xs font-medium tracking-wider">{t.verse.source}</span>
                 <span className="text-[#F8F1E5]/50 text-xs leading-relaxed" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>
                   {t.verse.meaning}
                 </span>
               </div>
             </div>
-            <div className="hidden sm:block text-[#D4AF37]/30 text-5xl leading-none" style={{ fontFamily: "serif" }}>&rdquo;</div>
+            <div className="hidden sm:block text-[#D4AF37]/50 text-5xl leading-none relative z-10" style={{ fontFamily: "serif", textShadow: "0 2px 4px rgba(0,0,0,0.3)" }}>&rdquo;</div>
           </div>
         </FadeIn>
       </div>
@@ -126,11 +141,9 @@ export function AboutSection() {
         </FadeIn>
         <FadeIn delay={200}>
           <div className="max-w-4xl mx-auto space-y-5 text-[#0B1C3D]/80 text-base sm:text-lg leading-relaxed text-center" style={{ fontFamily: fontHi }}>
-            <p>{t.about.p1}</p>
-            <p>{t.about.p2}</p>
-            <p>{t.about.p3}</p>
+            <p>{t.about.mainParagraph}</p>
             <p className="text-[#E67E22] italic" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', serif" : "'Cormorant Garamond', serif", fontSize: "1.1em" }}>
-              {t.about.p4}
+              {t.about.invite}
             </p>
           </div>
         </FadeIn>

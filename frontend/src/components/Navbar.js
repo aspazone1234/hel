@@ -84,7 +84,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16 sm:h-20">
           <Link to="/" className="flex items-center group" data-testid="nav-logo">
             <span className="text-[#D4AF37] text-base sm:text-lg font-semibold tracking-wide" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-              {lang === "hi" ? "श्रीमद्भागवत कथा २०२६" : "Shrimad Bhagavat Katha 2026"}
+              {lang === "hi" ? "श्रीमद्भागवत २०२६" : "Shrimad Bhagavat 2026"}
             </span>
           </Link>
 

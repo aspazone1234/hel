@@ -130,7 +130,8 @@ export default function RegisterPage() {
               className="flex items-center gap-1.5 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-full px-4 py-2 text-sm font-semibold transition-all hover:bg-[#D4AF37]/20 hover:border-[#D4AF37]/50"
             >
               <Globe size={14} className="text-[#D4AF37]" />
-              <span className="text-[#D4AF37]">{lang === "en" ? t.langLabel : "English"}</span>
+              <span className="text-[#D4AF37]">{lang === "en" ? "हिंदी" : "English"}</span>
+              <span className="text-[#D4AF37]/40 text-[10px]">{lang === "en" ? "/ भाषा बदलें" : "/ Change Language"}</span>
             </button>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.pageTitle}</h1>
