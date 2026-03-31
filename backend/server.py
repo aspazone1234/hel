@@ -81,7 +81,6 @@ class RegistrationCreate(BaseModel):
     attendance_intent: str = "Yes"
     arrival_date: str = ""
     departure_date: str = ""
-    days_attending: List[str] = []
     num_people: int = 1
     attendees: List[AttendeeItem] = []
     message: str = ""
@@ -202,12 +201,10 @@ async def export_csv(request: Request):
     if not regs:
         return StreamingResponse(io.StringIO("No approved registrations"), media_type="text/csv")
     output = io.StringIO()
-    fields = ["id","full_name","mobile","email","city","country","attendance_intent","arrival_date","departure_date","days_attending","num_people","message","approval_status","created_at"]
+    fields = ["id","full_name","mobile","email","city","country","attendance_intent","arrival_date","departure_date","num_people","message","approval_status","created_at"]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
     for reg in regs:
-        if isinstance(reg.get("days_attending"), list):
-            reg["days_attending"] = ", ".join(reg["days_attending"])
         writer.writerow(reg)
     output.seek(0)
     return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=approved_guests.csv"})

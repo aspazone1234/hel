@@ -17,12 +17,10 @@ import { useLang } from "@/context/LanguageContext";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const DAYS = ["28 May", "29 May", "30 May", "31 May", "1 June", "2 June", "3 June"];
 
 const initial = {
   full_name: "", mobile: "", email: "", city: "", country: "",
   attendance_intent: "Yes", arrival_date: "", departure_date: "",
-  days_attending: [],
   num_people: 1,
   attendees: [{ name: "", category: "Adult", special_needs: "" }],
   message: "", consent: false,
@@ -61,10 +59,6 @@ export default function RegisterPage() {
   useEffect(() => { document.title = "Register - Shrimad Bhagwat Katha Gyan Yajna 2026"; }, []);
 
   const set = (key, val) => { setForm(f => ({ ...f, [key]: val })); setErrors(e => ({ ...e, [key]: undefined })); };
-
-  const toggleDay = (day) => {
-    setForm(f => ({ ...f, days_attending: f.days_attending.includes(day) ? f.days_attending.filter(d => d !== day) : [...f.days_attending, day] }));
-  };
 
   // When num_people changes, auto-generate attendee slots
   const handleNumPeopleChange = (val) => {
@@ -209,17 +203,6 @@ export default function RegisterPage() {
                 </div>
               </div>
               <div>
-                <Label className="text-[#0B1C3D]/70 text-sm mb-3 block">{t.register.daysAttending}</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {DAYS.map(day => (
-                    <div key={day} className="flex items-center gap-2">
-                      <Checkbox checked={form.days_attending.includes(day)} onCheckedChange={() => toggleDay(day)} data-testid={`check-day-${day.replace(" ", "-")}`} />
-                      <Label className="text-sm cursor-pointer">{day}</Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
                 <Label className="text-[#0B1C3D]/70 text-sm">{t.register.numPeople}</Label>
                 <Input data-testid="input-num-people" type="number" min={1} max={50} value={form.num_people} onChange={e => handleNumPeopleChange(e.target.value)} className="mt-1.5 bg-white border-[#D4AF37]/20 max-w-[180px]" />
               </div>
@@ -289,7 +272,6 @@ export default function RegisterPage() {
                     <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.numPeople}:</span><span className="text-[#0B1C3D] font-medium">{form.num_people}</span></div>
                     {form.arrival_date && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "आगमन" : "Arrival"}:</span><span className="text-[#0B1C3D] font-medium">{form.arrival_date}</span></div>}
                     {form.departure_date && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "प्रस्थान" : "Departure"}:</span><span className="text-[#0B1C3D] font-medium">{form.departure_date}</span></div>}
-                    {form.days_attending.length > 0 && <div className="flex justify-between col-span-full"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "दिन" : "Days"}:</span><span className="text-[#0B1C3D] font-medium">{form.days_attending.join(", ")}</span></div>}
                   </div>
                 </div>
                 {form.attendees.filter(a => a.name).length > 0 && (

@@ -116,7 +116,7 @@ const en = {
       { year: "2010", location: "Dwarka" },
       { year: "2026", location: "Pushkar" },
     ],
-    timelineTitle: "Our Katha Journey",
+    timelineTitle: "Panchariya Family's Katha Journey",
   },
   contact: {
     subtitle: "Contact",
@@ -148,6 +148,7 @@ const en = {
     arrivalDate: "Arrival Date *",
     departureDate: "Departure Date *",
     daysAttending: "Days Attending",
+    arrivalTime: "Arrival Time *",
     numPeople: "Number of People Attending",
     step3Title: "Attendee Details",
     attendeeName: "Name",
@@ -285,7 +286,7 @@ const hi = {
       { year: "\u0968\u0966\u0967\u0966", location: "\u0926\u094d\u0935\u093e\u0930\u0915\u093e" },
       { year: "\u0968\u0966\u0968\u096c", location: "\u092a\u0941\u0937\u094d\u0915\u0930" },
     ],
-    timelineTitle: "\u0939\u092e\u093e\u0930\u0940 \u0915\u0925\u093e \u092f\u093e\u0924\u094d\u0930\u093e",
+    timelineTitle: "\u092a\u0902\u091a\u093e\u0930\u093f\u092f\u093e \u092a\u0930\u093f\u0935\u093e\u0930 \u0915\u0940 \u0915\u0925\u093e \u092f\u093e\u0924\u094d\u0930\u093e",
   },
   contact: {
     subtitle: "\u0938\u0902\u092a\u0930\u094d\u0915",
@@ -317,6 +318,7 @@ const hi = {
     arrivalDate: "\u0906\u0917\u092e\u0928 \u0924\u093f\u0925\u093f *",
     departureDate: "\u092a\u094d\u0930\u0938\u094d\u0925\u093e\u0928 \u0924\u093f\u0925\u093f *",
     daysAttending: "\u0915\u093f\u0928 \u0926\u093f\u0928\u094b\u0902 \u0909\u092a\u0938\u094d\u0925\u093f\u0924 \u0930\u0939\u0947\u0902\u0917\u0947",
+    arrivalTime: "\u0906\u0917\u092e\u0928 \u0938\u092e\u092f *",
     numPeople: "\u0915\u093f\u0924\u0928\u0947 \u0932\u094b\u0917 \u0906 \u0930\u0939\u0947 \u0939\u0948\u0902",
     step3Title: "\u0938\u0926\u0938\u094d\u092f \u0935\u093f\u0935\u0930\u0923",
     attendeeName: "\u0928\u093e\u092e",
