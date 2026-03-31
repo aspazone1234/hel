@@ -8,73 +8,92 @@ Design a premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2
 - **Backend**: FastAPI + Motor (async MongoDB) (port 8001)
 - **Database**: MongoDB
 - **Auth**: Bearer token (JWT), 4 hardcoded admin credentials in server.py
+- **PDF Generation**: fpdf2
 
 ## 15-Point FINAL SPEC — ALL COMPLETE (31 Mar 2026)
 
-### 1. Announcement Strip ✅
-- Register Now button removed
-- Text: "Please Register Your Attendance • Help us prepare accommodation..."
+### 1. Announcement Strip - Register Now button removed, correct text
+### 2. Header - "Shrimad Bhagavat 2026" (no "Katha")
+### 3. Quote Section - Parchment aesthetic
+### 4. Loving Memory - "Alka Jiji", "Lalana"
+### 5. About Section - Merged paragraphs
+### 6. Section Rename - "Other Programs"
+### 7. Location - Correct map & address
+### 8. Organizing Family - Correct order
+### 9. Registration - No "Limited accommodation"
+### 10. Language Toggle - Bilingual
+### 11. Zigzag Colors - Alternating sections
+### 12. Registration Form - Dynamic attendees, arrival/departure dates
+### 13. Admin Dashboard V3 - Multi-page system (COMPLETE)
+### 14. Admin Auth - Username/password, 4 accounts
+### 15. Page Structure - Correct section order
 
-### 2. Header ✅
-- Logo: "Shrimad Bhagavat 2026" (no "Katha")
+## V3 Admin Dashboard — COMPLETE (01 Apr 2026)
 
-### 3. Quote Section ✅
-- Ancient parchment aesthetic with textured brown bg, golden corner accents, large quotation marks
+### Dashboard View
+- Smart alerts (pending forms, missing management, low room availability)
+- Summary cards (Approved Families, Total People, Arrivals/Departures range)
+- Arrival Summary (Families/People Arrived, Not Coming, Rooms Available)
+- Quick stats (Pending, Recycle Bin, Rejected) with click-to-navigate
 
-### 4. Loving Memory ✅
-- "Alka Jiji" (not Ji), "Lalana/लालाणा" (not Lalona)
+### Guest List View
+- Paginated table of approved guests with search, date filters
+- Checkbox-based bulk actions (Mark Arrived, Mark Not Coming, Delete Selected)
+- Management column with Add/Edit links for room assignment and arrival status
+- Add Manual Entry, Export PDF, Export CSV buttons
+- Entry type badges (Form/Manual)
 
-### 5. About Section ✅
-- First 3 paragraphs merged into one, 4th (invite) separate in orange italic
+### Master Control View
+- **Approve Forms Tab**: Pending registrations with Accept/Reject, Bulk Approve/Reject, Action Logs sub-tab
+- **Room Management Tab**: Grid/Table toggle, Add Room, Bulk Add Rooms, Export PDF, Unassign/Delete rooms
 
-### 6. Section Rename ✅
-- "Other Programs" / "अन्य कार्यक्रम"
+### Recycle Bin View
+- Deleted entries with Restore button only (NO permanent deletion allowed)
+- Shows Deleted By and Last Changed By metadata
 
-### 7. Location ✅
-- Map: https://maps.app.goo.gl/j7XgU5MSCiScR21w6
-- Address: "Near Nayi Bus Stand"
+### Audit Log View
+- Paginated, complete record of all admin actions
+- Color-coded action types (approve, reject, delete, restore, room ops, manual entry)
 
-### 8. Organizing Family ✅
-- Order: Title → 3 organizers → Family description (Panchariya parivar history) → Timeline (1996-2026) → Contact block (Ashok)
-
-### 9. Registration ✅
-- No "Limited accommodation" text
-- Audio: flute.opus with mp3 fallback
-
-### 10. Language Toggle ✅
-- "Change Language / भाषा बदलें" sublabel on form + sticky toggle
-
-### 11. Zigzag Colors ✅
-- Alternating Navy/Peach backgrounds across all sections
-
-### 12. Registration Form ✅
-- Dynamic attendee fields from num_people, required arrival/departure, no accommodation, Thank You page
-
-### 13. Admin Dashboard ✅
-- 3 tabs: Approval Center, Guest List, Recycle Bin + Activity Log
-
-### 14. Admin Auth ✅
-- Username/password login, 4 hardcoded accounts
-
-### 15. Page Structure ✅
-- Ends: Family(+contact) → Registration CTA → Footer
+### Shared Dialogs
+- **Guest Detail Dialog**: Full registration + management + permanent metadata
+- **Management Edit Dialog**: Arrival status, room assignment (with conflict detection), admin notes
+- **Manual Entry Dialog**: Full form with duplicate mobile detection, management details, room assignment
 
 ## API Endpoints
-- `POST /api/auth/login` — Admin login (username/password)
+- `POST /api/auth/login` — Admin login
 - `GET /api/auth/me` — Current admin
-- `POST /api/registrations` — Create registration
+- `POST /api/registrations` — Public registration
 - `GET /api/registrations/count` — Public count
-- `GET /api/admin/registrations` — List all (auth, optional ?status=)
-- `PUT /api/admin/registrations/{id}/status` — Approve/Delete/Restore
-- `GET /api/admin/activity-logs` — Activity log
-- `GET /api/admin/summary` — Counts by status
+- `GET /api/admin/registrations/check-duplicate` — Duplicate check
+- `GET /api/admin/registrations` — List (paginated, filterable)
+- `GET /api/admin/registrations/{id}` — Detail
+- `PUT /api/admin/registrations/{id}` — Update general
+- `PUT /api/admin/registrations/{id}/status` — Status change
+- `PUT /api/admin/registrations/{id}/management` — Management update
+- `POST /api/admin/registrations/manual` — Manual entry
+- `POST /api/admin/registrations/bulk-action` — Bulk actions
+- `GET /api/admin/rooms` — List rooms
+- `POST /api/admin/rooms` — Create room
+- `POST /api/admin/rooms/bulk` — Bulk create rooms
+- `DELETE /api/admin/rooms/{code}` — Delete room
+- `PUT /api/admin/rooms/{code}/assign` — Assign room
+- `PUT /api/admin/rooms/{code}/unassign` — Unassign room
+- `GET /api/admin/dashboard` — Dashboard stats
+- `GET /api/admin/audit-logs` — Audit log (paginated)
 - `GET /api/admin/export-csv` — CSV export (approved only)
+- `GET /api/admin/export-pdf` — PDF export (guestlist or rooms)
 
 ## Admin Credentials
 - arunpanchariya / arunlondon123
 - ashokpanchariya / ashokahmedabad123
 - satishpanchariya / satishmumbai123
 - basantmalpani / basantjaipur123
+
+## DB Collections
+- `registrations`: approval_status, entry_type, arrival_status, room_assignment, admin_notes, approved_by, created_by, last_updated_by, deleted_by, attendees array
+- `rooms`: room_code (unique), capacity, ac_type, status, occupant_id, occupant_name, created_by
+- `audit_logs`: action_type, target_type, target_id, target_name, details, performed_by, performed_at
 
 ## Remaining / Future Tasks
 - P2: Add "Add to Calendar" button
