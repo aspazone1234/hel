@@ -6,9 +6,13 @@ import { useLang } from "@/context/LanguageContext";
 export const flutePlayerRef = { current: null, soundOn: false };
 
 function createAudioPlayer() {
-  const audio = new Audio("/flute.mp3");
+  const audio = new Audio("/flute.opus");
   audio.loop = true;
   audio.volume = 0.5;
+  audio.onerror = () => {
+    audio.src = "/flute.mp3";
+    audio.load();
+  };
   return {
     start: () => { audio.play().catch(() => {}); },
     stop: () => { audio.pause(); audio.currentTime = 0; },
@@ -110,7 +114,7 @@ export default function Navbar() {
             <button onClick={toggleLang} data-testid="lang-toggle-mobile"
               className="flex items-center gap-1 bg-[#D4AF37]/15 border border-[#D4AF37]/40 rounded-full px-3 py-1.5 text-xs font-semibold">
               <Globe size={12} className="text-[#D4AF37]" />
-              <span className="text-[#D4AF37]">{lang === "en" ? "हिं" : "EN"}</span>
+              <span className="text-[#D4AF37]">{lang === "en" ? "हिंदी" : "EN"}</span>
             </button>
             <button onClick={() => setMobileOpen(!mobileOpen)} className="text-[#F8F1E5] p-2" data-testid="mobile-menu-toggle">
               {mobileOpen ? <X size={24} /> : <Menu size={24} />}

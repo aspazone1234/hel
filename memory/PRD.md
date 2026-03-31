@@ -1,112 +1,108 @@
-# PRD - Shrimad Bhagwat Katha Gyan Yajna 2026 | Pushkar, Rajasthan
+# PRD - Shrimad Bhagavat Katha Mahotsav 2026
 
 ## Original Problem Statement
-Design a premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2026" in Pushkar.
-The website should feel like entering a sacred temple space blended with Krishna's divine presence.
-Features include a multi-step registration form stored in a database with an admin panel,
-subtle animations, flute sound toggle, and bilingual (Hindi + English) text.
-
-## User Personas
-- **Guests/Devotees**: Families who receive the invitation and want to register attendance
-- **Organizers (Admin)**: Panchariya family members who manage registrations and logistics (admin accessible only via direct link)
+Design a premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2026" in Pushkar. Sacred temple aesthetic with Krishna's divine presence. Features: multi-step registration form, admin approval panel, bilingual (Hindi + English), golden door entry animation, flute sound toggle, subtle animations.
 
 ## Architecture
-- **Frontend**: React.js + Tailwind CSS + Shadcn UI
-- **Backend**: FastAPI (Python)
-- **Database**: MongoDB (Motor async driver)
-- **Auth**: JWT + httpOnly cookies
-
-## Section Order (Home Page)
-1. Hero (with golden door overlay on first visit, new Krishna deity image, visible on mobile)
-2. Quote (Skanda Purana shloka - compact horizontal)
-3. Loving Memory (4 individual photos in grid)
-4. About the Event
-5. Vyas Peeth (single center column, guru inline bar with Rambhadracharya image)
-6. Schedule (Katha timings)
-7. Special Programs (Bhajan→Kalash→Havan)
-8. Sacred Episodes (7 individual day images)
-9. Venue (slideshow carousel with 3 images + Google Maps)
-10. Family (Panchariya Parivar)
-11. Registration CTA (strong visible button)
-12. Contact Strip
-13. Footer (no admin link)
+- **Frontend**: React.js + Tailwind CSS + Shadcn UI (port 3000)
+- **Backend**: FastAPI + Motor (async MongoDB) (port 8001)
+- **Database**: MongoDB
+- **Auth**: Bearer token (JWT), hardcoded admin credentials in server.py
 
 ## What's Been Implemented
 
-### V1 (Session 1)
-- [x] FastAPI backend with MongoDB, admin auth, CRUD endpoints
-- [x] React frontend skeleton, 8-step registration form
-- [x] Basic door animation, flute audio toggle
+### Core Features (DONE)
+- Golden door entry animation
+- Hero section with countdown, Krishna imagery
+- Bilingual LanguageContext (Hindi + English) with full translations
+- Animated Hindi announcement strip
+- Sticky language toggle + register button
+- Flute audio toggle (.opus with .mp3 fallback)
 
-### V2 (Session 2 - 29 March 2026)
-- [x] Golden temple door overlay, bilingual language toggle
-- [x] Simplified 3-step registration form, backend schema refactored
-- [x] Hindi content from invitation images, section reordering
+### Landing Page Sections (DONE)
+- Quote (Shloka) section — Skanda Purana verse
+- Loving Memory — 4 elders with photos
+- About — 4-paragraph family offering description
+- Vyas Peeth — Acharya Shri Janak Ji with guru info
+- Schedule — Opening day + daily sessions
+- Other Programs — Kalash Yatra, Bhajan, Havan (reordered)
+- Katha Episodes — 7 days with individual images
+- Venue — Slideshow + map (Navy background for zigzag)
+- Family — 3 members + Timeline UI (1996→2000→2006→2010→2026)
+- Registration CTA
+- Contact strip
+- Footer
 
-### V3 (Session 3 - 30 March 2026)
-- [x] **Audio**: Replaced Web Audio API with actual MP3 flute file (/flute.mp3)
-- [x] **Header**: Text-only (no Om symbol, no peacock feather, no logo)
-- [x] **Hero**: Title "Shrimad Bhagavat Katha 2026" + smaller "Gyan Yajna", no separate year, new Krishna deity image, VISIBLE ON MOBILE
-- [x] **Quote**: Moved from Schedule to above Loving Memory, compact horizontal format
-- [x] **Loving Memory**: 4 individual circular photos in grid (Durga Baisa, Alka Ji, Ramswaroop Ji, Shanta Devi)
-- [x] **Vyas Peeth**: Single center column, Acharya Ji large photo, guru as small horizontal inline bar with Rambhadracharya actual image
-- [x] **Special Programs**: Reordered to Bhajan→Kalash→Havan
-- [x] **Episodes**: 7 individual day images (user-provided), removed large single image
-- [x] **Venue**: Image slideshow/carousel with 3 user-provided images, auto-slide + navigation
-- [x] **Registration CTA**: Button visibility improved (strong gold, bold, shadow)
-- [x] **Registration Form Part 2**: Removed "Expected Arrival Time" and "Number of People"
-- [x] **Registration Form Part 3**: "Number of People" is FIRST field, accommodation default ON, removed Room Type/Number of Rooms, full detailed summary of all inputs
-- [x] **WhatsApp**: Updated to +91 9825423650
-- [x] **Footer**: Admin link removed (admin only via direct /admin URL)
+### Zigzag Color Scheme (DONE)
+Alternating Navy (#0B1C3D) and Peach (#F8F1E5) across consecutive sections.
 
-### V3.1 (Session 4 - 30 March 2026)
-- [x] **Mobile hero opacity**: Increased Krishna image visibility (opacity 0.30, lighter gradient overlay)
-- [x] **Sticky language toggle**: Globe + EN/हिंदी button above sticky Register button at bottom-right
-- [x] **Announcement strip**: Animated golden marquee below navbar with scrolling registration message + CTA button
-- [x] **Form language toggle**: Globe toggle at top-right of registration form page
-- [x] **Section reorder**: Registration CTA moved below Family, above Contact Strip
+### Registration Form (DONE)
+- 3-step form: Contact Info → Attendance & Travel → Attendee Details
+- Dynamic attendee fields generated from "Number of People" input
+- Required arrival/departure dates
+- No WhatsApp redirect — redirects to /thank-you page
+- No accommodation toggle
 
-### P1 - Next
-- [ ] Hindi content for "About" section when user provides it
-- [ ] Family description text when user provides it
+### Admin Dashboard (DONE)
+- Username/Password login (4 hardcoded accounts)
+- 3-bucket dashboard: Approval Center, Final Guest List, Recycle Bin
+- Activity Logs tab (read-only)
+- CSV export (approved guests only)
+- Summary cards with counts by status
 
-### P2 - Future
-- [ ] "Share Event" WhatsApp generator button
-- [ ] QR Code for physical invitation → registration page bridge
+### Admin Credentials
+- arunpanchariya / arunlondon123
+- ashokpanchariya / ashokahmedabad123
+- satishpanchariya / satishmumbai123
+- basantmalpani / basantjaipur123
 
 ## API Endpoints
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | /api/registrations | Submit registration |
-| GET | /api/registrations/count | Get total count |
-| POST | /api/auth/login | Admin login |
-| GET | /api/auth/me | Get current user |
-| POST | /api/auth/logout | Admin logout |
-| GET | /api/admin/registrations | List all registrations |
-| GET | /api/admin/summary | Dashboard summary stats |
-| GET | /api/admin/export-csv | Export registrations CSV |
+- `POST /api/auth/login` — Admin login (username/password)
+- `GET /api/auth/me` — Get current admin user
+- `POST /api/registrations` — Create registration
+- `GET /api/registrations/count` — Public count
+- `GET /api/admin/registrations` — List all (auth required, optional ?status= filter)
+- `PUT /api/admin/registrations/{id}/status` — Approve/Delete/Restore
+- `GET /api/admin/activity-logs` — Activity log
+- `GET /api/admin/summary` — Counts by status
+- `GET /api/admin/export-csv` — CSV export (approved only)
 
-## DB Schema (registrations collection)
+## Database Schema
+### registrations collection
 ```json
 {
   "id": "uuid",
   "full_name": "string",
   "mobile": "string",
-  "email": "string (opt)",
-  "city": "string (opt)",
-  "country": "string (opt)",
+  "email": "string",
+  "city": "string",
+  "country": "string",
   "attendance_intent": "Yes|Most Probably|Maybe",
-  "arrival_date": "string",
-  "departure_date": "string",
-  "arrival_time": "string",
+  "arrival_date": "YYYY-MM-DD",
+  "departure_date": "YYYY-MM-DD",
   "days_attending": ["28 May", ...],
-  "num_people": "int",
-  "attendees": [{"name":"","category":"Adult|Child|Senior","special_needs":""}],
-  "need_accommodation": "bool",
-  "room_type": "string",
-  "num_rooms": "int",
+  "num_people": 3,
+  "attendees": [{"name": "", "category": "Adult", "special_needs": ""}],
   "message": "string",
-  "consent": "bool",
+  "consent": true,
+  "approval_status": "pending|approved|deleted",
   "created_at": "ISO datetime"
 }
 ```
+
+### activity_logs collection
+```json
+{
+  "id": "uuid",
+  "registration_id": "uuid",
+  "guest_name": "string",
+  "action": "approved|deleted|pending",
+  "old_status": "string",
+  "performed_by": "Admin Name",
+  "performed_at": "ISO datetime"
+}
+```
+
+## Remaining / Future Tasks
+- P2: Add "Add to Calendar" button
+- P2: QR Code integration for physical invitation mapping

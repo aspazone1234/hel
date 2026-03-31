@@ -7,6 +7,7 @@ import axios from "axios";
 import HomePage from "@/pages/HomePage";
 import RegisterPage from "@/pages/RegisterPage";
 import AdminPage from "@/pages/AdminPage";
+import ThankYouPage from "@/pages/ThankYouPage";
 
 axios.defaults.withCredentials = false;
 
@@ -18,6 +19,7 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/thank-you" element={<ThankYouPage />} />
             <Route path="/admin" element={<AdminPage />} />
           </Routes>
         </BrowserRouter>

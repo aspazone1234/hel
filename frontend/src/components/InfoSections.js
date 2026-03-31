@@ -77,12 +77,12 @@ function VenueSlideshow() {
 export function VenueSection() {
   const { t, lang } = useLang();
   return (
-    <section id="venue" data-testid="venue-section" className="py-20 sm:py-28 relative">
+    <section id="venue" data-testid="venue-section" className="py-20 sm:py-28 bg-[#0B1C3D] relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <FadeIn>
           <div className="text-center mb-12">
             <p className="text-[#D4AF37] text-sm tracking-[0.3em] uppercase mb-3">{t.venue.subtitle}</p>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.venue.title}</h2>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#F8F1E5]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.venue.title}</h2>
             <div className="gold-divider w-24 mx-auto mt-6" />
           </div>
         </FadeIn>
@@ -146,7 +146,7 @@ export function RegistrationCTA() {
   );
 }
 
-/* === FAMILY SECTION === */
+/* === FAMILY SECTION with Timeline === */
 export function FamilySection() {
   const { t, lang } = useLang();
   const fontHi = lang === "hi" ? "'Tiro Devanagari Hindi', serif" : "'Cormorant Garamond', serif";
@@ -172,7 +172,58 @@ export function FamilySection() {
               </div>
             ))}
           </div>
-          <p className="text-center text-[#0B1C3D]/60 text-sm" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{t.family.note}</p>
+          <p className="text-center text-[#0B1C3D]/60 text-sm mb-12" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{t.family.note}</p>
+        </FadeIn>
+
+        {/* Timeline */}
+        <FadeIn delay={400}>
+          <div className="max-w-3xl mx-auto">
+            <h3 className="text-center text-xl sm:text-2xl font-bold text-[#0B1C3D] mb-8" style={{ fontFamily: fontHi }}>
+              {t.family.timelineTitle}
+            </h3>
+            <div className="relative" data-testid="family-timeline">
+              {/* Center line */}
+              <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-[#D4AF37]/30 -translate-x-1/2 hidden sm:block" />
+              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-[#D4AF37]/30 sm:hidden" />
+
+              <div className="space-y-8 sm:space-y-0">
+                {t.family.timeline.map((item, i) => {
+                  const isLeft = i % 2 === 0;
+                  const isLast = i === t.family.timeline.length - 1;
+                  return (
+                    <div key={i} className={`relative flex items-center sm:mb-10 ${isLeft ? "sm:flex-row" : "sm:flex-row-reverse"}`} data-testid={`timeline-item-${i}`}>
+                      {/* Mobile layout */}
+                      <div className="sm:hidden flex items-center gap-4 pl-0">
+                        <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isLast ? "bg-[#D4AF37] shadow-lg shadow-[#D4AF37]/30" : "bg-[#0B1C3D] border-2 border-[#D4AF37]/50"}`}>
+                          <span className="text-[10px] font-bold text-white">{i + 1}</span>
+                        </div>
+                        <div className={`rounded-xl px-5 py-3 ${isLast ? "bg-[#D4AF37]/15 border-2 border-[#D4AF37]/40" : "bg-white border border-[#D4AF37]/20"}`}>
+                          <p className={`text-lg font-bold ${isLast ? "text-[#D4AF37]" : "text-[#0B1C3D]"}`} style={{ fontFamily: fontHi }}>{item.year}</p>
+                          <p className="text-[#0B1C3D]/60 text-sm" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{item.location}</p>
+                        </div>
+                      </div>
+
+                      {/* Desktop layout */}
+                      <div className="hidden sm:flex items-center w-full">
+                        <div className={`w-5/12 ${isLeft ? "text-right pr-8" : "text-left pl-8 order-2"}`}>
+                          <div className={`inline-block rounded-xl px-6 py-3 ${isLast ? "bg-[#D4AF37]/15 border-2 border-[#D4AF37]/40" : "bg-white border border-[#D4AF37]/20"} card-glow`}>
+                            <p className={`text-xl font-bold ${isLast ? "text-[#D4AF37]" : "text-[#0B1C3D]"}`} style={{ fontFamily: fontHi }}>{item.year}</p>
+                            <p className="text-[#0B1C3D]/60 text-sm" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{item.location}</p>
+                          </div>
+                        </div>
+                        <div className={`w-2/12 flex justify-center ${isLeft ? "" : "order-1"}`}>
+                          <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center ${isLast ? "bg-[#D4AF37] shadow-lg shadow-[#D4AF37]/30" : "bg-[#0B1C3D] border-2 border-[#D4AF37]/50"}`}>
+                            <span className="text-xs font-bold text-white">{i + 1}</span>
+                          </div>
+                        </div>
+                        <div className={`w-5/12 ${isLeft ? "order-2" : "text-right pr-8"}`} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
         </FadeIn>
       </div>
     </section>

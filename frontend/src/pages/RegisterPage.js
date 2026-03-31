@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, ChevronLeft, Plus, Trash2, CalendarIcon, MessageCircle, Globe } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, ArrowRight, ChevronLeft, CalendarIcon, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,6 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
@@ -26,7 +25,6 @@ const initial = {
   days_attending: [],
   num_people: 1,
   attendees: [{ name: "", category: "Adult", special_needs: "" }],
-  need_accommodation: true,
   message: "", consent: false,
 };
 
@@ -53,24 +51,37 @@ function DatePicker({ value, onChange, label, testId }) {
 
 export default function RegisterPage() {
   const { t, lang, toggleLang } = useLang();
+  const navigate = useNavigate();
   const STEPS = t.register.steps;
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(initial);
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState({});
 
   useEffect(() => { document.title = "Register - Shrimad Bhagwat Katha Gyan Yajna 2026"; }, []);
 
   const set = (key, val) => { setForm(f => ({ ...f, [key]: val })); setErrors(e => ({ ...e, [key]: undefined })); };
+
   const toggleDay = (day) => {
     setForm(f => ({ ...f, days_attending: f.days_attending.includes(day) ? f.days_attending.filter(d => d !== day) : [...f.days_attending, day] }));
   };
+
+  // When num_people changes, auto-generate attendee slots
+  const handleNumPeopleChange = (val) => {
+    const num = Math.max(1, Math.min(50, parseInt(val) || 1));
+    set("num_people", num);
+    setForm(f => {
+      const existing = f.attendees;
+      const newAttendees = Array.from({ length: num }, (_, i) =>
+        existing[i] || { name: "", category: "Adult", special_needs: "" }
+      );
+      return { ...f, num_people: num, attendees: newAttendees };
+    });
+  };
+
   const setAttendee = (idx, key, val) => {
     setForm(f => { const atts = [...f.attendees]; atts[idx] = { ...atts[idx], [key]: val }; return { ...f, attendees: atts }; });
   };
-  const addAttendee = () => setForm(f => ({ ...f, attendees: [...f.attendees, { name: "", category: "Adult", special_needs: "" }] }));
-  const removeAttendee = (idx) => setForm(f => ({ ...f, attendees: f.attendees.filter((_, i) => i !== idx) }));
 
   const validate = () => {
     const errs = {};
@@ -78,6 +89,10 @@ export default function RegisterPage() {
       if (!form.full_name.trim()) errs.full_name = true;
       if (!form.mobile.trim()) errs.mobile = true;
       else if (!/^[\d\s+\-()]{7,15}$/.test(form.mobile.trim())) errs.mobile_format = true;
+    }
+    if (step === 1) {
+      if (!form.arrival_date) errs.arrival_date = true;
+      if (!form.departure_date) errs.departure_date = true;
     }
     if (step === 2 && !form.consent) errs.consent = true;
     setErrors(errs);
@@ -90,39 +105,14 @@ export default function RegisterPage() {
     if (!validate()) return;
     setSubmitting(true);
     try {
-      const payload = { ...form, arrival_time: "", room_type: "", num_rooms: 0 };
-      await axios.post(`${API}/registrations`, payload);
-      setSubmitted(true);
+      const payload = { ...form };
+      const res = await axios.post(`${API}/registrations`, payload);
       toast.success(lang === "hi" ? "पंजीकरण सफल!" : "Registration submitted successfully!");
+      navigate("/thank-you", { state: { name: form.full_name, people: form.num_people, id: res.data?.id || "" } });
     } catch {
       toast.error(lang === "hi" ? "पंजीकरण विफल। पुनः प्रयास करें।" : "Failed to submit. Please try again.");
     } finally { setSubmitting(false); }
   };
-
-  if (submitted) {
-    const whatsappMsg = `Jai Shri Krishna! New Registration for Bhagwat Katha 2026:%0A%0AName: ${form.full_name}%0AMobile: ${form.mobile}%0ACity: ${form.city || 'N/A'}%0AAttendance: ${form.attendance_intent}%0ATotal People: ${form.num_people}%0AAccommodation: ${form.need_accommodation ? 'Yes' : 'No'}%0A%0ARegistered via Katha Website`;
-    const whatsappUrl = `https://wa.me/919825423650?text=${whatsappMsg}`;
-
-    return (
-      <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center px-4">
-        <div className="bg-white rounded-2xl p-8 sm:p-12 border border-[#D4AF37]/20 max-w-lg w-full text-center sacred-border" data-testid="registration-success">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6"><Check size={32} className="text-green-600" /></div>
-          <h2 className="text-3xl font-bold text-[#0B1C3D] mb-3" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.successTitle}</h2>
-          <p className="text-[#0B1C3D]/60 mb-6">{t.register.successMsg}</p>
-          <div className="bg-[#F8F1E5] rounded-xl p-4 border border-[#D4AF37]/10 mb-6">
-            <p className="text-[#0B1C3D]/60 text-sm mb-3">{lang === "hi" ? "WhatsApp द्वारा आयोजक को सूचित करें:" : "Notify the organizer via WhatsApp:"}</p>
-            <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" data-testid="whatsapp-notify-btn"
-              className="inline-flex items-center gap-2 bg-[#25D366] text-white px-6 py-3 rounded-full font-semibold hover:bg-[#25D366]/90 transition-all shadow-md">
-              <MessageCircle size={18} /> {t.register.whatsappNotify}
-            </a>
-          </div>
-          <Link to="/" className="bg-[#D4AF37] text-[#0B1C3D] px-8 py-3 rounded-full font-semibold hover:bg-[#D4AF37]/90 transition-all inline-block" data-testid="back-home-btn">
-            {t.register.backHome}
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   const progress = ((step + 1) / STEPS.length) * 100;
 
@@ -140,7 +130,7 @@ export default function RegisterPage() {
               className="flex items-center gap-1.5 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-full px-4 py-2 text-sm font-semibold transition-all hover:bg-[#D4AF37]/20 hover:border-[#D4AF37]/50"
             >
               <Globe size={14} className="text-[#D4AF37]" />
-              <span className="text-[#D4AF37]">{lang === "en" ? "हिंदी" : "English"}</span>
+              <span className="text-[#D4AF37]">{lang === "en" ? t.langLabel : "English"}</span>
             </button>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.pageTitle}</h1>
@@ -160,7 +150,7 @@ export default function RegisterPage() {
 
         <div className="bg-white rounded-2xl p-6 sm:p-8 border border-[#D4AF37]/20 sacred-border form-sacred" data-testid="registration-form">
 
-          {/* Step 1: Contact Info (unchanged) */}
+          {/* Step 1: Contact Info */}
           {step === 0 && (
             <div className="space-y-5" data-testid="form-step-1">
               <h3 className="text-xl font-bold text-[#0B1C3D] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.step1Title}</h3>
@@ -192,7 +182,7 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* Step 2: Attendance (REMOVED: arrival_time, num_people) */}
+          {/* Step 2: Attendance + Travel (arrival/departure REQUIRED, num_people here) */}
           {step === 1 && (
             <div className="space-y-5" data-testid="form-step-2">
               <h3 className="text-xl font-bold text-[#0B1C3D] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.step2Title}</h3>
@@ -208,8 +198,14 @@ export default function RegisterPage() {
                 </RadioGroup>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <DatePicker label={t.register.arrivalDate} value={form.arrival_date} onChange={v => set("arrival_date", v)} testId="input-arrival-date" />
-                <DatePicker label={t.register.departureDate} value={form.departure_date} onChange={v => set("departure_date", v)} testId="input-departure-date" />
+                <div>
+                  <DatePicker label={t.register.arrivalDate} value={form.arrival_date} onChange={v => set("arrival_date", v)} testId="input-arrival-date" />
+                  {errors.arrival_date && <p className="text-red-500 text-xs mt-1">{lang === "hi" ? "आगमन तिथि आवश्यक है" : "Arrival date is required"}</p>}
+                </div>
+                <div>
+                  <DatePicker label={t.register.departureDate} value={form.departure_date} onChange={v => set("departure_date", v)} testId="input-departure-date" />
+                  {errors.departure_date && <p className="text-red-500 text-xs mt-1">{lang === "hi" ? "प्रस्थान तिथि आवश्यक है" : "Departure date is required"}</p>}
+                </div>
               </div>
               <div>
                 <Label className="text-[#0B1C3D]/70 text-sm mb-3 block">{t.register.daysAttending}</Label>
@@ -222,29 +218,25 @@ export default function RegisterPage() {
                   ))}
                 </div>
               </div>
+              <div>
+                <Label className="text-[#0B1C3D]/70 text-sm">{t.register.numPeople}</Label>
+                <Input data-testid="input-num-people" type="number" min={1} max={50} value={form.num_people} onChange={e => handleNumPeopleChange(e.target.value)} className="mt-1.5 bg-white border-[#D4AF37]/20 max-w-[180px]" />
+              </div>
             </div>
           )}
 
-          {/* Step 3: Attendees + Accommodation (num_people FIRST, accommodation default ON, no room fields) */}
+          {/* Step 3: Attendee Details (dynamically generated from num_people) */}
           {step === 2 && (
             <div className="space-y-5" data-testid="form-step-3">
               <h3 className="text-xl font-bold text-[#0B1C3D] mb-4" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.step3Title}</h3>
 
-              {/* Number of People - FIRST FIELD */}
-              <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{t.register.numPeople}</Label>
-                <Input data-testid="input-num-people" type="number" min={1} value={form.num_people} onChange={e => set("num_people", Math.max(1, parseInt(e.target.value) || 1))} className="mt-1.5 bg-white border-[#D4AF37]/20 max-w-[150px]" />
-              </div>
+              <p className="text-[#0B1C3D]/50 text-sm mb-2">
+                {lang === "hi" ? `कृपया ${form.num_people} सदस्यों का विवरण दें:` : `Please provide details for ${form.num_people} attendee${form.num_people > 1 ? "s" : ""}:`}
+              </p>
 
-              {/* Attendees */}
               {form.attendees.map((att, i) => (
-                <div key={i} className="border border-[#D4AF37]/10 rounded-xl p-4 space-y-3 bg-[#F8F1E5]/30">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-medium text-[#D4AF37]">{lang === "hi" ? `व्यक्ति ${i + 1}` : `Person ${i + 1}`}</span>
-                    {form.attendees.length > 1 && (
-                      <button onClick={() => removeAttendee(i)} className="text-red-400 hover:text-red-600 p-1" data-testid={`remove-attendee-${i}`}><Trash2 size={14} /></button>
-                    )}
-                  </div>
+                <div key={i} className="border border-[#D4AF37]/10 rounded-xl p-4 space-y-3 bg-[#F8F1E5]/30" data-testid={`attendee-block-${i}`}>
+                  <span className="text-sm font-medium text-[#D4AF37]">{lang === "hi" ? `व्यक्ति ${i + 1}` : `Person ${i + 1}`}</span>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <Input data-testid={`attendee-name-${i}`} placeholder={t.register.attendeeName} value={att.name} onChange={e => setAttendee(i, "name", e.target.value)} className="bg-white border-[#D4AF37]/20" />
                     <Select value={att.category} onValueChange={v => setAttendee(i, "category", v)}>
@@ -259,17 +251,6 @@ export default function RegisterPage() {
                   </div>
                 </div>
               ))}
-              <Button variant="outline" onClick={addAttendee} className="border-[#D4AF37]/30 text-[#D4AF37] hover:bg-[#D4AF37]/10" data-testid="add-attendee-btn">
-                <Plus size={16} className="mr-1" /> {t.register.addPerson}
-              </Button>
-
-              {/* Accommodation - Simple Toggle, default ON */}
-              <div className="border-t border-[#D4AF37]/10 pt-5 mt-5">
-                <div className="flex items-center gap-3">
-                  <Switch checked={form.need_accommodation} onCheckedChange={v => set("need_accommodation", v)} data-testid="switch-accommodation" />
-                  <Label className="text-base font-medium">{t.register.accommodation}</Label>
-                </div>
-              </div>
 
               {/* Message */}
               <div>
@@ -286,13 +267,11 @@ export default function RegisterPage() {
               </div>
               {errors.consent && <p className="text-red-500 text-xs">{lang === "hi" ? "कृपया सहमति दें" : "Please confirm consent"}</p>}
 
-              {/* Full Detailed Summary */}
+              {/* Summary */}
               <div className="bg-[#F8F1E5] rounded-xl p-5 border border-[#D4AF37]/15" data-testid="registration-summary">
                 <h4 className="text-base font-bold text-[#0B1C3D] mb-4 pb-2 border-b border-[#D4AF37]/20" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
                   {lang === "hi" ? "पंजीकरण सारांश" : "Registration Summary"}
                 </h4>
-
-                {/* Part 1 Summary */}
                 <div className="mb-4">
                   <p className="text-xs text-[#D4AF37] font-semibold uppercase tracking-wider mb-2">{t.register.step1Title}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
@@ -300,46 +279,29 @@ export default function RegisterPage() {
                     <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.mobile}:</span><span className="text-[#0B1C3D] font-medium">{form.mobile || "-"}</span></div>
                     {form.email && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "ईमेल" : "Email"}:</span><span className="text-[#0B1C3D] font-medium">{form.email}</span></div>}
                     {form.city && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "शहर" : "City"}:</span><span className="text-[#0B1C3D] font-medium">{form.city}</span></div>}
-                    {form.country && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "देश" : "Country"}:</span><span className="text-[#0B1C3D] font-medium">{form.country}</span></div>}
                   </div>
                 </div>
-
-                {/* Part 2 Summary */}
                 <div className="mb-4">
                   <p className="text-xs text-[#D4AF37] font-semibold uppercase tracking-wider mb-2">{t.register.step2Title}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
                     <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.willAttend}:</span><span className="text-[#0B1C3D] font-medium">{form.attendance_intent}</span></div>
-                    {form.arrival_date && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.arrivalDate}:</span><span className="text-[#0B1C3D] font-medium">{form.arrival_date}</span></div>}
-                    {form.departure_date && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.departureDate}:</span><span className="text-[#0B1C3D] font-medium">{form.departure_date}</span></div>}
-                    {form.days_attending.length > 0 && <div className="flex justify-between col-span-full"><span className="text-[#0B1C3D]/50">{t.register.daysAttending}:</span><span className="text-[#0B1C3D] font-medium">{form.days_attending.join(", ")}</span></div>}
-                  </div>
-                </div>
-
-                {/* Part 3 Summary */}
-                <div>
-                  <p className="text-xs text-[#D4AF37] font-semibold uppercase tracking-wider mb-2">{t.register.step3Title}</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
                     <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.numPeople}:</span><span className="text-[#0B1C3D] font-medium">{form.num_people}</span></div>
-                    <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.accommodation}:</span><span className="text-[#0B1C3D] font-medium">{form.need_accommodation ? (lang === "hi" ? "हाँ" : "Yes") : (lang === "hi" ? "नहीं" : "No")}</span></div>
+                    {form.arrival_date && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "आगमन" : "Arrival"}:</span><span className="text-[#0B1C3D] font-medium">{form.arrival_date}</span></div>}
+                    {form.departure_date && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "प्रस्थान" : "Departure"}:</span><span className="text-[#0B1C3D] font-medium">{form.departure_date}</span></div>}
+                    {form.days_attending.length > 0 && <div className="flex justify-between col-span-full"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "दिन" : "Days"}:</span><span className="text-[#0B1C3D] font-medium">{form.days_attending.join(", ")}</span></div>}
                   </div>
-                  {form.attendees.filter(a => a.name).length > 0 && (
-                    <div className="mt-2">
-                      <p className="text-[#0B1C3D]/50 text-xs mb-1">{lang === "hi" ? "सदस्य:" : "Attendees:"}</p>
-                      {form.attendees.filter(a => a.name).map((att, i) => (
-                        <p key={i} className="text-sm text-[#0B1C3D]">
-                          {att.name} <span className="text-[#0B1C3D]/40">({att.category})</span>
-                          {att.special_needs && <span className="text-[#E67E22] text-xs ml-1">- {att.special_needs}</span>}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {form.message && (
-                    <div className="mt-2">
-                      <p className="text-[#0B1C3D]/50 text-xs">{t.register.message}:</p>
-                      <p className="text-sm text-[#0B1C3D] italic">{form.message}</p>
-                    </div>
-                  )}
                 </div>
+                {form.attendees.filter(a => a.name).length > 0 && (
+                  <div>
+                    <p className="text-xs text-[#D4AF37] font-semibold uppercase tracking-wider mb-2">{t.register.step3Title}</p>
+                    {form.attendees.filter(a => a.name).map((att, i) => (
+                      <p key={i} className="text-sm text-[#0B1C3D]">
+                        {att.name} <span className="text-[#0B1C3D]/40">({att.category})</span>
+                        {att.special_needs && <span className="text-[#E67E22] text-xs ml-1">- {att.special_needs}</span>}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
