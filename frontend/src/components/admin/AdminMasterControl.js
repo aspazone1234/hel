@@ -217,7 +217,13 @@ function RoomManagementTab({ authHeaders, user }) {
     } catch { toast.error("Unassign failed"); }
   };
 
-  const handleExportPDF = () => window.open(`${API}/admin/export-pdf?report_type=rooms`, "_blank");
+  const handleExportPDF = async () => {
+    try {
+      const res = await axios.get(`${API}/admin/export-pdf`, { headers: authHeaders(), params: { report_type: "rooms" }, responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a"); a.href = url; a.download = "room_allocation.pdf"; a.click(); URL.revokeObjectURL(url);
+    } catch { toast.error("PDF export failed"); }
+  };
 
   const available = rooms.filter(r => r.status === "available").length;
   const occupied = rooms.filter(r => r.status === "occupied").length;

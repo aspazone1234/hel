@@ -72,8 +72,13 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onMana
     } catch { toast.error("Failed to delete"); }
   };
 
-  const handleExportPDF = () => {
-    window.open(`${API}/admin/export-pdf?report_type=guestlist`, "_blank");
+  const handleExportPDF = async () => {
+    try {
+      const res = await axios.get(`${API}/admin/export-pdf`, { headers: authHeaders(), params: { report_type: "guestlist" }, responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+      const a = document.createElement("a"); a.href = url; a.download = "guest_list.pdf"; a.click(); URL.revokeObjectURL(url);
+      toast.success("PDF exported");
+    } catch { toast.error("PDF export failed"); }
   };
   const handleExportCSV = async () => {
     try {

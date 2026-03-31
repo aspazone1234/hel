@@ -222,6 +222,15 @@ async def create_manual_entry(entry: ManualEntryCreate, request: Request):
     await log_audit("manual_entry", "registration", doc["id"], doc["full_name"], f"Manual entry created by {user['name']}", user["name"])
     return doc
 
+# ─── Admin: Duplicate Check (must be before {reg_id} routes) ───
+@api_router.get("/admin/registrations/check-duplicate")
+async def check_duplicate(request: Request, mobile: str = ""):
+    await get_current_user(request)
+    if not mobile:
+        return {"duplicates": []}
+    dupes = await db.registrations.find({"mobile": mobile, "approval_status": {"$ne": "deleted"}}, {"_id": 0, "id": 1, "full_name": 1, "mobile": 1, "created_at": 1, "entry_type": 1}).to_list(20)
+    return {"duplicates": dupes}
+
 # ─── Admin: List Registrations (with search, filter, pagination) ───
 @api_router.get("/admin/registrations")
 async def get_registrations(
@@ -382,15 +391,6 @@ async def bulk_action(body: BulkAction, request: Request):
         await log_audit(f"bulk_{body.action}", "registration", rid, reg.get("full_name", ""), f"Bulk {body.action}: {old_status} → {updates.get('approval_status', old_status)}", user["name"])
         count += 1
     return {"message": f"Bulk {body.action} completed", "affected": count}
-
-# ─── Admin: Duplicate Check ───
-@api_router.get("/admin/registrations/check-duplicate")
-async def check_duplicate(request: Request, mobile: str = ""):
-    await get_current_user(request)
-    if not mobile:
-        return {"duplicates": []}
-    dupes = await db.registrations.find({"mobile": mobile, "approval_status": {"$ne": "deleted"}}, {"_id": 0, "id": 1, "full_name": 1, "mobile": 1, "created_at": 1, "entry_type": 1}).to_list(20)
-    return {"duplicates": dupes}
 
 # ─── Room Management ───
 @api_router.get("/admin/rooms")
