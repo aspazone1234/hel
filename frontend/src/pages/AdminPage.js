@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   ChevronLeft, Eye, EyeOff, LogOut, LayoutDashboard, Users,
-  FileText, DoorOpen, MessageSquare, ClipboardList, Menu, X
+  FileText, DoorOpen, MessageSquare, ClipboardList, Menu, X, Shield, Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import AdminMasterControl from "@/components/admin/AdminMasterControl";
 import AdminRoomManagement from "@/components/admin/AdminRoomManagement";
 import AdminBulkMessaging from "@/components/admin/AdminBulkMessaging";
 import AdminAuditLog from "@/components/admin/AdminAuditLog";
+import AdminManagement from "@/components/admin/AdminManagement";
 import { GuestDetailDialog, ManualEntryDialog } from "@/components/admin/AdminDialogs";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -88,10 +89,11 @@ function AdminLogin({ onLogin }) {
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "guestlist", label: "Final Guest List", icon: Users },
-  { id: "formmanagement", label: "Website Form Management", icon: FileText },
+  { id: "formapproval", label: "Website Form Approval", icon: FileText },
   { id: "roommanagement", label: "Room Management", icon: DoorOpen },
   { id: "messaging", label: "Bulk Guest Messaging", icon: MessageSquare },
   { id: "auditlog", label: "Audit Log", icon: ClipboardList },
+  { id: "adminmanagement", label: "Admin Management", icon: Shield },
 ];
 
 /* ─── Admin Shell ─── */
@@ -101,6 +103,11 @@ function AdminShell({ user, onLogout }) {
   const [detailReg, setDetailReg] = useState(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const navItems = NAV_ITEMS.filter(item => {
+    if (item.id === "adminmanagement") return user.role === "superadmin";
+    return true;
+  });
 
   useEffect(() => { document.title = "Shrimad Bhagavat Management Portal 2026"; }, []);
 
@@ -131,7 +138,7 @@ function AdminShell({ user, onLogout }) {
         </div>
 
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map(item => (
+          {navItems.map(item => (
             <button
               key={item.id}
               onClick={() => handleNavigate(item.id)}
@@ -158,9 +165,18 @@ function AdminShell({ user, onLogout }) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
         <header className="lg:hidden bg-white border-b border-[#D4AF37]/20 px-4 py-3 flex items-center justify-between shrink-0">
-          <button onClick={() => setSidebarOpen(true)} className="text-[#0B1C3D]/70" data-testid="mobile-menu-btn"><Menu size={24} /></button>
-          <h1 className="text-lg font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            {NAV_ITEMS.find(n => n.id === activeView)?.label || "Dashboard"}
+          <div className="flex items-center gap-2">
+            <button onClick={() => setSidebarOpen(true)} className="text-[#0B1C3D]/70 relative" data-testid="mobile-menu-btn">
+              <Menu size={24} />
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-[#D4AF37] rounded-full animate-ping" />
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-[#D4AF37] rounded-full" />
+            </button>
+            <span className="text-[10px] text-[#D4AF37] font-semibold animate-pulse flex items-center gap-1">
+              <Sparkles size={10} /> Tap for all settings
+            </span>
+          </div>
+          <h1 className="text-base font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+            {navItems.find(n => n.id === activeView)?.label || "Dashboard"}
           </h1>
           <div className="w-6" />
         </header>
@@ -169,10 +185,11 @@ function AdminShell({ user, onLogout }) {
           <div className="max-w-7xl mx-auto">
             {activeView === "dashboard" && <AdminDashboardView key={`d-${refreshKey}`} user={user} authHeaders={() => authHeaders()} onNavigate={handleNavigate} />}
             {activeView === "guestlist" && <AdminGuestList key={`g-${refreshKey}`} user={user} authHeaders={() => authHeaders()} onViewDetail={setDetailReg} onAddManual={() => setShowManualEntry(true)} />}
-            {activeView === "formmanagement" && <AdminMasterControl key={`f-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "formapproval" && <AdminMasterControl key={`f-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "roommanagement" && <AdminRoomManagement key={`r-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "messaging" && <AdminBulkMessaging key={`m-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "auditlog" && <AdminAuditLog key={`a-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "adminmanagement" && <AdminManagement key={`am-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
           </div>
         </main>
       </div>

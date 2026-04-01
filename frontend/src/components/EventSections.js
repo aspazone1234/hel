@@ -206,10 +206,13 @@ export function AcharyaSection() {
   );
 }
 
-/* === SCHEDULE SECTION (Quote removed) === */
+/* === SCHEDULE SECTION (Merged with Other Programmes) === */
 export function ScheduleSection() {
   const { t, lang } = useLang();
   const fontHi = lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined;
+  const icons = [<Music size={20} />, <Sparkles size={20} />, <Flame size={20} />];
+  const reordered = [t.specialPrograms.programs[1], t.specialPrograms.programs[0], t.specialPrograms.programs[2]];
+
   return (
     <section id="schedule" data-testid="schedule-section" className="py-20 sm:py-28 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -232,35 +235,22 @@ export function ScheduleSection() {
             </FadeIn>
           ))}
         </div>
-      </div>
-    </section>
-  );
-}
 
-/* === SPECIAL PROGRAMS (Reordered: Bhajan → Kalash → Havan) === */
-export function SpecialProgramsSection() {
-  const { t, lang } = useLang();
-  const fontHi = lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined;
-  const icons = [<Music size={20} />, <Sparkles size={20} />, <Flame size={20} />];
-  const reordered = [t.specialPrograms.programs[1], t.specialPrograms.programs[0], t.specialPrograms.programs[2]];
-
-  return (
-    <section data-testid="special-programs-section" className="py-16 sm:py-20 bg-[#0B1C3D] relative">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Other Programmes — merged into same section */}
         <FadeIn>
-          <div className="text-center mb-10">
-            <h3 className="text-2xl sm:text-3xl font-bold text-[#F8F1E5]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.specialPrograms.title}</h3>
+          <div className="text-center mt-16 mb-8">
+            <h3 className="text-2xl sm:text-3xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.specialPrograms.title}</h3>
             <div className="gold-divider w-16 mx-auto mt-4" />
           </div>
           <div className="grid sm:grid-cols-3 gap-6 max-w-4xl mx-auto">
             {reordered.map((prog, i) => (
-              <div key={i} className="bg-[#0B1C3D] border border-[#D4AF37]/20 rounded-2xl p-6 card-glow text-center">
+              <div key={i} className="bg-white border border-[#D4AF37]/20 rounded-2xl p-6 card-glow text-center">
                 <div className="w-12 h-12 rounded-full bg-[#D4AF37]/10 flex items-center justify-center mx-auto mb-4 text-[#D4AF37] animate-flicker">
                   {icons[i]}
                 </div>
-                <h4 className="text-lg font-bold text-[#F8F1E5] mb-2" style={{ fontFamily: fontHi || "'Cormorant Garamond', serif" }}>{prog.name}</h4>
-                <p className="text-[#F8F1E5]/50 text-sm" style={{ fontFamily: fontHi }}>{prog.date}</p>
-                <p className="text-[#D4AF37] font-semibold" style={{ fontFamily: fontHi }}>{prog.time}</p>
+                <h4 className="text-lg font-bold text-[#0B1C3D] mb-2" style={{ fontFamily: fontHi || "'Cormorant Garamond', serif" }}>{prog.name}</h4>
+                <p className="text-[#0B1C3D]/50 text-sm" style={{ fontFamily: fontHi }}>{prog.date}</p>
+                <p className="text-[#E67E22] font-semibold" style={{ fontFamily: fontHi }}>{prog.time}</p>
               </div>
             ))}
           </div>
@@ -270,18 +260,20 @@ export function SpecialProgramsSection() {
   );
 }
 
+/* === (SpecialProgramsSection merged into ScheduleSection above) === */
+
 /* === KATHA EPISODES - Individual Day Images === */
 export function KathaEpisodesSection() {
   const { t, lang } = useLang();
   const fontHi = lang === "hi" ? "'Tiro Devanagari Hindi', serif" : "'Cormorant Garamond', serif";
 
   return (
-    <section id="katha-themes" data-testid="katha-episodes-section" className="py-20 sm:py-28 relative">
+    <section id="katha-themes" data-testid="katha-episodes-section" className="py-20 sm:py-28 bg-[#0B1C3D] relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <FadeIn>
           <div className="text-center mb-12">
             <p className="text-[#D4AF37] text-sm tracking-[0.3em] uppercase mb-3">{t.episodes.subtitle}</p>
-            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.episodes.title}</h2>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#F8F1E5]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.episodes.title}</h2>
             <div className="gold-divider w-24 mx-auto mt-6" />
           </div>
         </FadeIn>
@@ -289,7 +281,7 @@ export function KathaEpisodesSection() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
           {t.episodes.days.map((theme, i) => (
             <FadeIn key={i} delay={i * 80}>
-              <div className="bg-white rounded-2xl border border-[#D4AF37]/15 card-glow group relative overflow-hidden h-full">
+              <div className="bg-[#F8F1E5] rounded-2xl border border-[#D4AF37]/15 card-glow group relative overflow-hidden h-full">
                 <div className="h-40 sm:h-44 overflow-hidden">
                   <img src={EPISODE_IMAGES[i]} alt={theme.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
                 </div>

@@ -178,7 +178,7 @@ export default function RegisterPage() {
               </div>
               <div>
                 <Label className="text-[#0B1C3D]/70 text-sm">{t.register.address}</Label>
-                <Input data-testid="input-address" value={form.address} onChange={e => set("address", e.target.value)} placeholder={lang === "hi" ? "शहर, देश" : "City, Country"} className={`mt-1.5 bg-white border-[#D4AF37]/20 ${errors.address ? "border-red-400" : ""}`} />
+                <Input data-testid="input-address" value={form.address} onChange={e => set("address", e.target.value)} placeholder={lang === "hi" ? "पता" : "Address"} className={`mt-1.5 bg-white border-[#D4AF37]/20 ${errors.address ? "border-red-400" : ""}`} />
                 {errors.address && <p className="text-red-500 text-xs mt-1">{lang === "hi" ? "पता आवश्यक है" : "Address is required"}</p>}
               </div>
             </div>

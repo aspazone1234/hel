@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, Download, Plus, Eye, Edit2, Trash2, RotateCcw, X, Check, Filter } from "lucide-react";
+import { Search, Download, Plus, Eye, Edit2, Trash2, RotateCcw, X, Filter, DoorOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,16 +14,14 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
   const [regs, setRegs] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [arrDateFrom, setArrDateFrom] = useState("");
-  const [arrDateTo, setArrDateTo] = useState("");
-  const [depDateFrom, setDepDateFrom] = useState("");
-  const [depDateTo, setDepDateTo] = useState("");
+  const [arrDate, setArrDate] = useState("");
+  const [depDate, setDepDate] = useState("");
   const [arrivalFilter, setArrivalFilter] = useState("all");
   const [selected, setSelected] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editReg, setEditReg] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [arrivalRoomModal, setArrivalRoomModal] = useState(null);
   const [showRecycleBin, setShowRecycleBin] = useState(false);
   const [deletedRegs, setDeletedRegs] = useState([]);
   const perPage = 50;
@@ -32,18 +30,15 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
     setLoading(true);
     try {
       const params = { status: "approved", page, per_page: perPage };
-      if (search) params.search = search;
-      if (arrDateFrom) params.arrival_from = arrDateFrom;
-      if (arrDateTo) params.arrival_to = arrDateTo;
-      if (depDateFrom) params.departure_from = depDateFrom;
-      if (depDateTo) params.departure_to = depDateTo;
+      if (arrDate) params.arrival_date = arrDate;
+      if (depDate) params.departure_date = depDate;
       if (arrivalFilter !== "all") params.arrival_status = arrivalFilter;
       const { data } = await axios.get(`${API}/admin/registrations`, { headers: authHeaders(), params });
       setRegs(data.data || []);
       setTotal(data.total || 0);
     } catch { toast.error("Failed to load guests"); }
     finally { setLoading(false); }
-  }, [authHeaders, page, search, arrDateFrom, arrDateTo, depDateFrom, depDateTo, arrivalFilter]);
+  }, [authHeaders, page, arrDate, depDate, arrivalFilter]);
 
   const fetchDeleted = useCallback(async () => {
     try {
@@ -55,13 +50,16 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
   useEffect(() => { fetchGuests(); }, [fetchGuests]);
   useEffect(() => { fetchDeleted(); }, [fetchDeleted]);
 
-  const clearFilters = () => { setSearch(""); setArrDateFrom(""); setArrDateTo(""); setDepDateFrom(""); setDepDateTo(""); setArrivalFilter("all"); setPage(1); };
-
+  const clearFilters = () => { setArrDate(""); setDepDate(""); setArrivalFilter("all"); setPage(1); };
   const toggleSelect = (id) => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id]);
   const toggleAll = () => setSelected(s => s.length === regs.length ? [] : regs.map(r => r.id));
 
   const handleArrivalChange = (reg, newStatus) => {
-    setConfirmAction({ type: "arrival", reg, newStatus, message: `Are you sure you want to change arrival status to "${newStatus}"?` });
+    if (newStatus === "Arrived" && reg.arrival_status !== "Arrived") {
+      setArrivalRoomModal(reg);
+    } else {
+      setConfirmAction({ type: "arrival", reg, newStatus, message: `Are you sure you want to change this status to "${newStatus}"?` });
+    }
   };
 
   const confirmActionExec = async () => {
@@ -81,9 +79,7 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
         await axios.delete(`${API}/admin/registrations/${reg.id}/permanent`, { headers: authHeaders() });
         toast.success("Permanently deleted");
       }
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Action failed");
-    }
+    } catch (err) { toast.error(err.response?.data?.detail || "Action failed"); }
     setConfirmAction(null);
     fetchGuests();
     fetchDeleted();
@@ -181,33 +177,21 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
         </div>
       </div>
 
-      {/* Search Row */}
-      <div className="relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/30" />
-        <Input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, mobile, address..." className="pl-9 bg-white border-[#D4AF37]/20" data-testid="guest-search" />
-      </div>
-
-      {/* Filters Row */}
-      <div className="flex flex-wrap items-end gap-3 bg-[#F8F1E5]/50 rounded-xl p-3 border border-[#D4AF37]/10">
+      {/* Simplified Filters: Arriving Date, Departure Date, Arrival Status */}
+      <div className="flex flex-wrap items-end gap-4 bg-[#F8F1E5]/50 rounded-xl p-3 border border-[#D4AF37]/10">
         <Filter size={16} className="text-[#D4AF37] shrink-0 mt-5" />
         <div>
-          <label className="text-[10px] text-[#0B1C3D]/50 uppercase tracking-wider block mb-1">Arrival Date</label>
-          <div className="flex gap-1">
-            <Input type="date" value={arrDateFrom} onChange={e => { setArrDateFrom(e.target.value); setPage(1); }} className="h-8 text-xs w-32 bg-white" />
-            <Input type="date" value={arrDateTo} onChange={e => { setArrDateTo(e.target.value); setPage(1); }} className="h-8 text-xs w-32 bg-white" />
-          </div>
+          <label className="text-[10px] text-[#0B1C3D]/50 uppercase tracking-wider block mb-1">Arriving Date</label>
+          <Input type="date" value={arrDate} onChange={e => { setArrDate(e.target.value); setPage(1); }} className="h-8 text-xs w-36 bg-white" data-testid="filter-arrival-date" />
         </div>
         <div>
           <label className="text-[10px] text-[#0B1C3D]/50 uppercase tracking-wider block mb-1">Departure Date</label>
-          <div className="flex gap-1">
-            <Input type="date" value={depDateFrom} onChange={e => { setDepDateFrom(e.target.value); setPage(1); }} className="h-8 text-xs w-32 bg-white" />
-            <Input type="date" value={depDateTo} onChange={e => { setDepDateTo(e.target.value); setPage(1); }} className="h-8 text-xs w-32 bg-white" />
-          </div>
+          <Input type="date" value={depDate} onChange={e => { setDepDate(e.target.value); setPage(1); }} className="h-8 text-xs w-36 bg-white" data-testid="filter-departure-date" />
         </div>
         <div>
           <label className="text-[10px] text-[#0B1C3D]/50 uppercase tracking-wider block mb-1">Arrival Status</label>
           <Select value={arrivalFilter} onValueChange={v => { setArrivalFilter(v); setPage(1); }}>
-            <SelectTrigger className="h-8 text-xs w-36 bg-white"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-8 text-xs w-36 bg-white" data-testid="filter-arrival-status"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
               <SelectItem value="Not Arrived">Not Arrived</SelectItem>
@@ -217,7 +201,7 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
           </Select>
         </div>
         <Button size="sm" variant="ghost" onClick={clearFilters} className="h-8 text-xs text-red-500" data-testid="clear-filters-btn">
-          <X size={12} className="mr-1" /> Clear Filters
+          <X size={12} className="mr-1" /> Clear
         </Button>
       </div>
 
@@ -272,9 +256,15 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex gap-1">
-                      <button onClick={() => onViewDetail(r)} className="p-1.5 rounded-lg hover:bg-[#D4AF37]/10 text-[#0B1C3D]/50 hover:text-[#D4AF37]" data-testid={`view-${r.id}`}><Eye size={14} /></button>
-                      <button onClick={() => setEditReg(r)} className="p-1.5 rounded-lg hover:bg-blue-50 text-[#0B1C3D]/50 hover:text-blue-600" data-testid={`edit-${r.id}`}><Edit2 size={14} /></button>
-                      <button onClick={() => setConfirmAction({ type: "delete", reg: r, message: "Move this entry to the Recycle Bin?" })} className="p-1.5 rounded-lg hover:bg-red-50 text-[#0B1C3D]/50 hover:text-red-500" data-testid={`delete-${r.id}`}><Trash2 size={14} /></button>
+                      <Button size="sm" variant="ghost" onClick={() => onViewDetail(r)} className="h-7 text-xs px-2 text-[#0B1C3D]/60 hover:text-[#D4AF37]" data-testid={`view-${r.id}`}>
+                        <Eye size={12} className="mr-1" /> View
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditReg(r)} className="h-7 text-xs px-2 text-[#0B1C3D]/60 hover:text-blue-600" data-testid={`edit-${r.id}`}>
+                        <Edit2 size={12} className="mr-1" /> Edit
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmAction({ type: "delete", reg: r, message: "Move this entry to the Recycle Bin?" })} className="h-7 text-xs px-2 text-[#0B1C3D]/60 hover:text-red-500" data-testid={`delete-${r.id}`}>
+                        <Trash2 size={12} className="mr-1" /> Delete
+                      </Button>
                     </div>
                   </td>
                 </tr>
@@ -282,7 +272,6 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
             </tbody>
           </table>
         </div>
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-[#D4AF37]/10">
             <span className="text-xs text-[#0B1C3D]/50">Page {page} of {totalPages} ({total} entries)</span>
@@ -306,12 +295,18 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
         </DialogContent>
       </Dialog>
 
+      {/* Arrival + Room Assignment Modal */}
+      {arrivalRoomModal && (
+        <ArrivalRoomModal reg={arrivalRoomModal} authHeaders={authHeaders} onClose={() => setArrivalRoomModal(null)} onDone={() => { setArrivalRoomModal(null); fetchGuests(); }} />
+      )}
+
       {/* Edit Dialog */}
       {editReg && <EditGuestDialog reg={editReg} onClose={() => setEditReg(null)} authHeaders={authHeaders} onSaved={() => { setEditReg(null); fetchGuests(); }} />}
     </div>
   );
 }
 
+/* === Arrival Status Toggle === */
 function ArrivalStatusToggle({ status, onChange }) {
   const colors = {
     "Not Arrived": "bg-gray-100 text-gray-600 border-gray-200",
@@ -332,6 +327,105 @@ function ArrivalStatusToggle({ status, onChange }) {
   );
 }
 
+/* === Arrival + Room Assignment Modal === */
+function ArrivalRoomModal({ reg, authHeaders, onClose, onDone }) {
+  const [rooms, setRooms] = useState([]);
+  const [search, setSearch] = useState("");
+  const [selectedRoom, setSelectedRoom] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loadingRooms, setLoadingRooms] = useState(true);
+
+  useEffect(() => {
+    setLoadingRooms(true);
+    axios.get(`${API}/admin/rooms`, { headers: authHeaders() })
+      .then(r => setRooms(r.data || []))
+      .catch(() => {})
+      .finally(() => setLoadingRooms(false));
+  }, [authHeaders]);
+
+  const handleConfirm = async (withRoom) => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/admin/registrations/${reg.id}/management`, { arrival_status: "Arrived" }, { headers: authHeaders() });
+      if (withRoom && selectedRoom) {
+        await axios.put(`${API}/admin/rooms/${selectedRoom}/assign`, { occupant_id: reg.id, occupant_name: reg.full_name }, { headers: authHeaders() });
+      }
+      toast.success(withRoom && selectedRoom ? `Marked arrived & assigned room ${selectedRoom}` : "Marked as Arrived");
+      onDone();
+    } catch (err) { toast.error(err.response?.data?.detail || "Action failed"); }
+    finally { setSaving(false); }
+  };
+
+  const filtered = rooms.filter(r => {
+    const q = search.toLowerCase();
+    return r.room_code.toLowerCase().includes(q) || (r.occupant_name || "").toLowerCase().includes(q);
+  });
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto" data-testid="arrival-room-modal">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <DoorOpen size={18} className="text-[#D4AF37]" /> Mark as Arrived
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-[#0B1C3D]/70">
+          Marking <strong>{reg.full_name}</strong> as arrived.
+        </p>
+        <p className="text-sm text-[#0B1C3D]/70 font-medium">Do you want to allocate a room here itself?</p>
+        <p className="text-[10px] text-[#0B1C3D]/40 italic">You can assign the room now or later from Room Management.</p>
+
+        {/* Room Search */}
+        <div className="relative mt-2">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/30" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search rooms..." className="pl-8 h-8 text-sm" data-testid="room-search-input" />
+        </div>
+
+        {/* Room List */}
+        <div className="max-h-48 overflow-y-auto space-y-1 border border-[#D4AF37]/10 rounded-xl p-2">
+          {loadingRooms ? <p className="text-center py-4 text-xs text-[#0B1C3D]/40">Loading rooms...</p> :
+            filtered.length === 0 ? <p className="text-center py-4 text-xs text-[#0B1C3D]/40">No rooms found</p> :
+            filtered.map(r => {
+              const isOccupied = r.status === "occupied";
+              const isSelected = selectedRoom === r.room_code;
+              return (
+                <button key={r.room_code}
+                  onClick={() => !isOccupied && setSelectedRoom(isSelected ? "" : r.room_code)}
+                  disabled={isOccupied}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center justify-between ${
+                    isOccupied ? "opacity-40 cursor-not-allowed bg-gray-50" :
+                    isSelected ? "bg-[#D4AF37]/20 border-2 border-[#D4AF37]" : "hover:bg-[#F8F1E5] cursor-pointer border-2 border-transparent"
+                  }`}
+                  data-testid={`room-option-${r.room_code}`}>
+                  <div>
+                    <span className="font-bold text-[#0B1C3D]">{r.room_code}</span>
+                    <span className="text-[#0B1C3D]/40 text-xs ml-2">Cap: {r.capacity} &middot; {r.ac_type}</span>
+                  </div>
+                  {isOccupied ? (
+                    <span className="text-[10px] text-red-500 font-medium">Already Booked ({r.occupant_name || "Unknown"})</span>
+                  ) : isSelected ? (
+                    <span className="text-[10px] text-[#D4AF37] font-semibold">Selected</span>
+                  ) : null}
+                </button>
+              );
+            })}
+        </div>
+
+        <DialogFooter className="flex-col gap-2 sm:flex-col">
+          <Button onClick={() => handleConfirm(true)} disabled={saving || !selectedRoom} className="w-full bg-green-600 text-white hover:bg-green-700" data-testid="confirm-arrived-with-room">
+            {saving ? "Saving..." : selectedRoom ? `Mark Arrived & Assign Room ${selectedRoom}` : "Select a room above"}
+          </Button>
+          <Button onClick={() => handleConfirm(false)} disabled={saving} variant="outline" className="w-full" data-testid="confirm-arrived-no-room">
+            Mark Arrived Without Room
+          </Button>
+          <Button onClick={onClose} variant="ghost" className="w-full text-[#0B1C3D]/50">Cancel</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* === Edit Guest Dialog === */
 function EditGuestDialog({ reg, onClose, authHeaders, onSaved }) {
   const [form, setForm] = useState({ ...reg });
   const [saving, setSaving] = useState(false);

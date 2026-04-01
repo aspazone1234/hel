@@ -10,7 +10,7 @@ const VENUE_SLIDES = [
 ];
 
 const FAMILY_CAROUSEL_IMAGES = [
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/11qwkbiz_Untitled%20design%20%284%29.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/jgoo386h_Untitled%20design%20%285%29.png",
   "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/wefy7sph_Untitled%20design%20%283%29.png",
 ];
 

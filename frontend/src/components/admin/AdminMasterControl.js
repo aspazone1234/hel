@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Check, X, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, X, Eye, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ export default function AdminMasterControl({ user, authHeaders }) {
   const [viewReg, setViewReg] = useState(null);
   const [showRejected, setShowRejected] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const isSuperAdmin = user?.role === "superadmin";
 
   const fetchPending = useCallback(async () => {
     setLoading(true);
@@ -42,38 +43,18 @@ export default function AdminMasterControl({ user, authHeaders }) {
     } catch (err) { toast.error(err.response?.data?.detail || "Action failed"); }
   };
 
-  const handleBulkApprove = async () => {
-    if (pending.length === 0) return;
+  const handlePermanentDelete = async (id) => {
     try {
-      await axios.post(`${API}/admin/registrations/bulk-action`, { ids: pending.map(p => p.id), action: "approve" }, { headers: authHeaders() });
-      toast.success(`${pending.length} entries approved`);
-      fetchPending();
-    } catch { toast.error("Bulk approve failed"); }
-  };
-
-  const handleBulkReject = async () => {
-    if (pending.length === 0) return;
-    try {
-      await axios.post(`${API}/admin/registrations/bulk-action`, { ids: pending.map(p => p.id), action: "reject" }, { headers: authHeaders() });
-      toast.success(`${pending.length} entries rejected`);
-      fetchPending();
+      await axios.delete(`${API}/admin/registrations/${id}/permanent`, { headers: authHeaders() });
+      toast.success("Permanently deleted");
       fetchRejected();
-    } catch { toast.error("Bulk reject failed"); }
+    } catch (err) { toast.error(err.response?.data?.detail || "Delete failed"); }
+    setConfirmAction(null);
   };
 
   return (
-    <div className="space-y-6" data-testid="form-management-view">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Website Form Management</h2>
-        <div className="flex gap-2">
-          <Button size="sm" onClick={handleBulkApprove} disabled={pending.length === 0} className="bg-green-600 text-white hover:bg-green-700 h-8 text-xs" data-testid="bulk-approve">
-            <Check size={14} className="mr-1" /> Approve All ({pending.length})
-          </Button>
-          <Button size="sm" onClick={handleBulkReject} disabled={pending.length === 0} variant="outline" className="text-red-600 border-red-300 h-8 text-xs" data-testid="bulk-reject">
-            <X size={14} className="mr-1" /> Reject All
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-6" data-testid="form-approval-view">
+      <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Website Form Approval</h2>
 
       {/* Pending Forms */}
       <div className="bg-white rounded-2xl border border-[#D4AF37]/20 overflow-hidden">
@@ -93,12 +74,14 @@ export default function AdminMasterControl({ user, authHeaders }) {
                   <p className="text-[#0B1C3D]/50 text-xs">{r.mobile} &middot; {r.num_people} people &middot; {r.arrival_date || "No date"}</p>
                 </div>
                 <div className="flex gap-2 shrink-0 ml-3">
-                  <button onClick={() => setViewReg(r)} className="p-1.5 rounded-lg hover:bg-[#D4AF37]/10 text-[#0B1C3D]/50" data-testid={`view-pending-${r.id}`}><Eye size={16} /></button>
+                  <Button size="sm" variant="outline" onClick={() => setViewReg(r)} className="h-7 text-xs" data-testid={`view-pending-${r.id}`}>
+                    <Eye size={12} className="mr-1" /> View
+                  </Button>
                   <Button size="sm" onClick={() => handleAction(r.id, "approved")} className="bg-green-600 text-white hover:bg-green-700 h-7 text-xs px-3" data-testid={`approve-${r.id}`}>
-                    <Check size={14} className="mr-1" /> Accept
+                    <Check size={12} className="mr-1" /> Accept
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => handleAction(r.id, "rejected")} className="text-red-600 border-red-300 h-7 text-xs px-3" data-testid={`reject-${r.id}`}>
-                    <X size={14} className="mr-1" /> Reject
+                    <X size={12} className="mr-1" /> Reject
                   </Button>
                 </div>
               </div>
@@ -118,15 +101,20 @@ export default function AdminMasterControl({ user, authHeaders }) {
             {rejected.length === 0 ? (
               <div className="py-8 text-center text-[#0B1C3D]/40 text-sm">No disapproved entries</div>
             ) : rejected.map(r => (
-              <div key={r.id} className="px-4 py-3 flex items-center justify-between opacity-60" data-testid={`rejected-${r.id}`}>
+              <div key={r.id} className="px-4 py-3 flex items-center justify-between" data-testid={`rejected-${r.id}`}>
                 <div>
                   <p className="font-medium text-[#0B1C3D] text-sm">{r.full_name}</p>
                   <p className="text-[#0B1C3D]/50 text-xs">{r.mobile} &middot; {r.num_people} people</p>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setViewReg(r)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-400" data-testid={`view-rejected-${r.id}`}>
-                    <Eye size={16} />
-                  </button>
+                  <Button size="sm" variant="outline" onClick={() => setViewReg(r)} className="h-7 text-xs" data-testid={`view-rejected-${r.id}`}>
+                    <Eye size={12} className="mr-1" /> View
+                  </Button>
+                  {isSuperAdmin && (
+                    <Button size="sm" variant="outline" onClick={() => setConfirmAction({ type: "perm_delete", reg: r, message: `Permanently delete "${r.full_name}"? This cannot be undone.` })} className="h-7 text-xs text-red-600 border-red-300" data-testid={`delete-rejected-${r.id}`}>
+                      <Trash2 size={12} className="mr-1" /> Delete
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -148,7 +136,7 @@ export default function AdminMasterControl({ user, authHeaders }) {
                 ["Status", viewReg.approval_status], ["Type", viewReg.entry_type || "form"],
                 ["Created", viewReg.created_at], ["Approved By", viewReg.approved_by],
               ].filter(([, v]) => v).map(([l, v]) => (
-                <div key={l} className="flex justify-between"><span className="text-[#0B1C3D]/50">{l}:</span><span className="text-[#0B1C3D] font-medium text-right">{v}</span></div>
+                <div key={l} className="flex justify-between"><span className="text-[#0B1C3D]/50">{l}:</span><span className="text-[#0B1C3D] font-medium text-right">{String(v)}</span></div>
               ))}
               {viewReg.attendees?.length > 0 && (
                 <div>
@@ -161,6 +149,18 @@ export default function AdminMasterControl({ user, authHeaders }) {
             </div>
           )}
           <DialogFooter><Button variant="outline" onClick={() => setViewReg(null)}>Close</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm Action Dialog */}
+      <Dialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Are you sure?</DialogTitle></DialogHeader>
+          <p className="text-sm text-[#0B1C3D]/70">{confirmAction?.message}</p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
+            <Button onClick={() => handlePermanentDelete(confirmAction.reg.id)} className="bg-red-500 text-white hover:bg-red-600">Delete Permanently</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

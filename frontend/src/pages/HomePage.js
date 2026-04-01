@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ArrowUp, Globe } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import HeroSection from "@/components/HeroSection";
-import { QuoteSection, LovingMemorySection, AboutSection, AcharyaSection, ScheduleSection, SpecialProgramsSection, KathaEpisodesSection } from "@/components/EventSections";
+import { QuoteSection, LovingMemorySection, AboutSection, AcharyaSection, ScheduleSection, KathaEpisodesSection } from "@/components/EventSections";
 import { VenueSection, RegistrationCTA, FamilySection, Footer } from "@/components/InfoSections";
 import { useLang } from "@/context/LanguageContext";
 
@@ -45,10 +45,9 @@ export default function HomePage() {
       <AboutSection />
       <AcharyaSection />
       <ScheduleSection />
-      <SpecialProgramsSection />
       <KathaEpisodesSection />
-      <RegistrationCTA />
       <FamilySection />
+      <RegistrationCTA />
       <VenueSection />
       <Footer />
 
