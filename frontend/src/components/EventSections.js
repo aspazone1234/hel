@@ -8,7 +8,7 @@ const PUSHKAR_URL = "https://images.pexels.com/photos/6363480/pexels-photo-63634
 const ELDER_IMAGES = [
   "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/l9byhsc7_1.png",
   "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/f6hr3qf6_2.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/6voatxdg_3.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/gid5pcac_Gemini_Generated_Image_izosotizosotizos.png",
   "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/okqs8yx2_4.png",
 ];
 

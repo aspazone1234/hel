@@ -19,7 +19,7 @@ import axios from "axios";
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 const initial = {
-  full_name: "", mobile: "", email: "", city: "", country: "",
+  full_name: "", mobile: "", additional_phone: "", email: "", address: "",
   attendance_intent: "Yes", arrival_date: "", departure_date: "",
   num_people: 1,
   attendees: [{ name: "", category: "Adult", special_needs: "" }],
@@ -83,12 +83,20 @@ export default function RegisterPage() {
       if (!form.full_name.trim()) errs.full_name = true;
       if (!form.mobile.trim()) errs.mobile = true;
       else if (!/^[\d\s+\-()]{7,15}$/.test(form.mobile.trim())) errs.mobile_format = true;
+      if (!form.address.trim()) errs.address = true;
     }
     if (step === 1) {
       if (!form.arrival_date) errs.arrival_date = true;
       if (!form.departure_date) errs.departure_date = true;
+      if (!form.num_people || form.num_people < 1) errs.num_people = true;
     }
-    if (step === 2 && !form.consent) errs.consent = true;
+    if (step === 2) {
+      if (!form.consent) errs.consent = true;
+      const incomplete = form.attendees.filter(a => !a.name.trim());
+      if (incomplete.length > 0) {
+        errs.attendees_incomplete = true;
+      }
+    }
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -118,20 +126,20 @@ export default function RegisterPage() {
             <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1" data-testid="back-to-home">
               <ChevronLeft size={16} /> {t.register.backHome}
             </Link>
-            <button
-              onClick={toggleLang}
-              data-testid="form-lang-toggle"
-              className="flex items-center gap-1.5 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-full px-4 py-2 text-sm font-semibold transition-all hover:bg-[#D4AF37]/20 hover:border-[#D4AF37]/50"
-            >
-              <Globe size={14} className="text-[#D4AF37]" />
-              <span className="text-[#D4AF37]">{lang === "en" ? "हिंदी" : "English"}</span>
-              <span className="text-[#D4AF37]/40 text-[10px]">{lang === "en" ? "/ भाषा बदलें" : "/ Change Language"}</span>
-            </button>
           </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.register.pageTitle}</h1>
           <p className="text-[#0B1C3D]/50 text-sm mt-2">
             {lang === "hi" ? `चरण ${step + 1} / ${STEPS.length}: ${STEPS[step]}` : `Step ${step + 1} of ${STEPS.length}: ${STEPS[step]}`}
           </p>
+          <button
+            onClick={toggleLang}
+            data-testid="form-lang-toggle"
+            className="mt-3 flex items-center gap-1.5 bg-[#D4AF37]/10 border border-[#D4AF37]/30 rounded-full px-4 py-2 text-sm font-semibold transition-all hover:bg-[#D4AF37]/20 hover:border-[#D4AF37]/50"
+          >
+            <Globe size={14} className="text-[#D4AF37]" />
+            <span className="text-[#D4AF37]">{lang === "en" ? "हिंदी" : "English"}</span>
+            <span className="text-[#D4AF37]/40 text-[10px]">{lang === "en" ? "/ भाषा बदलें" : "/ Change Language"}</span>
+          </button>
         </div>
 
         <div className="mb-8" data-testid="form-progress">
@@ -161,18 +169,17 @@ export default function RegisterPage() {
                 {errors.mobile_format && <p className="text-red-500 text-xs mt-1">{lang === "hi" ? "कृपया सही मोबाइल नंबर दर्ज करें" : "Please enter a valid mobile number"}</p>}
               </div>
               <div>
+                <Label className="text-[#0B1C3D]/70 text-sm">{t.register.additionalPhone}</Label>
+                <Input data-testid="input-additional-phone" value={form.additional_phone} onChange={e => set("additional_phone", e.target.value)} placeholder={lang === "hi" ? "अतिरिक्त फोन नंबर" : "Additional phone number"} className="mt-1.5 bg-white border-[#D4AF37]/20" />
+              </div>
+              <div>
                 <Label className="text-[#0B1C3D]/70 text-sm">{t.register.email}</Label>
                 <Input data-testid="input-email" type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="your@email.com" className="mt-1.5 bg-white border-[#D4AF37]/20" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-[#0B1C3D]/70 text-sm">{t.register.city}</Label>
-                  <Input data-testid="input-city" value={form.city} onChange={e => set("city", e.target.value)} placeholder={lang === "hi" ? "शहर" : "City"} className="mt-1.5 bg-white border-[#D4AF37]/20" />
-                </div>
-                <div>
-                  <Label className="text-[#0B1C3D]/70 text-sm">{t.register.country}</Label>
-                  <Input data-testid="input-country" value={form.country} onChange={e => set("country", e.target.value)} placeholder={lang === "hi" ? "देश" : "Country"} className="mt-1.5 bg-white border-[#D4AF37]/20" />
-                </div>
+              <div>
+                <Label className="text-[#0B1C3D]/70 text-sm">{t.register.address}</Label>
+                <Input data-testid="input-address" value={form.address} onChange={e => set("address", e.target.value)} placeholder={lang === "hi" ? "शहर, देश" : "City, Country"} className={`mt-1.5 bg-white border-[#D4AF37]/20 ${errors.address ? "border-red-400" : ""}`} />
+                {errors.address && <p className="text-red-500 text-xs mt-1">{lang === "hi" ? "पता आवश्यक है" : "Address is required"}</p>}
               </div>
             </div>
           )}
@@ -204,7 +211,8 @@ export default function RegisterPage() {
               </div>
               <div>
                 <Label className="text-[#0B1C3D]/70 text-sm">{t.register.numPeople}</Label>
-                <Input data-testid="input-num-people" type="number" min={1} max={50} value={form.num_people} onChange={e => handleNumPeopleChange(e.target.value)} className="mt-1.5 bg-white border-[#D4AF37]/20 max-w-[180px]" />
+                <Input data-testid="input-num-people" type="number" min={1} max={50} value={form.num_people} onChange={e => handleNumPeopleChange(e.target.value)} className={`mt-1.5 bg-white border-[#D4AF37]/20 max-w-[180px] ${errors.num_people ? "border-red-400" : ""}`} />
+                {errors.num_people && <p className="text-red-500 text-xs mt-1">{lang === "hi" ? "व्यक्तियों की संख्या आवश्यक है" : "Number of people is required"}</p>}
               </div>
             </div>
           )}
@@ -217,6 +225,14 @@ export default function RegisterPage() {
               <p className="text-[#0B1C3D]/50 text-sm mb-2">
                 {lang === "hi" ? `कृपया ${form.num_people} सदस्यों का विवरण दें:` : `Please provide details for ${form.num_people} attendee${form.num_people > 1 ? "s" : ""}:`}
               </p>
+
+              {errors.attendees_incomplete && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-600 text-sm" data-testid="attendees-error">
+                  {lang === "hi"
+                    ? `आपने पहले ${form.num_people} सदस्यों की संख्या चुनी है। कृपया सभी सदस्यों का विवरण भरें या वापस जाकर संख्या बदलें।`
+                    : `You have selected ${form.num_people} number of attendees previously. Please fill all details or go back and update the number of attendees.`}
+                </div>
+              )}
 
               {form.attendees.map((att, i) => (
                 <div key={i} className="border border-[#D4AF37]/10 rounded-xl p-4 space-y-3 bg-[#F8F1E5]/30" data-testid={`attendee-block-${i}`}>
@@ -262,7 +278,7 @@ export default function RegisterPage() {
                     <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.fullName}:</span><span className="text-[#0B1C3D] font-medium">{form.full_name || "-"}</span></div>
                     <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{t.register.mobile}:</span><span className="text-[#0B1C3D] font-medium">{form.mobile || "-"}</span></div>
                     {form.email && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "ईमेल" : "Email"}:</span><span className="text-[#0B1C3D] font-medium">{form.email}</span></div>}
-                    {form.city && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "शहर" : "City"}:</span><span className="text-[#0B1C3D] font-medium">{form.city}</span></div>}
+                    {form.address && <div className="flex justify-between"><span className="text-[#0B1C3D]/50">{lang === "hi" ? "पता" : "Address"}:</span><span className="text-[#0B1C3D] font-medium">{form.address}</span></div>}
                   </div>
                 </div>
                 <div className="mb-4">

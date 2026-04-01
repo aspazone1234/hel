@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   ChevronLeft, Eye, EyeOff, LogOut, LayoutDashboard, Users,
-  Shield, Trash2, ClipboardList, Menu, X
+  FileText, DoorOpen, MessageSquare, ClipboardList, Menu, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,9 +13,10 @@ import axios from "axios";
 import AdminDashboardView from "@/components/admin/AdminDashboard";
 import AdminGuestList from "@/components/admin/AdminGuestList";
 import AdminMasterControl from "@/components/admin/AdminMasterControl";
-import AdminRecycleBin from "@/components/admin/AdminRecycleBin";
+import AdminRoomManagement from "@/components/admin/AdminRoomManagement";
+import AdminBulkMessaging from "@/components/admin/AdminBulkMessaging";
 import AdminAuditLog from "@/components/admin/AdminAuditLog";
-import { GuestDetailDialog, ManagementEditDialog, ManualEntryDialog } from "@/components/admin/AdminDialogs";
+import { GuestDetailDialog, ManualEntryDialog } from "@/components/admin/AdminDialogs";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -45,8 +46,7 @@ function AdminLogin({ onLogin }) {
       setTokenStore(data.token);
       onLogin(data);
     } catch (err) {
-      const detail = err.response?.data?.detail;
-      setError(typeof detail === "string" ? detail : "Invalid credentials");
+      setError(typeof err.response?.data?.detail === "string" ? err.response.data.detail : "Invalid credentials");
     } finally {
       setLoading(false);
     }
@@ -54,17 +54,17 @@ function AdminLogin({ onLogin }) {
 
   return (
     <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center px-4">
-      <div className="bg-white rounded-2xl p-8 sm:p-10 border border-[#D4AF37]/20 max-w-md w-full sacred-border">
+      <div className="bg-white rounded-2xl p-8 sm:p-10 border border-[#D4AF37]/20 max-w-md w-full">
         <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-6" data-testid="admin-back-home-login">
           <ChevronLeft size={16} /> Back to Home
         </Link>
-        <h2 className="text-3xl font-bold text-[#0B1C3D] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Admin Login</h2>
-        <p className="text-[#0B1C3D]/50 text-sm mb-8">Sign in to manage registrations</p>
+        <h2 className="text-3xl font-bold text-[#0B1C3D] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Management Portal</h2>
+        <p className="text-[#0B1C3D]/50 text-sm mb-8">Sign in to manage the event</p>
         {error && <p className="text-red-500 text-sm mb-4 bg-red-50 p-3 rounded-lg" data-testid="admin-login-error">{error}</p>}
         <form onSubmit={handleSubmit} data-testid="admin-login-form" className="space-y-5">
           <div>
             <Label className="text-[#0B1C3D]/70 text-sm">Username</Label>
-            <Input data-testid="admin-username-input" type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" className="mt-1.5 bg-white border-[#D4AF37]/20" required />
+            <Input data-testid="admin-username-input" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" className="mt-1.5 bg-white border-[#D4AF37]/20" required />
           </div>
           <div>
             <Label className="text-[#0B1C3D]/70 text-sm">Password</Label>
@@ -87,9 +87,10 @@ function AdminLogin({ onLogin }) {
 /* ─── Nav Config ─── */
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "guestlist", label: "Guest List", icon: Users },
-  { id: "mastercontrol", label: "Master Control", icon: Shield },
-  { id: "recyclebin", label: "Recycle Bin", icon: Trash2 },
+  { id: "guestlist", label: "Final Guest List", icon: Users },
+  { id: "formmanagement", label: "Website Form Management", icon: FileText },
+  { id: "roommanagement", label: "Room Management", icon: DoorOpen },
+  { id: "messaging", label: "Bulk Guest Messaging", icon: MessageSquare },
   { id: "auditlog", label: "Audit Log", icon: ClipboardList },
 ];
 
@@ -97,37 +98,19 @@ const NAV_ITEMS = [
 function AdminShell({ user, onLogout }) {
   const [activeView, setActiveView] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [rooms, setRooms] = useState([]);
   const [detailReg, setDetailReg] = useState(null);
-  const [manageReg, setManageReg] = useState(null);
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const fetchRooms = useCallback(async () => {
-    try {
-      const { data } = await axios.get(`${API}/admin/rooms`, { headers: authHeaders() });
-      setRooms(data);
-    } catch {}
-  }, []);
+  useEffect(() => { document.title = "Shrimad Bhagavat Management Portal 2026"; }, []);
 
-  useEffect(() => {
-    document.title = "Admin Dashboard - Katha Mahotsav 2026";
-    fetchRooms();
-  }, [fetchRooms]);
-
-  const handleNavigate = (view) => {
-    setActiveView(view);
-    setSidebarOpen(false);
-  };
-
-  const handleSaved = () => { fetchRooms(); };
+  const handleNavigate = (view) => { setActiveView(view); setSidebarOpen(false); };
+  const handleSaved = () => { setRefreshKey(k => k + 1); };
   const handleLogout = () => { clearToken(); onLogout(); };
 
   return (
     <div className="min-h-screen bg-[#F8F1E5] flex" data-testid="admin-dashboard">
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
+      {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />}
 
       {/* Sidebar */}
       <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-[#0B1C3D] text-white flex flex-col shrink-0 transform transition-transform lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
@@ -137,14 +120,13 @@ function AdminShell({ user, onLogout }) {
               <Link to="/" className="text-white/40 hover:text-white/70 text-xs flex items-center gap-1 mb-3" data-testid="admin-back-home">
                 <ChevronLeft size={12} /> Back to Site
               </Link>
-              <h2 className="text-lg font-bold tracking-wide" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                Admin Panel
+              <h2 className="text-base font-bold tracking-wide leading-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+                Shrimad Bhagavat<br />Management Portal 2026
               </h2>
-              <p className="text-white/40 text-xs mt-1">{user.name || user.username}</p>
+              <p className="text-white/40 text-xs mt-2">{user.name || user.username}</p>
+              {user.role === "superadmin" && <span className="text-[9px] bg-[#D4AF37] text-[#0B1C3D] px-2 py-0.5 rounded-full font-bold uppercase mt-1 inline-block">Super Admin</span>}
             </div>
-            <button className="lg:hidden text-white/60 hover:text-white" onClick={() => setSidebarOpen(false)}>
-              <X size={20} />
-            </button>
+            <button className="lg:hidden text-white/60 hover:text-white" onClick={() => setSidebarOpen(false)}><X size={20} /></button>
           </div>
         </div>
 
@@ -167,12 +149,7 @@ function AdminShell({ user, onLogout }) {
         </nav>
 
         <div className="p-4 border-t border-white/10">
-          <Button
-            onClick={handleLogout}
-            variant="outline"
-            className="w-full border-white/20 text-white hover:bg-white/10 hover:text-white"
-            data-testid="admin-logout-btn"
-          >
+          <Button onClick={handleLogout} variant="outline" className="w-full border-white/20 text-white hover:bg-white/10 hover:text-white" data-testid="admin-logout-btn">
             <LogOut size={16} className="mr-2" /> Logout
           </Button>
         </div>
@@ -180,43 +157,29 @@ function AdminShell({ user, onLogout }) {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
-        {/* Mobile header */}
         <header className="lg:hidden bg-white border-b border-[#D4AF37]/20 px-4 py-3 flex items-center justify-between shrink-0">
-          <button onClick={() => setSidebarOpen(true)} className="text-[#0B1C3D]/70" data-testid="mobile-menu-btn">
-            <Menu size={24} />
-          </button>
+          <button onClick={() => setSidebarOpen(true)} className="text-[#0B1C3D]/70" data-testid="mobile-menu-btn"><Menu size={24} /></button>
           <h1 className="text-lg font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
             {NAV_ITEMS.find(n => n.id === activeView)?.label || "Dashboard"}
           </h1>
           <div className="w-6" />
         </header>
 
-        {/* Content */}
         <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto">
-            {activeView === "dashboard" && (
-              <AdminDashboardView user={user} authHeaders={() => authHeaders()} onNavigate={handleNavigate} />
-            )}
-            {activeView === "guestlist" && (
-              <AdminGuestList user={user} authHeaders={() => authHeaders()} onViewDetail={setDetailReg} onManageDetail={setManageReg} onAddManual={() => setShowManualEntry(true)} />
-            )}
-            {activeView === "mastercontrol" && (
-              <AdminMasterControl user={user} authHeaders={() => authHeaders()} onBack={() => handleNavigate("dashboard")} />
-            )}
-            {activeView === "recyclebin" && (
-              <AdminRecycleBin user={user} authHeaders={() => authHeaders()} />
-            )}
-            {activeView === "auditlog" && (
-              <AdminAuditLog authHeaders={() => authHeaders()} />
-            )}
+            {activeView === "dashboard" && <AdminDashboardView key={`d-${refreshKey}`} user={user} authHeaders={() => authHeaders()} onNavigate={handleNavigate} />}
+            {activeView === "guestlist" && <AdminGuestList key={`g-${refreshKey}`} user={user} authHeaders={() => authHeaders()} onViewDetail={setDetailReg} onAddManual={() => setShowManualEntry(true)} />}
+            {activeView === "formmanagement" && <AdminMasterControl key={`f-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "roommanagement" && <AdminRoomManagement key={`r-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "messaging" && <AdminBulkMessaging key={`m-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "auditlog" && <AdminAuditLog key={`a-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
           </div>
         </main>
       </div>
 
       {/* Shared Dialogs */}
       <GuestDetailDialog registration={detailReg} open={!!detailReg} onClose={() => setDetailReg(null)} />
-      <ManagementEditDialog registration={manageReg} open={!!manageReg} onClose={() => setManageReg(null)} authHeaders={() => authHeaders()} rooms={rooms} onSaved={handleSaved} />
-      <ManualEntryDialog open={showManualEntry} onClose={() => setShowManualEntry(false)} authHeaders={() => authHeaders()} rooms={rooms} onSaved={handleSaved} />
+      <ManualEntryDialog open={showManualEntry} onClose={() => setShowManualEntry(false)} authHeaders={() => authHeaders()} onSaved={handleSaved} />
     </div>
   );
 }
@@ -227,7 +190,7 @@ export default function AdminPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    document.title = "Admin - Katha Mahotsav 2026";
+    document.title = "Shrimad Bhagavat Management Portal 2026";
     const token = getToken();
     if (!token) { setChecking(false); return; }
     axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })

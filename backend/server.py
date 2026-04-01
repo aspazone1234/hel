@@ -10,7 +10,13 @@ from typing import List, Optional
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from fpdf import FPDF
-import os, logging, jwt, csv, io, uuid, math
+import os
+import logging
+import jwt
+import csv
+import io
+import uuid
+import math
 
 ROOT_DIR = Path(__file__).parent
 mongo_url = os.environ['MONGO_URL']
@@ -25,18 +31,19 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 ADMIN_ACCOUNTS = {
-    "arunpanchariya": {"password": "arunlondon123", "name": "Arun Panchariya", "city": "London"},
-    "ashokpanchariya": {"password": "ashokahmedabad123", "name": "Ashok Panchariya", "city": "Ahmedabad"},
-    "satishpanchariya": {"password": "satishmumbai123", "name": "Satish Panchariya", "city": "Mumbai"},
-    "basantmalpani": {"password": "basantjaipur123", "name": "Basant Malpani", "city": "Jaipur"},
+    "arunpanchariya": {"password": "arunlondon123", "name": "Arun Panchariya", "city": "London", "role": "admin"},
+    "ashokpanchariya": {"password": "ashokahmedabad123", "name": "Ashok Panchariya", "city": "Ahmedabad", "role": "admin"},
+    "satishpanchariya": {"password": "satishmumbai123", "name": "Satish Panchariya", "city": "Mumbai", "role": "admin"},
+    "basantmalpani": {"password": "basantjaipur123", "name": "Basant Malpani", "city": "Jaipur", "role": "admin"},
+    "superashwini": {"password": "supersebhiupper123", "name": "Super Admin Ashwini", "city": "", "role": "superadmin"},
 }
 
 # ─── Auth Helpers ───
 def get_jwt_secret():
     return os.environ["JWT_SECRET"]
 
-def create_access_token(username: str, name: str) -> str:
-    payload = {"sub": username, "name": name, "exp": datetime.now(timezone.utc) + timedelta(hours=24), "type": "access"}
+def create_access_token(username: str, name: str, role: str = "admin") -> str:
+    payload = {"sub": username, "name": name, "role": role, "exp": datetime.now(timezone.utc) + timedelta(hours=24), "type": "access"}
     return jwt.encode(payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 async def get_current_user(request: Request):
@@ -49,13 +56,24 @@ async def get_current_user(request: Request):
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Invalid token type")
         username = payload.get("sub")
+        # Check hardcoded accounts first, then custom admins in DB
         if username not in ADMIN_ACCOUNTS:
-            raise HTTPException(status_code=401, detail="User not found")
-        return {"username": username, "name": payload.get("name", "")}
+            custom = await db.custom_admins.find_one({"username": username})
+            if not custom:
+                raise HTTPException(status_code=401, detail="User not found")
+            return {"username": username, "name": custom.get("name", ""), "role": custom.get("role", "admin")}
+        role = ADMIN_ACCOUNTS[username].get("role", "admin")
+        return {"username": username, "name": payload.get("name", ""), "role": role}
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+async def require_superadmin(request: Request):
+    user = await get_current_user(request)
+    if user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Super Admin access required")
+    return user
 
 # ─── Audit Helper ───
 async def log_audit(action_type: str, target_type: str, target_id: str, target_name: str, details: str, performed_by: str):
@@ -83,7 +101,9 @@ class AttendeeItem(BaseModel):
 class RegistrationCreate(BaseModel):
     full_name: str
     mobile: str
+    additional_phone: str = ""
     email: str = ""
+    address: str = ""
     city: str = ""
     country: str = ""
     attendance_intent: str = "Yes"
@@ -97,7 +117,9 @@ class RegistrationCreate(BaseModel):
 class ManualEntryCreate(BaseModel):
     full_name: str
     mobile: str
+    additional_phone: str = ""
     email: str = ""
+    address: str = ""
     city: str = ""
     country: str = ""
     attendance_intent: str = "Yes"
@@ -106,8 +128,6 @@ class ManualEntryCreate(BaseModel):
     num_people: int = 1
     attendees: List[AttendeeItem] = []
     message: str = ""
-    arrival_status: str = "Not Arrived"
-    room_assignment: str = ""
     admin_notes: str = ""
 
 class ManagementUpdate(BaseModel):
@@ -118,7 +138,9 @@ class ManagementUpdate(BaseModel):
 class RegistrationUpdate(BaseModel):
     full_name: Optional[str] = None
     mobile: Optional[str] = None
+    additional_phone: Optional[str] = None
     email: Optional[str] = None
+    address: Optional[str] = None
     city: Optional[str] = None
     country: Optional[str] = None
     attendance_intent: Optional[str] = None
@@ -127,6 +149,7 @@ class RegistrationUpdate(BaseModel):
     num_people: Optional[int] = None
     attendees: Optional[List[AttendeeItem]] = None
     message: Optional[str] = None
+    admin_notes: Optional[str] = None
 
 class StatusUpdate(BaseModel):
     status: str
@@ -153,16 +176,28 @@ class RoomAssign(BaseModel):
 async def login(req: LoginRequest):
     username = req.username.lower().strip()
     account = ADMIN_ACCOUNTS.get(username)
-    if not account or req.password != account["password"]:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    access_token = create_access_token(username, account["name"])
-    return {"token": access_token, "username": username, "name": account["name"], "city": account["city"]}
+    if account:
+        if req.password != account["password"]:
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        role = account.get("role", "admin")
+        access_token = create_access_token(username, account["name"], role)
+        return {"token": access_token, "username": username, "name": account["name"], "city": account["city"], "role": role}
+    # Check custom admins
+    custom = await db.custom_admins.find_one({"username": username})
+    if custom and req.password == custom.get("password", ""):
+        role = custom.get("role", "admin")
+        access_token = create_access_token(username, custom.get("name", username), role)
+        return {"token": access_token, "username": username, "name": custom.get("name", username), "city": custom.get("city", ""), "role": role}
+    raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @api_router.get("/auth/me")
 async def get_me(request: Request):
     user = await get_current_user(request)
     account = ADMIN_ACCOUNTS.get(user["username"], {})
-    return {"username": user["username"], "name": user["name"], "city": account.get("city", "")}
+    if not account:
+        custom = await db.custom_admins.find_one({"username": user["username"]})
+        return {"username": user["username"], "name": user["name"], "city": custom.get("city", "") if custom else "", "role": user.get("role", "admin")}
+    return {"username": user["username"], "name": user["name"], "city": account.get("city", ""), "role": account.get("role", "admin")}
 
 @api_router.post("/auth/logout")
 async def logout():
@@ -204,19 +239,14 @@ async def create_manual_entry(entry: ManualEntryCreate, request: Request):
     doc["created_at"] = datetime.now(timezone.utc).isoformat()
     doc["approval_status"] = "approved"
     doc["entry_type"] = "manual"
+    doc["arrival_status"] = "Not Arrived"
+    doc["room_assignment"] = ""
     doc["created_by"] = user["name"]
     doc["approved_by"] = user["name"]
     doc["last_updated_by"] = user["name"]
     doc["last_updated_at"] = datetime.now(timezone.utc).isoformat()
     doc["deleted_by"] = ""
     doc["consent"] = True
-    # Handle room assignment
-    if doc.get("room_assignment"):
-        room = await db.rooms.find_one({"room_code": doc["room_assignment"]})
-        if room and room.get("occupant_id"):
-            raise HTTPException(status_code=400, detail=f"Room {doc['room_assignment']} is already occupied")
-        if room:
-            await db.rooms.update_one({"room_code": doc["room_assignment"]}, {"$set": {"occupant_id": doc["id"], "occupant_name": doc["full_name"], "status": "occupied"}})
     await db.registrations.insert_one(doc)
     doc.pop("_id", None)
     await log_audit("manual_entry", "registration", doc["id"], doc["full_name"], f"Manual entry created by {user['name']}", user["name"])
@@ -227,9 +257,9 @@ async def create_manual_entry(entry: ManualEntryCreate, request: Request):
 async def check_duplicate(request: Request, mobile: str = ""):
     await get_current_user(request)
     if not mobile:
-        return {"duplicates": []}
+        return {"duplicates": [], "exists": False, "name": ""}
     dupes = await db.registrations.find({"mobile": mobile, "approval_status": {"$ne": "deleted"}}, {"_id": 0, "id": 1, "full_name": 1, "mobile": 1, "created_at": 1, "entry_type": 1}).to_list(20)
-    return {"duplicates": dupes}
+    return {"duplicates": dupes, "exists": len(dupes) > 0, "name": dupes[0]["full_name"] if dupes else ""}
 
 # ─── Admin: List Registrations (with search, filter, pagination) ───
 @api_router.get("/admin/registrations")
@@ -239,6 +269,11 @@ async def get_registrations(
     search: Optional[str] = None,
     arrival_date: Optional[str] = None,
     departure_date: Optional[str] = None,
+    arrival_from: Optional[str] = None,
+    arrival_to: Optional[str] = None,
+    departure_from: Optional[str] = None,
+    departure_to: Optional[str] = None,
+    arrival_status: Optional[str] = None,
     page: int = 1,
     per_page: int = 50,
 ):
@@ -250,12 +285,31 @@ async def get_registrations(
         query["$or"] = [
             {"full_name": {"$regex": search, "$options": "i"}},
             {"mobile": {"$regex": search, "$options": "i"}},
+            {"address": {"$regex": search, "$options": "i"}},
             {"room_assignment": {"$regex": search, "$options": "i"}},
         ]
     if arrival_date:
         query["arrival_date"] = arrival_date
     if departure_date:
         query["departure_date"] = departure_date
+    if arrival_from or arrival_to:
+        arr_q = {}
+        if arrival_from:
+            arr_q["$gte"] = arrival_from
+        if arrival_to:
+            arr_q["$lte"] = arrival_to
+        if arr_q:
+            query["arrival_date"] = arr_q
+    if departure_from or departure_to:
+        dep_q = {}
+        if departure_from:
+            dep_q["$gte"] = departure_from
+        if departure_to:
+            dep_q["$lte"] = departure_to
+        if dep_q:
+            query["departure_date"] = dep_q
+    if arrival_status:
+        query["arrival_status"] = arrival_status
     total = await db.registrations.count_documents(query)
     skip = (page - 1) * per_page
     regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
@@ -355,7 +409,7 @@ async def update_status(reg_id: str, body: StatusUpdate, request: Request):
             await db.rooms.update_one({"room_code": room_code}, {"$set": {"occupant_id": "", "occupant_name": "", "status": "available"}})
             updates["room_assignment"] = ""
     await db.registrations.update_one({"id": reg_id}, {"$set": updates})
-    action = "restore" if body.status == "pending" and old_status == "deleted" else body.status
+    action = "restore" if body.status == "approved" and old_status == "deleted" else body.status
     await log_audit(action, "registration", reg_id, reg.get("full_name", ""), f"{old_status} → {body.status}", user["name"])
     return {"message": f"Status updated to {body.status}", "id": reg_id, "new_status": body.status}
 
@@ -401,7 +455,7 @@ async def get_rooms(request: Request):
 
 @api_router.post("/admin/rooms")
 async def create_room(room: RoomCreate, request: Request):
-    user = await get_current_user(request)
+    user = await require_superadmin(request)
     existing = await db.rooms.find_one({"room_code": room.room_code})
     if existing:
         raise HTTPException(status_code=409, detail=f"Room code '{room.room_code}' already exists")
@@ -419,7 +473,7 @@ async def create_room(room: RoomCreate, request: Request):
 
 @api_router.post("/admin/rooms/bulk")
 async def bulk_create_rooms(body: RoomBulkCreate, request: Request):
-    user = await get_current_user(request)
+    user = await require_superadmin(request)
     created = 0
     errors = []
     for room in body.rooms:
@@ -441,7 +495,7 @@ async def bulk_create_rooms(body: RoomBulkCreate, request: Request):
 
 @api_router.delete("/admin/rooms/{room_code}")
 async def delete_room(room_code: str, request: Request):
-    user = await get_current_user(request)
+    user = await require_superadmin(request)
     room = await db.rooms.find_one({"room_code": room_code})
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
@@ -493,21 +547,31 @@ async def get_dashboard(request: Request):
     pending_count = await db.registrations.count_documents({"approval_status": "pending"})
     deleted_count = await db.registrations.count_documents({"approval_status": "deleted"})
     rejected_count = await db.registrations.count_documents({"approval_status": "rejected"})
-    # Total people
+    # Total people in final guest list
     pipeline_people = [{"$match": {"approval_status": "approved"}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]
     people_res = await db.registrations.aggregate(pipeline_people).to_list(1)
     total_people = people_res[0]["total"] if people_res else 0
-    # Arrival summary
-    arrived = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "Arrived"})
-    arrived_people_p = [{"$match": {"approval_status": "approved", "arrival_status": "Arrived"}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]
-    arrived_people_res = await db.registrations.aggregate(arrived_people_p).to_list(1)
-    arrived_people = arrived_people_res[0]["total"] if arrived_people_res else 0
-    not_coming = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "Not Coming"})
-    # Arrivals in range (28 May - 3 June)
-    arrivals_range = await db.registrations.count_documents({"approval_status": "approved", "arrival_date": {"$gte": "2026-05-28", "$lte": "2026-06-03"}})
-    departures_range = await db.registrations.count_documents({"approval_status": "approved", "departure_date": {"$gte": "2026-05-28", "$lte": "2026-06-03"}})
-    # Missing management details
-    missing_mgmt = await db.registrations.count_documents({"approval_status": "approved", "$or": [{"arrival_status": "Not Arrived"}, {"room_assignment": {"$in": ["", None]}}]})
+    # Arrival summary by status
+    arrived_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "Arrived"})
+    arrived_p = [{"$match": {"approval_status": "approved", "arrival_status": "Arrived"}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]
+    arrived_people = (await db.registrations.aggregate(arrived_p).to_list(1) or [{"total": 0}])[0]["total"]
+    not_arrived_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "Not Arrived"})
+    not_arrived_p = [{"$match": {"approval_status": "approved", "arrival_status": "Not Arrived"}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]
+    not_arrived_people = (await db.registrations.aggregate(not_arrived_p).to_list(1) or [{"total": 0}])[0]["total"]
+    not_coming_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "Not Coming"})
+    not_coming_p = [{"$match": {"approval_status": "approved", "arrival_status": "Not Coming"}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]
+    not_coming_people = (await db.registrations.aggregate(not_coming_p).to_list(1) or [{"total": 0}])[0]["total"]
+    # Daily arrivals & departures for 28 May - 3 June
+    dates = ["2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03"]
+    daily = []
+    for d in dates:
+        arr_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_date": d})
+        arr_p = [{"$match": {"approval_status": "approved", "arrival_date": d}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]
+        arr_people = (await db.registrations.aggregate(arr_p).to_list(1) or [{"total": 0}])[0]["total"]
+        dep_fam = await db.registrations.count_documents({"approval_status": "approved", "departure_date": d})
+        dep_p = [{"$match": {"approval_status": "approved", "departure_date": d}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]
+        dep_people = (await db.registrations.aggregate(dep_p).to_list(1) or [{"total": 0}])[0]["total"]
+        daily.append({"date": d, "arrivals_families": arr_fam, "arrivals_people": arr_people, "departures_families": dep_fam, "departures_people": dep_people})
     # Room stats
     total_rooms = await db.rooms.count_documents({})
     occupied_rooms = await db.rooms.count_documents({"status": "occupied"})
@@ -515,9 +579,12 @@ async def get_dashboard(request: Request):
     return {
         "total_approved": total_approved, "pending_count": pending_count, "deleted_count": deleted_count, "rejected_count": rejected_count,
         "total_people": total_people,
-        "arrivals_range": arrivals_range, "departures_range": departures_range,
-        "arrived_families": arrived, "arrived_people": arrived_people, "not_coming": not_coming,
-        "missing_management": missing_mgmt,
+        "arrival_summary": {
+            "arrived": {"families": arrived_fam, "people": arrived_people},
+            "not_arrived": {"families": not_arrived_fam, "people": not_arrived_people},
+            "not_coming": {"families": not_coming_fam, "people": not_coming_people},
+        },
+        "daily_schedule": daily,
         "total_rooms": total_rooms, "occupied_rooms": occupied_rooms, "available_rooms": available_rooms,
     }
 
@@ -536,7 +603,7 @@ async def export_csv(request: Request):
     await get_current_user(request)
     regs = await db.registrations.find({"approval_status": "approved"}, {"_id": 0}).to_list(5000)
     output = io.StringIO()
-    fields = ["id","full_name","mobile","email","city","country","attendance_intent","arrival_date","departure_date","num_people","room_assignment","arrival_status","admin_notes","message","approved_by","created_at"]
+    fields = ["id","full_name","mobile","additional_phone","email","address","attendance_intent","arrival_date","departure_date","num_people","room_assignment","arrival_status","admin_notes","message","approved_by","created_at"]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
     for reg in regs:
@@ -594,6 +661,126 @@ async def export_pdf(request: Request, report_type: str = "guestlist"):
     fname = "room_allocation.pdf" if report_type == "rooms" else "guest_list.pdf"
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={fname}"})
 
+# ─── Super Admin: Permanent Delete ───
+@api_router.delete("/admin/registrations/{reg_id}/permanent")
+async def permanent_delete(reg_id: str, request: Request):
+    await require_superadmin(request)
+    reg = await db.registrations.find_one({"id": reg_id})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    # Free room if assigned
+    room_code = reg.get("room_assignment", "")
+    if room_code:
+        await db.rooms.update_one({"room_code": room_code}, {"$set": {"occupant_id": "", "occupant_name": "", "status": "available"}})
+    await db.registrations.delete_one({"id": reg_id})
+    return {"message": "Permanently deleted", "id": reg_id}
+
+# ─── Super Admin: Clear Audit Logs ───
+@api_router.delete("/admin/audit-logs")
+async def clear_audit_logs(request: Request):
+    await require_superadmin(request)
+    result = await db.audit_logs.delete_many({})
+    return {"message": f"Cleared {result.deleted_count} audit log entries"}
+
+# ─── Super Admin: Admin Management ───
+class AdminCreate(BaseModel):
+    username: str
+    password: str
+    name: str
+    city: str = ""
+    role: str = "admin"
+
+class AdminUpdate(BaseModel):
+    password: Optional[str] = None
+    name: Optional[str] = None
+    city: Optional[str] = None
+
+@api_router.get("/admin/admins")
+async def list_admins(request: Request):
+    await require_superadmin(request)
+    admins = []
+    for uname, acc in ADMIN_ACCOUNTS.items():
+        if acc.get("role") != "superadmin":
+            admins.append({"username": uname, "name": acc["name"], "city": acc["city"], "role": acc.get("role", "admin"), "source": "system"})
+    custom = await db.custom_admins.find({}, {"_id": 0}).to_list(100)
+    for c in custom:
+        admins.append({**c, "source": "custom"})
+    return admins
+
+@api_router.post("/admin/admins")
+async def create_admin(body: AdminCreate, request: Request):
+    user = await require_superadmin(request)
+    username = body.username.lower().strip()
+    if username in ADMIN_ACCOUNTS:
+        raise HTTPException(status_code=409, detail="Username conflicts with system admin")
+    existing = await db.custom_admins.find_one({"username": username})
+    if existing:
+        raise HTTPException(status_code=409, detail="Username already exists")
+    doc = {"username": username, "password": body.password, "name": body.name, "city": body.city, "role": body.role, "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.custom_admins.insert_one(doc)
+    await log_audit("admin_create", "admin", username, body.name, f"Admin '{username}' created", user["name"])
+    return {"message": f"Admin '{username}' created", "username": username}
+
+@api_router.put("/admin/admins/{username}")
+async def update_admin(username: str, body: AdminUpdate, request: Request):
+    user = await require_superadmin(request)
+    username = username.lower().strip()
+    # Check if it's a system admin
+    if username in ADMIN_ACCOUNTS:
+        raise HTTPException(status_code=400, detail="Cannot modify system admin credentials via API")
+    custom = await db.custom_admins.find_one({"username": username})
+    if not custom:
+        raise HTTPException(status_code=404, detail="Custom admin not found")
+    updates = {}
+    if body.password is not None:
+        updates["password"] = body.password
+    if body.name is not None:
+        updates["name"] = body.name
+    if body.city is not None:
+        updates["city"] = body.city
+    if updates:
+        await db.custom_admins.update_one({"username": username}, {"$set": updates})
+    await log_audit("admin_update", "admin", username, custom.get("name", ""), f"Admin '{username}' updated", user["name"])
+    return {"message": f"Admin '{username}' updated"}
+
+@api_router.delete("/admin/admins/{username}")
+async def delete_admin(username: str, request: Request):
+    user = await require_superadmin(request)
+    username = username.lower().strip()
+    if username in ADMIN_ACCOUNTS:
+        raise HTTPException(status_code=400, detail="Cannot delete system admin")
+    result = await db.custom_admins.delete_one({"username": username})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Admin not found")
+    await log_audit("admin_delete", "admin", username, username, f"Admin '{username}' deleted", user["name"])
+    return {"message": f"Admin '{username}' deleted"}
+
+# ─── Super Admin: Room Shift ───
+class RoomShift(BaseModel):
+    new_room_code: str
+
+@api_router.put("/admin/rooms/{room_code}/shift")
+async def shift_room(room_code: str, body: RoomShift, request: Request):
+    user = await get_current_user(request)
+    old_room = await db.rooms.find_one({"room_code": room_code})
+    if not old_room:
+        raise HTTPException(status_code=404, detail="Source room not found")
+    if not old_room.get("occupant_id"):
+        raise HTTPException(status_code=400, detail="Source room has no occupant to shift")
+    new_room = await db.rooms.find_one({"room_code": body.new_room_code})
+    if not new_room:
+        raise HTTPException(status_code=404, detail="Target room not found")
+    if new_room.get("occupant_id"):
+        raise HTTPException(status_code=409, detail="Target room is already occupied. Can only shift to unoccupied rooms.")
+    occupant_id = old_room["occupant_id"]
+    occupant_name = old_room.get("occupant_name", "")
+    # Unassign old, assign new
+    await db.rooms.update_one({"room_code": room_code}, {"$set": {"occupant_id": "", "occupant_name": "", "status": "available"}})
+    await db.rooms.update_one({"room_code": body.new_room_code}, {"$set": {"occupant_id": occupant_id, "occupant_name": occupant_name, "status": "occupied"}})
+    await db.registrations.update_one({"id": occupant_id}, {"$set": {"room_assignment": body.new_room_code, "last_updated_by": user["name"], "last_updated_at": datetime.now(timezone.utc).isoformat()}})
+    await log_audit("room_shift", "room", room_code, room_code, f"Shifted {occupant_name} from {room_code} to {body.new_room_code}", user["name"])
+    return {"message": f"Shifted {occupant_name} from {room_code} to {body.new_room_code}"}
+
 @api_router.get("/")
 async def root():
     return {"message": "Shrimad Bhagavat Katha Mahotsav 2026 API"}
@@ -622,6 +809,8 @@ async def startup():
     await db.registrations.update_many({"last_updated_by": {"$exists": False}}, {"$set": {"last_updated_by": ""}})
     await db.registrations.update_many({"last_updated_at": {"$exists": False}}, {"$set": {"last_updated_at": ""}})
     await db.registrations.update_many({"deleted_by": {"$exists": False}}, {"$set": {"deleted_by": ""}})
+    await db.registrations.update_many({"address": {"$exists": False}}, {"$set": {"address": ""}})
+    await db.registrations.update_many({"additional_phone": {"$exists": False}}, {"$set": {"additional_phone": ""}})
     # Create unique index on room_code
     await db.rooms.create_index("room_code", unique=True, sparse=True)
     logger.info("Migration complete, indexes ensured")

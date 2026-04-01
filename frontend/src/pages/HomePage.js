@@ -47,9 +47,9 @@ export default function HomePage() {
       <ScheduleSection />
       <SpecialProgramsSection />
       <KathaEpisodesSection />
-      <VenueSection />
-      <FamilySection />
       <RegistrationCTA />
+      <FamilySection />
+      <VenueSection />
       <Footer />
 
       {showSticky && (

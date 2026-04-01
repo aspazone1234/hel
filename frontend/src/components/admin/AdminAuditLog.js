@@ -1,25 +1,41 @@
 import { useState, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ChevronLeft, ChevronRight, Trash2 } from "lucide-react";
+import { toast } from "sonner";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-export default function AdminAuditLog({ authHeaders }) {
+export default function AdminAuditLog({ authHeaders, user }) {
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const isSuperAdmin = user?.role === "superadmin";
 
-  useEffect(() => {
+  const fetchLogs = () => {
     setLoading(true);
     axios.get(`${API}/admin/audit-logs`, { headers: authHeaders(), params: { page, per_page: 50 } })
       .then(r => { setLogs(r.data.data || []); setTotal(r.data.total || 0); setTotalPages(r.data.total_pages || 1); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [page]);
+  };
+
+  useEffect(() => { fetchLogs(); }, [page, authHeaders]);
+
+  const handleClear = async () => {
+    try {
+      await axios.delete(`${API}/admin/audit-logs`, { headers: authHeaders() });
+      toast.success("Audit logs cleared");
+      setConfirmClear(false);
+      setPage(1);
+      fetchLogs();
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed to clear"); }
+  };
 
   const actionColor = (a) => {
     if (a.includes("approve")) return "bg-green-100 text-green-700";
@@ -28,13 +44,23 @@ export default function AdminAuditLog({ authHeaders }) {
     if (a.includes("restore")) return "bg-blue-100 text-blue-700";
     if (a.includes("room")) return "bg-purple-100 text-purple-700";
     if (a.includes("manual")) return "bg-blue-100 text-blue-700";
+    if (a.includes("admin")) return "bg-amber-100 text-amber-700";
     return "bg-gray-100 text-gray-700";
   };
 
   return (
     <div className="space-y-4" data-testid="audit-log-view">
-      <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Audit Log ({total})</h2>
-      <p className="text-sm text-[#0B1C3D]/50">Complete record of all admin actions</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Audit Log ({total})</h2>
+          <p className="text-sm text-[#0B1C3D]/50">Complete record of all admin actions</p>
+        </div>
+        {isSuperAdmin && total > 0 && (
+          <Button size="sm" variant="outline" className="text-red-600 border-red-300 h-8 text-xs" onClick={() => setConfirmClear(true)} data-testid="clear-audit-btn">
+            <Trash2 size={14} className="mr-1" /> Clear All
+          </Button>
+        )}
+      </div>
 
       <div className="bg-white rounded-2xl border border-[#D4AF37]/10 overflow-hidden">
         {loading ? <div className="text-center py-12 text-[#0B1C3D]/40">Loading...</div> : logs.length === 0 ? <div className="text-center py-12 text-[#0B1C3D]/40">No audit entries yet</div> : (
@@ -72,6 +98,17 @@ export default function AdminAuditLog({ authHeaders }) {
           </div>
         </div>
       </div>
+
+      <Dialog open={confirmClear} onOpenChange={setConfirmClear}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Clear All Audit Logs?</DialogTitle></DialogHeader>
+          <p className="text-sm text-[#0B1C3D]/70">This will permanently delete all audit log entries. This action cannot be undone.</p>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmClear(false)}>Cancel</Button>
+            <Button onClick={handleClear} className="bg-red-500 text-white hover:bg-red-600">Clear All</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -9,6 +9,11 @@ const VENUE_SLIDES = [
   "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/ltq1jor4_unnamed.jpg",
 ];
 
+const FAMILY_CAROUSEL_IMAGES = [
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/11qwkbiz_Untitled%20design%20%284%29.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/wefy7sph_Untitled%20design%20%283%29.png",
+];
+
 function FadeIn({ children, className = "", delay = 0 }) {
   const ref = useRef(null);
   const [visible, setVisible] = useState(false);
@@ -67,6 +72,41 @@ function VenueSlideshow() {
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-2">
         {VENUE_SLIDES.map((_, i) => (
           <button key={i} onClick={() => goTo(i)} className={`w-2.5 h-2.5 rounded-full transition-all ${i === current ? "bg-[#D4AF37] scale-125" : "bg-white/50"}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* === FAMILY IMAGE CAROUSEL === */
+function FamilyCarousel() {
+  const [current, setCurrent] = useState(0);
+  const timerRef = useRef(null);
+
+  const next = useCallback(() => setCurrent(c => (c + 1) % FAMILY_CAROUSEL_IMAGES.length), []);
+
+  useEffect(() => {
+    timerRef.current = setInterval(next, 3000);
+    return () => clearInterval(timerRef.current);
+  }, [next]);
+
+  return (
+    <div className="relative max-w-4xl mx-auto mb-10 rounded-2xl overflow-hidden border-2 border-[#D4AF37]/30 shadow-xl" data-testid="family-carousel">
+      <div className="relative h-64 sm:h-80 md:h-96">
+        {FAMILY_CAROUSEL_IMAGES.map((src, i) => (
+          <img
+            key={i}
+            src={src}
+            alt={`Panchariya Family ${i + 1}`}
+            className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ease-in-out ${i === current ? "opacity-100 scale-100" : "opacity-0 scale-105"}`}
+            loading="lazy"
+          />
+        ))}
+      </div>
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+        {FAMILY_CAROUSEL_IMAGES.map((_, i) => (
+          <button key={i} onClick={() => { setCurrent(i); clearInterval(timerRef.current); timerRef.current = setInterval(next, 3000); }}
+            className={`w-3 h-3 rounded-full transition-all ${i === current ? "bg-[#D4AF37] scale-125 shadow-lg shadow-[#D4AF37]/50" : "bg-white/50 hover:bg-white/80"}`} />
         ))}
       </div>
     </div>
@@ -159,6 +199,9 @@ export function FamilySection() {
             <div className="gold-divider w-24 mx-auto mt-6" />
           </div>
         </FadeIn>
+        <FadeIn delay={100}>
+          <FamilyCarousel />
+        </FadeIn>
         <FadeIn delay={200}>
           <div className="grid sm:grid-cols-3 gap-6 max-w-3xl mx-auto mb-8">
             {t.family.members.map((m, i) => (
@@ -185,7 +228,7 @@ export function FamilySection() {
             <div className="relative" data-testid="family-timeline">
               {/* Center line */}
               <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-[#D4AF37]/30 -translate-x-1/2 hidden sm:block" />
-              <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-[#D4AF37]/30 sm:hidden" />
+              <div className="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-[#D4AF37]/30 sm:hidden" />
 
               <div className="space-y-8 sm:space-y-0">
                 {t.family.timeline.map((item, i) => {
@@ -193,12 +236,12 @@ export function FamilySection() {
                   const isLast = i === t.family.timeline.length - 1;
                   return (
                     <div key={i} className={`relative flex items-center sm:mb-10 ${isLeft ? "sm:flex-row" : "sm:flex-row-reverse"}`} data-testid={`timeline-item-${i}`}>
-                      {/* Mobile layout */}
-                      <div className="sm:hidden flex items-center gap-4 pl-0">
+                      {/* Mobile layout - centered */}
+                      <div className="sm:hidden flex flex-col items-center w-full">
                         <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isLast ? "bg-[#D4AF37] shadow-lg shadow-[#D4AF37]/30" : "bg-[#0B1C3D] border-2 border-[#D4AF37]/50"}`}>
                           <span className="text-[10px] font-bold text-white">{i + 1}</span>
                         </div>
-                        <div className={`rounded-xl px-5 py-3 ${isLast ? "bg-[#D4AF37]/15 border-2 border-[#D4AF37]/40" : "bg-white border border-[#D4AF37]/20"}`}>
+                        <div className={`mt-2 rounded-xl px-5 py-3 text-center ${isLast ? "bg-[#D4AF37]/15 border-2 border-[#D4AF37]/40" : "bg-white border border-[#D4AF37]/20"}`}>
                           <p className={`text-lg font-bold ${isLast ? "text-[#D4AF37]" : "text-[#0B1C3D]"}`} style={{ fontFamily: fontHi }}>{item.year}</p>
                           <p className="text-[#0B1C3D]/60 text-sm" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{item.location}</p>
                         </div>
