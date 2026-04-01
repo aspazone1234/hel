@@ -34,7 +34,7 @@ export default function AdminAuditLog({ authHeaders, user }) {
       setConfirmClear(false);
       setPage(1);
       fetchLogs();
-    } catch (err) { toast.error(err.response?.data?.detail || "Failed to clear"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Failed to clear"); }
   };
 
   const actionColor = (a) => {

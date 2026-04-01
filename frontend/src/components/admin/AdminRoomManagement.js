@@ -51,7 +51,7 @@ export default function AdminRoomManagement({ user, authHeaders }) {
       await axios.delete(`${API}/admin/rooms/${code}`, { headers: authHeaders() });
       toast.success(`Room ${code} deleted`);
       fetchRooms();
-    } catch (err) { toast.error(err.response?.data?.detail || "Delete failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Delete failed"); }
     setConfirmAction(null);
   };
 
@@ -60,7 +60,7 @@ export default function AdminRoomManagement({ user, authHeaders }) {
       await axios.put(`${API}/admin/rooms/${code}/unassign`, {}, { headers: authHeaders() });
       toast.success(`Room ${code} unassigned`);
       fetchRooms();
-    } catch (err) { toast.error(err.response?.data?.detail || "Unassign failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Unassign failed"); }
     setConfirmAction(null);
   };
 
@@ -171,10 +171,13 @@ function RoomAssignPopup({ room, onClose, authHeaders, onUnassign, onDelete, onS
 
   const handleAssign = async (guest) => {
     try {
-      await axios.put(`${API}/admin/rooms/${room.room_code}/assign`, { occupant_id: guest.id, occupant_name: guest.full_name }, { headers: authHeaders() });
+      await axios.put(`${API}/admin/rooms/${room.room_code}/assign`, { registration_id: guest.id }, { headers: authHeaders() });
       toast.success(`${guest.full_name} assigned to ${room.room_code}`);
       onDone();
-    } catch (err) { toast.error(err.response?.data?.detail || "Assignment failed"); }
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Assignment failed");
+    }
   };
 
   const filtered = guests.filter(g => {
@@ -251,7 +254,7 @@ function ShiftRoomDialog({ room, rooms, onClose, authHeaders, onDone }) {
       await axios.put(`${API}/admin/rooms/${room.room_code}/shift`, { new_room_code: target }, { headers: authHeaders() });
       toast.success(`Shifted to room ${target}`);
       onDone();
-    } catch (err) { toast.error(err.response?.data?.detail || "Shift failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Shift failed"); }
     finally { setSaving(false); }
   };
 
@@ -289,7 +292,7 @@ function AddRoomDialog({ onClose, authHeaders, onDone }) {
       await axios.post(`${API}/admin/rooms`, form, { headers: authHeaders() });
       toast.success(`Room ${form.room_code} created`);
       onDone();
-    } catch (err) { toast.error(err.response?.data?.detail || "Create failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Create failed"); }
     finally { setSaving(false); }
   };
 
@@ -332,7 +335,7 @@ function BulkAddRoomDialog({ onClose, authHeaders, onDone }) {
       await axios.post(`${API}/admin/rooms/bulk`, { prefix, start_num: start, end_num: end, capacity, ac_type: acType }, { headers: authHeaders() });
       toast.success(`Rooms ${prefix}${start}-${prefix}${end} created`);
       onDone();
-    } catch (err) { toast.error(err.response?.data?.detail || "Bulk create failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Bulk create failed"); }
     finally { setSaving(false); }
   };
 

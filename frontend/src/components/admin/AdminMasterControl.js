@@ -40,7 +40,7 @@ export default function AdminMasterControl({ user, authHeaders }) {
       toast.success(status === "approved" ? "Approved" : "Rejected");
       fetchPending();
       fetchRejected();
-    } catch (err) { toast.error(err.response?.data?.detail || "Action failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Action failed"); }
   };
 
   const handlePermanentDelete = async (id) => {
@@ -48,7 +48,7 @@ export default function AdminMasterControl({ user, authHeaders }) {
       await axios.delete(`${API}/admin/registrations/${id}/permanent`, { headers: authHeaders() });
       toast.success("Permanently deleted");
       fetchRejected();
-    } catch (err) { toast.error(err.response?.data?.detail || "Delete failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Delete failed"); }
     setConfirmAction(null);
   };
 

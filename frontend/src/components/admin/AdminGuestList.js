@@ -79,7 +79,10 @@ export default function AdminGuestList({ user, authHeaders, onViewDetail, onAddM
         await axios.delete(`${API}/admin/registrations/${reg.id}/permanent`, { headers: authHeaders() });
         toast.success("Permanently deleted");
       }
-    } catch (err) { toast.error(err.response?.data?.detail || "Action failed"); }
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Action failed");
+    }
     setConfirmAction(null);
     fetchGuests();
     fetchDeleted();
@@ -348,11 +351,14 @@ function ArrivalRoomModal({ reg, authHeaders, onClose, onDone }) {
     try {
       await axios.put(`${API}/admin/registrations/${reg.id}/management`, { arrival_status: "Arrived" }, { headers: authHeaders() });
       if (withRoom && selectedRoom) {
-        await axios.put(`${API}/admin/rooms/${selectedRoom}/assign`, { occupant_id: reg.id, occupant_name: reg.full_name }, { headers: authHeaders() });
+        await axios.put(`${API}/admin/rooms/${selectedRoom}/assign`, { registration_id: reg.id }, { headers: authHeaders() });
       }
       toast.success(withRoom && selectedRoom ? `Marked arrived & assigned room ${selectedRoom}` : "Marked as Arrived");
       onDone();
-    } catch (err) { toast.error(err.response?.data?.detail || "Action failed"); }
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Action failed");
+    }
     finally { setSaving(false); }
   };
 
@@ -441,7 +447,7 @@ function EditGuestDialog({ reg, onClose, authHeaders, onSaved }) {
       await axios.put(`${API}/admin/registrations/${reg.id}`, updates, { headers: authHeaders() });
       toast.success("Guest updated");
       onSaved();
-    } catch (err) { toast.error(err.response?.data?.detail || "Update failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Update failed"); }
     finally { setSaving(false); }
   };
 

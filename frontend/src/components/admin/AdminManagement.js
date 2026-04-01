@@ -33,7 +33,7 @@ export default function AdminManagement({ user, authHeaders }) {
       toast.success(`Admin '${username}' deleted`);
       setConfirmDelete(null);
       fetchAdmins();
-    } catch (err) { toast.error(err.response?.data?.detail || "Delete failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Delete failed"); }
   };
 
   return (
@@ -129,7 +129,7 @@ function CreateAdminDialog({ onClose, authHeaders, onDone }) {
       await axios.post(`${API}/admin/admins`, form, { headers: authHeaders() });
       toast.success(`Admin '${form.username}' created`);
       onDone();
-    } catch (err) { toast.error(err.response?.data?.detail || "Create failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Create failed"); }
     finally { setSaving(false); }
   };
 
@@ -167,7 +167,7 @@ function EditAdminDialog({ admin, onClose, authHeaders, onDone }) {
       await axios.put(`${API}/admin/admins/${admin.username}`, updates, { headers: authHeaders() });
       toast.success(`Admin '${admin.username}' updated`);
       onDone();
-    } catch (err) { toast.error(err.response?.data?.detail || "Update failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Update failed"); }
     finally { setSaving(false); }
   };
 

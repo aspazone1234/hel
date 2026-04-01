@@ -97,7 +97,7 @@ export function ManualEntryDialog({ open, onClose, authHeaders, onSaved }) {
       setDupWarning(null);
       onSaved();
       onClose();
-    } catch (err) { toast.error(err.response?.data?.detail || "Create failed"); }
+    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Create failed"); }
     finally { setSaving(false); }
   };
 
