@@ -43,7 +43,7 @@
     "Super Admin - SUPER ADMIN badge visible in sidebar",
     "Registration Form - Has additional phone field, address field (mandatory), num_people mandatory",
     "Registration Form - Language toggle below heading/step text",
-    "Portal title - 'Shrimad Bhagavat Management Portal 2026'"
+    "Portal title - 'Shrimad Bhagavat 2026 Management Portal'"
   ],
   "test_report_links": [
     "/app/backend/tests/test_v7_admin_overhaul.py",

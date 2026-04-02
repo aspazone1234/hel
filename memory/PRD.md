@@ -19,7 +19,7 @@ Premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2026" in P
 - Timeline mobile center alignment fix
 - Registration form: Additional phone, Address (mandatory), num_people mandatory with attendee validation, language toggle below heading
 
-### Admin Portal ("Shrimad Bhagavat Management Portal 2026")
+### Admin Portal ("Shrimad Bhagavat 2026 Management Portal")
 - **Two-tier roles**: Admin (4 system accounts) + Super Admin (superashwini)
 - **Sidebar**: Dashboard → Final Guest List → Website Form Approval → Room Management → Bulk Guest Messaging → Audit Log → Admin Management (super admin only)
 - **Dashboard**: Full word labels (no abbreviations), Pending notification alert with "Review Now", Arrival Summary (Arrived/Not Arrived/Not Coming with families+people), Single rooms block (available + occupied/total), Daily Arrivals/Departures vertical layout (28 May - 3 Jun)

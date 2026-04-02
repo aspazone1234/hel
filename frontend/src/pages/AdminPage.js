@@ -59,7 +59,7 @@ function AdminLogin({ onLogin }) {
         <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-6" data-testid="admin-back-home-login">
           <ChevronLeft size={16} /> Back to Home
         </Link>
-        <h2 className="text-3xl font-bold text-[#0B1C3D] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Management Portal</h2>
+        <h2 className="text-3xl font-bold text-[#0B1C3D] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Shrimad Bhagavat 2026 Management Portal</h2>
         <p className="text-[#0B1C3D]/50 text-sm mb-8">Sign in to manage the event</p>
         {error && <p className="text-red-500 text-sm mb-4 bg-red-50 p-3 rounded-lg" data-testid="admin-login-error">{error}</p>}
         <form onSubmit={handleSubmit} data-testid="admin-login-form" className="space-y-5">
@@ -109,7 +109,7 @@ function AdminShell({ user, onLogout }) {
     return true;
   });
 
-  useEffect(() => { document.title = "Shrimad Bhagavat Management Portal 2026"; }, []);
+  useEffect(() => { document.title = "Shrimad Bhagavat 2026 Management Portal"; }, []);
 
   const handleNavigate = (view) => { setActiveView(view); setSidebarOpen(false); };
   const handleSaved = () => { setRefreshKey(k => k + 1); };
@@ -128,7 +128,7 @@ function AdminShell({ user, onLogout }) {
                 <ChevronLeft size={12} /> Back to Site
               </Link>
               <h2 className="text-base font-bold tracking-wide leading-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                Shrimad Bhagavat<br />Management Portal 2026
+                Shrimad Bhagavat<br />2026 Management Portal
               </h2>
               <p className="text-white/40 text-xs mt-2">{user.name || user.username}</p>
               {user.role === "superadmin" && <span className="text-[9px] bg-[#D4AF37] text-[#0B1C3D] px-2 py-0.5 rounded-full font-bold uppercase mt-1 inline-block">Super Admin</span>}
@@ -207,7 +207,7 @@ export default function AdminPage() {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    document.title = "Shrimad Bhagavat Management Portal 2026";
+    document.title = "Shrimad Bhagavat 2026 Management Portal";
     const token = getToken();
     if (!token) { setChecking(false); return; }
     axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
