@@ -10,12 +10,13 @@ Premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2026" in P
 - **Auth**: JWT Bearer tokens, hardcoded admins + dynamic custom admins
 - **PDF**: fpdf2
 
-## Completed Features (01 Apr 2026)
+## Completed Features (02 Apr 2026)
 
 ### Public Website
 - 15-Point FINAL SPEC complete
 - Section order: Hero → Quote → Memory → About → Acharya → Schedule+Other (merged, peach) → Episodes (dark blue) → Family (peach) → Registration (dark blue) → Venue (dark blue) → Footer
-- Family image carousel (auto-sliding)
+- **Family image carousel redesign (02 Apr)**: 21-image slider, 3-sec auto-scroll, pause on hover/touch, desktop prev/next alongside slider, mobile prev/next below slider, counter (X / 21)
+- **In Loving Memory layout redesign (02 Apr)**: Hierarchical grid — top row 2 larger images (Durga Baisa, Alka Jiji), bottom row 2 smaller (Ram Swaroop ji, Shanta Devi ji), mobile maintains hierarchy
 - Timeline mobile center alignment fix
 - Registration form: Additional phone, Address (mandatory), num_people mandatory with attendee validation, language toggle below heading
 
