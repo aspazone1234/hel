@@ -100,19 +100,37 @@ export function LovingMemorySection() {
             {t.lovingMemory.description}
           </p>
         </FadeIn>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 sm:gap-6 max-w-4xl mx-auto mb-8">
-          {t.lovingMemory.elders.map((elder, i) => (
-            <FadeIn key={i} delay={i * 120}>
-              <div className="text-center group">
-                <div className="w-28 h-28 sm:w-32 sm:h-32 mx-auto rounded-full overflow-hidden border-2 border-[#D4AF37]/30 mb-3 group-hover:border-[#D4AF37]/60 transition-all shadow-lg shadow-[#0B1C3D]/50">
-                  <img src={ELDER_IMAGES[i]} alt={elder} className="w-full h-full object-cover object-top" loading="lazy" />
+        <div className="max-w-4xl mx-auto mb-8">
+          {/* Top row - 2 larger images */}
+          <div className="flex justify-center gap-6 sm:gap-10 mb-6 sm:mb-8">
+            {t.lovingMemory.elders.slice(0, 2).map((elder, i) => (
+              <FadeIn key={i} delay={i * 120}>
+                <div className="text-center group">
+                  <div className="w-36 h-36 sm:w-44 sm:h-44 md:w-52 md:h-52 mx-auto rounded-full overflow-hidden border-2 border-[#D4AF37]/40 mb-3 group-hover:border-[#D4AF37]/70 transition-all shadow-xl shadow-[#0B1C3D]/50">
+                    <img src={ELDER_IMAGES[i]} alt={elder} className="w-full h-full object-cover object-top" loading="lazy" />
+                  </div>
+                  <p className="text-[#F8F1E5] text-sm sm:text-base font-semibold leading-tight" style={{ fontFamily: fontHi }}>
+                    {elder}
+                  </p>
                 </div>
-                <p className="text-[#F8F1E5] text-xs sm:text-sm font-semibold leading-tight" style={{ fontFamily: fontHi }}>
-                  {elder}
-                </p>
-              </div>
-            </FadeIn>
-          ))}
+              </FadeIn>
+            ))}
+          </div>
+          {/* Bottom row - 2 smaller images */}
+          <div className="flex justify-center gap-6 sm:gap-10">
+            {t.lovingMemory.elders.slice(2, 4).map((elder, i) => (
+              <FadeIn key={i + 2} delay={(i + 2) * 120}>
+                <div className="text-center group">
+                  <div className="w-28 h-28 sm:w-32 sm:h-32 md:w-36 md:h-36 mx-auto rounded-full overflow-hidden border-2 border-[#D4AF37]/30 mb-3 group-hover:border-[#D4AF37]/60 transition-all shadow-lg shadow-[#0B1C3D]/50">
+                    <img src={ELDER_IMAGES[i + 2]} alt={elder} className="w-full h-full object-cover object-top" loading="lazy" />
+                  </div>
+                  <p className="text-[#F8F1E5] text-xs sm:text-sm font-semibold leading-tight" style={{ fontFamily: fontHi }}>
+                    {elder}
+                  </p>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
         </div>
         <FadeIn delay={500}>
           <p className="text-[#F8F1E5]/40 text-sm italic" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>

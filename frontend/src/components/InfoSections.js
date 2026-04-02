@@ -10,8 +10,27 @@ const VENUE_SLIDES = [
 ];
 
 const FAMILY_CAROUSEL_IMAGES = [
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/jgoo386h_Untitled%20design%20%285%29.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/wefy7sph_Untitled%20design%20%283%29.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/2vr3eygd_1.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/d5pr1j11_2.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/49zwq0zu_3.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/q1zzskl6_4.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/o79880ks_5.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/h78gucz8_6.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/gspdfwm1_7.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/1mzm22ht_8.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/10rkt85o_9.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/uoxmc1xz_10.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/5gf61vsr_11.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/v38f20fo_12.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/4zvcz949_13.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/oxjr7h8r_14.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/cf33x059_15.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/60dn4leu_16.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/efz2s19s_17.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/b4i78wlv_18.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/crzlohu2_19.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/klhv2xsc_20.png",
+  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/8u6ru495_21.png",
 ];
 
 function FadeIn({ children, className = "", delay = 0 }) {
@@ -82,32 +101,74 @@ function VenueSlideshow() {
 function FamilyCarousel() {
   const [current, setCurrent] = useState(0);
   const timerRef = useRef(null);
+  const [paused, setPaused] = useState(false);
 
-  const next = useCallback(() => setCurrent(c => (c + 1) % FAMILY_CAROUSEL_IMAGES.length), []);
+  const total = FAMILY_CAROUSEL_IMAGES.length;
+  const next = useCallback(() => setCurrent(c => (c + 1) % total), [total]);
+  const prev = useCallback(() => setCurrent(c => (c - 1 + total) % total), [total]);
 
   useEffect(() => {
+    if (paused) return;
     timerRef.current = setInterval(next, 3000);
     return () => clearInterval(timerRef.current);
-  }, [next]);
+  }, [next, paused]);
+
+  const handlePrev = () => { prev(); setPaused(false); clearInterval(timerRef.current); timerRef.current = setInterval(next, 3000); };
+  const handleNext = () => { next(); setPaused(false); clearInterval(timerRef.current); timerRef.current = setInterval(next, 3000); };
 
   return (
-    <div className="relative max-w-4xl mx-auto mb-10 rounded-2xl overflow-hidden border-2 border-[#D4AF37]/30 shadow-xl" data-testid="family-carousel">
-      <div className="relative h-64 sm:h-80 md:h-96">
-        {FAMILY_CAROUSEL_IMAGES.map((src, i) => (
-          <img
-            key={i}
-            src={src}
-            alt={`Panchariya Family ${i + 1}`}
-            className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ease-in-out ${i === current ? "opacity-100 scale-100" : "opacity-0 scale-105"}`}
-            loading="lazy"
-          />
-        ))}
+    <div className="max-w-4xl mx-auto mb-10" data-testid="family-carousel">
+      {/* Desktop layout: buttons alongside slider */}
+      <div className="hidden sm:flex items-center gap-4">
+        <button onClick={handlePrev} data-testid="family-slide-prev-desktop"
+          className="shrink-0 w-12 h-12 rounded-full bg-[#0B1C3D] border-2 border-[#D4AF37]/40 text-[#D4AF37] flex items-center justify-center hover:bg-[#D4AF37] hover:text-[#0B1C3D] transition-all shadow-lg">
+          <SlideLeft size={22} />
+        </button>
+        <div className="flex-1 relative rounded-2xl overflow-hidden border-2 border-[#D4AF37]/30 shadow-xl"
+          onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+          <div className="relative h-80 md:h-[28rem]">
+            {FAMILY_CAROUSEL_IMAGES.map((src, i) => (
+              <img key={i} src={src} alt={`Panchariya Family ${i + 1}`}
+                className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ease-in-out ${i === current ? "opacity-100 scale-100" : "opacity-0 scale-105"}`}
+                loading="lazy" />
+            ))}
+          </div>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-[#0B1C3D]/70 backdrop-blur-sm px-3 py-1.5 rounded-full">
+            <span className="text-[#D4AF37] text-xs font-semibold">{current + 1} / {total}</span>
+          </div>
+        </div>
+        <button onClick={handleNext} data-testid="family-slide-next-desktop"
+          className="shrink-0 w-12 h-12 rounded-full bg-[#0B1C3D] border-2 border-[#D4AF37]/40 text-[#D4AF37] flex items-center justify-center hover:bg-[#D4AF37] hover:text-[#0B1C3D] transition-all shadow-lg">
+          <SlideRight size={22} />
+        </button>
       </div>
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-        {FAMILY_CAROUSEL_IMAGES.map((_, i) => (
-          <button key={i} onClick={() => { setCurrent(i); clearInterval(timerRef.current); timerRef.current = setInterval(next, 3000); }}
-            className={`w-3 h-3 rounded-full transition-all ${i === current ? "bg-[#D4AF37] scale-125 shadow-lg shadow-[#D4AF37]/50" : "bg-white/50 hover:bg-white/80"}`} />
-        ))}
+
+      {/* Mobile layout: buttons below slider */}
+      <div className="sm:hidden">
+        <div className="relative rounded-2xl overflow-hidden border-2 border-[#D4AF37]/30 shadow-xl"
+          onTouchStart={() => setPaused(true)} onTouchEnd={() => { setTimeout(() => setPaused(false), 2000); }}>
+          <div className="relative h-64">
+            {FAMILY_CAROUSEL_IMAGES.map((src, i) => (
+              <img key={i} src={src} alt={`Panchariya Family ${i + 1}`}
+                className={`absolute inset-0 w-full h-full object-cover transition-all duration-700 ease-in-out ${i === current ? "opacity-100 scale-100" : "opacity-0 scale-105"}`}
+                loading="lazy" />
+            ))}
+          </div>
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-[#0B1C3D]/70 backdrop-blur-sm px-3 py-1.5 rounded-full">
+            <span className="text-[#D4AF37] text-xs font-semibold">{current + 1} / {total}</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-center gap-6 mt-4">
+          <button onClick={handlePrev} data-testid="family-slide-prev-mobile"
+            className="w-11 h-11 rounded-full bg-[#0B1C3D] border-2 border-[#D4AF37]/40 text-[#D4AF37] flex items-center justify-center hover:bg-[#D4AF37] hover:text-[#0B1C3D] transition-all shadow-lg">
+            <SlideLeft size={20} />
+          </button>
+          <span className="text-[#0B1C3D]/50 text-sm font-medium">{current + 1} / {total}</span>
+          <button onClick={handleNext} data-testid="family-slide-next-mobile"
+            className="w-11 h-11 rounded-full bg-[#0B1C3D] border-2 border-[#D4AF37]/40 text-[#D4AF37] flex items-center justify-center hover:bg-[#D4AF37] hover:text-[#0B1C3D] transition-all shadow-lg">
+            <SlideRight size={20} />
+          </button>
+        </div>
       </div>
     </div>
   );
