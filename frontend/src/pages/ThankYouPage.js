@@ -26,9 +26,16 @@ export default function ThankYouPage() {
           {t.thankYou.subtitle}
         </p>
 
-        <p className="text-[#0B1C3D]/60 text-sm sm:text-base leading-relaxed mb-6" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>
+        <p className="text-[#0B1C3D]/60 text-sm sm:text-base leading-relaxed mb-4" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>
           {t.thankYou.message}
         </p>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-left" data-testid="post-submit-info">
+          <ul className="text-blue-800 text-xs sm:text-sm space-y-2">
+            <li>{lang === "hi" ? "\u2022 \u0906\u092A 19 \u092E\u0908 2026 \u0924\u0915 \u0905\u092A\u0928\u093E \u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0905\u092A\u0921\u0947\u091F \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902" : "\u2022 You can update your registration until 19 May 2026"}</li>
+            <li>{lang === "hi" ? "\u2022 \u0905\u0902\u0924\u093F\u092E \u0915\u092E\u0930\u093E \u0906\u0935\u0902\u091F\u0928 \u0935 \u0935\u093F\u0935\u0930\u0923 21 \u092E\u0908 2026 \u0915\u094B WhatsApp \u092A\u0930 \u092D\u0947\u091C\u0947 \u091C\u093E\u090F\u0902\u0917\u0947" : "\u2022 Final room allocation and details will be sent via WhatsApp on 21 May 2026"}</li>
+          </ul>
+        </div>
 
         {regData.name && (
           <div className="bg-[#F8F1E5] rounded-xl p-4 border border-[#D4AF37]/10 mb-6 text-left space-y-2">

@@ -40,11 +40,11 @@ export default function AdminManagement({ user, authHeaders }) {
     <div className="space-y-6" data-testid="admin-management-view">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Admin Management</h2>
-          <p className="text-sm text-[#0B1C3D]/50">Manage portal administrators</p>
+          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Swamsevak Management</h2>
+          <p className="text-sm text-[#0B1C3D]/50">Manage portal Swamsevaks (volunteers)</p>
         </div>
         <Button size="sm" onClick={() => setShowCreate(true)} className="bg-[#D4AF37] text-[#0B1C3D] h-8 text-xs" data-testid="create-admin-btn">
-          <Plus size={14} className="mr-1" /> Create Admin
+          <Plus size={14} className="mr-1" /> Create Swamsevak
         </Button>
       </div>
 

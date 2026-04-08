@@ -40,8 +40,8 @@ export default function AdminRoomManagement({ user, authHeaders }) {
   };
 
   const handleExportCSV = async () => {
-    const csv = ["Room Code,Capacity,AC Type,Status,Occupant,Notes"];
-    rooms.forEach(r => csv.push(`${r.room_code},${r.capacity},${r.ac_type},${r.status},${r.occupant_name || ""},${r.notes || ""}`));
+    const csv = ["Room Code,Floor,Capacity,AC Type,Status,Occupants,Notes"];
+    rooms.forEach(r => csv.push(`${r.room_code},${r.floor || ""},${r.capacity},${r.ac_type},${r.status},"${(r.occupant_names || []).join(", ")}",${r.notes || ""}`));
     const blob = new Blob([csv.join("\n")], { type: "text/csv" });
     const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "rooms.csv"; a.click(); URL.revokeObjectURL(url);
   };
@@ -118,8 +118,8 @@ export default function AdminRoomManagement({ user, authHeaders }) {
                 <p>{r.ac_type}</p>
                 {r.notes && <p className="text-[#0B1C3D]/40 italic truncate">{r.notes}</p>}
               </div>
-              {r.status === "occupied" && r.occupant_name && (
-                <p className="mt-2 text-xs font-medium text-red-600 truncate">{r.occupant_name}</p>
+              {r.status === "occupied" && r.occupant_names?.length > 0 && (
+                <p className="mt-2 text-xs font-medium text-red-600 truncate">{r.occupant_names.join(", ")}</p>
               )}
             </div>
           ))}
@@ -172,7 +172,8 @@ function RoomAssignPopup({ room, onClose, authHeaders, onUnassign, onDelete, onS
   const handleAssign = async (guest) => {
     try {
       await axios.put(`${API}/admin/rooms/${room.room_code}/assign`, { registration_id: guest.id }, { headers: authHeaders() });
-      toast.success(`${guest.full_name} assigned to ${room.room_code}`);
+      const headName = (guest.attendees || []).find(a => a.id === guest.group_head_id)?.name || guest.attendees?.[0]?.name || guest.primary_mobile;
+      toast.success(`${headName} assigned to ${room.room_code}`);
       onDone();
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -182,7 +183,8 @@ function RoomAssignPopup({ room, onClose, authHeaders, onUnassign, onDelete, onS
 
   const filtered = guests.filter(g => {
     const q = search.toLowerCase();
-    return g.full_name?.toLowerCase().includes(q) || g.mobile?.includes(q);
+    const headName = (g.attendees || []).find(a => a.id === g.group_head_id)?.name || g.attendees?.[0]?.name || "";
+    return headName.toLowerCase().includes(q) || g.primary_mobile?.includes(q);
   });
 
   return (
@@ -194,13 +196,14 @@ function RoomAssignPopup({ room, onClose, authHeaders, onUnassign, onDelete, onS
         <div className="text-xs text-[#0B1C3D]/60 space-y-1 mb-3">
           <p>Capacity: {room.capacity} &middot; {room.ac_type}</p>
           {room.notes && <p>Notes: {room.notes}</p>}
+          {room.floor && <p>Floor: {room.floor}</p>}
         </div>
 
         {room.status === "occupied" ? (
           <div className="space-y-3">
             <div className="bg-red-50 border border-red-200 rounded-xl p-4">
               <p className="font-medium text-red-700 text-sm">Currently Occupied</p>
-              <p className="text-red-600 text-lg font-bold">{room.occupant_name}</p>
+              <p className="text-red-600 text-lg font-bold">{(room.occupant_names || []).join(", ") || "Occupied"}</p>
             </div>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" onClick={onUnassign} className="flex-1 text-orange-600 border-orange-300">Unassign</Button>
@@ -214,20 +217,21 @@ function RoomAssignPopup({ room, onClose, authHeaders, onUnassign, onDelete, onS
           <div className="space-y-3">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/30" />
-              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search guests..." className="pl-8 h-8 text-sm" data-testid="room-guest-search" />
+              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groups..." className="pl-8 h-8 text-sm" data-testid="room-guest-search" />
             </div>
             <div className="max-h-52 overflow-y-auto space-y-1">
-              {loading ? <p className="text-center py-4 text-[#0B1C3D]/40 text-xs">Loading guests...</p> :
-                filtered.length === 0 ? <p className="text-center py-4 text-[#0B1C3D]/40 text-xs">No guests found</p> :
+              {loading ? <p className="text-center py-4 text-[#0B1C3D]/40 text-xs">Loading groups...</p> :
+                filtered.length === 0 ? <p className="text-center py-4 text-[#0B1C3D]/40 text-xs">No groups found</p> :
                 filtered.map(g => {
-                  const hasRoom = !!g.room_assignment;
+                  const headName = (g.attendees || []).find(a => a.id === g.group_head_id)?.name || g.attendees?.[0]?.name || g.primary_mobile;
+                  const hasRoom = g.room_assignments?.length > 0;
                   return (
-                    <button key={g.id} onClick={() => !hasRoom && handleAssign(g)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${hasRoom ? "opacity-40 cursor-default bg-gray-50" : "hover:bg-[#D4AF37]/10 cursor-pointer"}`}
-                      disabled={hasRoom} data-testid={`assign-guest-${g.id}`}>
-                      <span className="font-medium text-[#0B1C3D]">{g.full_name}</span>
-                      <span className="text-[#0B1C3D]/40 text-xs ml-2">{g.mobile}</span>
-                      {hasRoom && <span className="text-orange-500 text-xs ml-2">(Room: {g.room_assignment})</span>}
+                    <button key={g.id} onClick={() => handleAssign(g)}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${hasRoom ? "opacity-60 bg-gray-50" : "hover:bg-[#D4AF37]/10"}`}
+                      data-testid={`assign-guest-${g.id}`}>
+                      <span className="font-medium text-[#0B1C3D]">{headName}</span>
+                      <span className="text-[#0B1C3D]/40 text-xs ml-2">{g.num_people} ppl | {g.primary_mobile}</span>
+                      {hasRoom && <span className="text-orange-500 text-xs ml-2">(Rooms: {g.room_assignments.join(", ")})</span>}
                     </button>
                   );
                 })}
@@ -262,7 +266,7 @@ function ShiftRoomDialog({ room, rooms, onClose, authHeaders, onDone }) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-sm">
         <DialogHeader><DialogTitle>Shift from Room {room.room_code}</DialogTitle></DialogHeader>
-        <p className="text-sm text-[#0B1C3D]/60">Moving: {room.occupant_name}</p>
+        <p className="text-sm text-[#0B1C3D]/60">Moving: {(room.occupant_names || []).join(", ") || "Occupants"}</p>
         <div>
           <Label className="text-xs">Select Target Room (unoccupied only)</Label>
           <Select value={target} onValueChange={setTarget}>
@@ -282,7 +286,7 @@ function ShiftRoomDialog({ room, rooms, onClose, authHeaders, onDone }) {
 }
 
 function AddRoomDialog({ onClose, authHeaders, onDone }) {
-  const [form, setForm] = useState({ room_code: "", capacity: 2, ac_type: "AC", notes: "" });
+  const [form, setForm] = useState({ room_code: "", floor: "", capacity: 2, ac_type: "AC", notes: "" });
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -302,6 +306,7 @@ function AddRoomDialog({ onClose, authHeaders, onDone }) {
         <DialogHeader><DialogTitle>Add Room</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div><Label className="text-xs">Room Code *</Label><Input value={form.room_code} onChange={e => setForm(f => ({ ...f, room_code: e.target.value }))} className="mt-1" /></div>
+          <div><Label className="text-xs">Floor</Label><Input value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} className="mt-1" /></div>
           <div><Label className="text-xs">Capacity</Label><Input type="number" min={1} value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: parseInt(e.target.value) || 1 }))} className="mt-1" /></div>
           <div><Label className="text-xs">AC Type</Label>
             <Select value={form.ac_type} onValueChange={v => setForm(f => ({ ...f, ac_type: v }))}>
@@ -332,7 +337,11 @@ function BulkAddRoomDialog({ onClose, authHeaders, onDone }) {
     if (!prefix.trim()) return toast.error("Prefix required");
     setSaving(true);
     try {
-      await axios.post(`${API}/admin/rooms/bulk`, { prefix, start_num: start, end_num: end, capacity, ac_type: acType }, { headers: authHeaders() });
+      const rooms = [];
+      for (let i = start; i <= end; i++) {
+        rooms.push({ room_code: `${prefix}${i}`, capacity, ac_type: acType, notes: "", floor: prefix });
+      }
+      await axios.post(`${API}/admin/rooms/bulk`, { rooms }, { headers: authHeaders() });
       toast.success(`Rooms ${prefix}${start}-${prefix}${end} created`);
       onDone();
     } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Bulk create failed"); }

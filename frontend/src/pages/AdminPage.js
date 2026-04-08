@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
-  ChevronLeft, Eye, EyeOff, LogOut, LayoutDashboard, Users,
-  FileText, DoorOpen, MessageSquare, ClipboardList, Menu, X, Shield, Sparkles
+  ChevronLeft, Eye, EyeOff, LogOut, LayoutDashboard, Users, UserCheck, UserPlus,
+  FileText, DoorOpen, MessageSquare, ClipboardList, Menu, X, Shield, Sparkles, Settings, BookOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,13 +11,13 @@ import { toast } from "sonner";
 import axios from "axios";
 
 import AdminDashboardView from "@/components/admin/AdminDashboard";
-import AdminGuestList from "@/components/admin/AdminGuestList";
-import AdminMasterControl from "@/components/admin/AdminMasterControl";
+import PendingApproval from "@/components/admin/PendingApproval";
+import ExpectedGuestList from "@/components/admin/ExpectedGuestList";
+import ArrivedGuestList from "@/components/admin/ArrivedGuestList";
 import AdminRoomManagement from "@/components/admin/AdminRoomManagement";
-import AdminBulkMessaging from "@/components/admin/AdminBulkMessaging";
 import AdminAuditLog from "@/components/admin/AdminAuditLog";
 import AdminManagement from "@/components/admin/AdminManagement";
-import { GuestDetailDialog, ManualEntryDialog } from "@/components/admin/AdminDialogs";
+import ReferencePersonManager from "@/components/admin/ReferencePersonManager";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -30,7 +30,7 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-/* ─── Login ─── */
+/* --- Login --- */
 function AdminLogin({ onLogin }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -59,8 +59,8 @@ function AdminLogin({ onLogin }) {
         <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-6" data-testid="admin-back-home-login">
           <ChevronLeft size={16} /> Back to Home
         </Link>
-        <h2 className="text-3xl font-bold text-[#0B1C3D] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Shrimad Bhagavat 2026 Management Portal</h2>
-        <p className="text-[#0B1C3D]/50 text-sm mb-8">Sign in to manage the event</p>
+        <h2 className="text-3xl font-bold text-[#0B1C3D] mb-2" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Swamsevak Portal</h2>
+        <p className="text-[#0B1C3D]/50 text-sm mb-8">Katha 2026 Operations</p>
         {error && <p className="text-red-500 text-sm mb-4 bg-red-50 p-3 rounded-lg" data-testid="admin-login-error">{error}</p>}
         <form onSubmit={handleSubmit} data-testid="admin-login-form" className="space-y-5">
           <div>
@@ -85,31 +85,30 @@ function AdminLogin({ onLogin }) {
   );
 }
 
-/* ─── Nav Config ─── */
+/* --- Nav Config --- */
 const NAV_ITEMS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "guestlist", label: "Final Guest List", icon: Users },
-  { id: "formapproval", label: "Website Form Approval", icon: FileText },
+  { id: "pending", label: "Pending Form Approval", icon: FileText },
+  { id: "expected", label: "Expected Guest List", icon: Users },
+  { id: "arrived", label: "Arrived Guest List", icon: UserCheck },
   { id: "roommanagement", label: "Room Management", icon: DoorOpen },
-  { id: "messaging", label: "Bulk Guest Messaging", icon: MessageSquare },
-  { id: "auditlog", label: "Audit Log", icon: ClipboardList },
-  { id: "adminmanagement", label: "Admin Management", icon: Shield },
+  { id: "auditlog", label: "Activity Log", icon: ClipboardList },
+  { id: "refpersons", label: "Reference Persons", icon: BookOpen, superOnly: true },
+  { id: "swamsevaks", label: "Swamsevak Management", icon: Shield, superOnly: true },
 ];
 
-/* ─── Admin Shell ─── */
+/* --- Admin Shell --- */
 function AdminShell({ user, onLogout }) {
   const [activeView, setActiveView] = useState("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [detailReg, setDetailReg] = useState(null);
-  const [showManualEntry, setShowManualEntry] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const navItems = NAV_ITEMS.filter(item => {
-    if (item.id === "adminmanagement") return user.role === "superadmin";
+    if (item.superOnly) return user.role === "superadmin";
     return true;
   });
 
-  useEffect(() => { document.title = "Shrimad Bhagavat 2026 Management Portal"; }, []);
+  useEffect(() => { document.title = "Swamsevak Portal - Katha 2026"; }, []);
 
   const handleNavigate = (view) => { setActiveView(view); setSidebarOpen(false); };
   const handleSaved = () => { setRefreshKey(k => k + 1); };
@@ -128,8 +127,9 @@ function AdminShell({ user, onLogout }) {
                 <ChevronLeft size={12} /> Back to Site
               </Link>
               <h2 className="text-base font-bold tracking-wide leading-tight" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-                Shrimad Bhagavat<br />2026 Management Portal
+                Swamsevak Portal
               </h2>
+              <p className="text-white/30 text-[10px] mt-1">Katha 2026 Operations</p>
               <p className="text-white/40 text-xs mt-2">{user.name || user.username}</p>
               {user.role === "superadmin" && <span className="text-[9px] bg-[#D4AF37] text-[#0B1C3D] px-2 py-0.5 rounded-full font-bold uppercase mt-1 inline-block">Super Admin</span>}
             </div>
@@ -172,7 +172,7 @@ function AdminShell({ user, onLogout }) {
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-[#D4AF37] rounded-full" />
             </button>
             <span className="text-[10px] text-[#D4AF37] font-semibold animate-pulse flex items-center gap-1">
-              <Sparkles size={10} /> Tap for all settings
+              <Sparkles size={10} /> Menu
             </span>
           </div>
           <h1 className="text-base font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
@@ -184,30 +184,27 @@ function AdminShell({ user, onLogout }) {
         <main className="flex-1 p-4 lg:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto">
             {activeView === "dashboard" && <AdminDashboardView key={`d-${refreshKey}`} user={user} authHeaders={() => authHeaders()} onNavigate={handleNavigate} />}
-            {activeView === "guestlist" && <AdminGuestList key={`g-${refreshKey}`} user={user} authHeaders={() => authHeaders()} onViewDetail={setDetailReg} onAddManual={() => setShowManualEntry(true)} />}
-            {activeView === "formapproval" && <AdminMasterControl key={`f-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "pending" && <PendingApproval key={`p-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "expected" && <ExpectedGuestList key={`e-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "arrived" && <ArrivedGuestList key={`a-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "roommanagement" && <AdminRoomManagement key={`r-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
-            {activeView === "messaging" && <AdminBulkMessaging key={`m-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
-            {activeView === "auditlog" && <AdminAuditLog key={`a-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
-            {activeView === "adminmanagement" && <AdminManagement key={`am-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "auditlog" && <AdminAuditLog key={`al-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "refpersons" && <ReferencePersonManager key={`rp-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "swamsevaks" && <AdminManagement key={`am-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
           </div>
         </main>
       </div>
-
-      {/* Shared Dialogs */}
-      <GuestDetailDialog registration={detailReg} open={!!detailReg} onClose={() => setDetailReg(null)} />
-      <ManualEntryDialog open={showManualEntry} onClose={() => setShowManualEntry(false)} authHeaders={() => authHeaders()} onSaved={handleSaved} />
     </div>
   );
 }
 
-/* ─── Main Export ─── */
+/* --- Main Export --- */
 export default function AdminPage() {
   const [user, setUser] = useState(null);
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    document.title = "Shrimad Bhagavat 2026 Management Portal";
+    document.title = "Swamsevak Portal - Katha 2026";
     const token = getToken();
     if (!token) { setChecking(false); return; }
     axios.get(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
