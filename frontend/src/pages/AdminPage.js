@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   ChevronLeft, Eye, EyeOff, LogOut, LayoutDashboard, Users, UserCheck, UserPlus,
-  FileText, DoorOpen, MessageSquare, ClipboardList, Menu, X, Shield, Sparkles, Settings, BookOpen
+  FileText, DoorOpen, MessageSquare, ClipboardList, Menu, X, Shield, Sparkles, Settings, BookOpen,
+  QrCode, HelpCircle, Send, ListChecks, SlidersHorizontal
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,11 @@ import AdminRoomManagement from "@/components/admin/AdminRoomManagement";
 import AdminAuditLog from "@/components/admin/AdminAuditLog";
 import AdminManagement from "@/components/admin/AdminManagement";
 import ReferencePersonManager from "@/components/admin/ReferencePersonManager";
+import QRScanner from "@/components/admin/QRScanner";
+import HelpCentre from "@/components/admin/HelpCentre";
+import MessageCenter from "@/components/admin/MessageCenter";
+import TodoModule from "@/components/admin/TodoModule";
+import CustomFieldsManager from "@/components/admin/CustomFieldsManager";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -91,9 +97,14 @@ const NAV_ITEMS = [
   { id: "pending", label: "Pending Form Approval", icon: FileText },
   { id: "expected", label: "Expected Guest List", icon: Users },
   { id: "arrived", label: "Arrived Guest List", icon: UserCheck },
+  { id: "qrscanner", label: "QR Code System", icon: QrCode },
   { id: "roommanagement", label: "Room Management", icon: DoorOpen },
+  { id: "helpcentre", label: "Help Centre", icon: HelpCircle },
+  { id: "todos", label: "To-Do List", icon: ListChecks },
   { id: "auditlog", label: "Activity Log", icon: ClipboardList },
+  { id: "messagecenter", label: "Message Center", icon: Send, superOnly: true },
   { id: "refpersons", label: "Reference Persons", icon: BookOpen, superOnly: true },
+  { id: "customfields", label: "Custom Fields", icon: SlidersHorizontal, superOnly: true },
   { id: "swamsevaks", label: "Swamsevak Management", icon: Shield, superOnly: true },
 ];
 
@@ -187,9 +198,14 @@ function AdminShell({ user, onLogout }) {
             {activeView === "pending" && <PendingApproval key={`p-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "expected" && <ExpectedGuestList key={`e-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "arrived" && <ArrivedGuestList key={`a-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "qrscanner" && <QRScanner key={`qs-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "roommanagement" && <AdminRoomManagement key={`r-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "helpcentre" && <HelpCentre key={`hc-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "todos" && <TodoModule key={`td-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "auditlog" && <AdminAuditLog key={`al-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "messagecenter" && <MessageCenter key={`mc-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "refpersons" && <ReferencePersonManager key={`rp-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
+            {activeView === "customfields" && <CustomFieldsManager key={`cf-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
             {activeView === "swamsevaks" && <AdminManagement key={`am-${refreshKey}`} user={user} authHeaders={() => authHeaders()} />}
           </div>
         </main>

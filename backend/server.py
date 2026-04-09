@@ -1181,6 +1181,629 @@ async def delete_admin(username: str, request: Request):
 async def root():
     return {"message": "Shrimad Bhagavat Katha Mahotsav 2026 API V2"}
 
+# ─── QR CODE SYSTEM ───
+import qrcode
+import base64
+
+@api_router.post("/admin/qr/generate/{reg_id}")
+async def generate_qr(reg_id: str, request: Request):
+    user = await get_current_user(request)
+    reg = await db.registrations.find_one({"id": reg_id}, {"_id": 0})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    qr_token = str(uuid.uuid4())[:12].upper()
+    version = (reg.get("qr_version", 0) or 0) + 1
+    qr_data = f"KATHA2026:{reg_id}:{qr_token}:v{version}"
+    qr_img = qrcode.make(qr_data)
+    buf = io.BytesIO()
+    qr_img.save(buf, format="PNG")
+    qr_b64 = base64.b64encode(buf.getvalue()).decode()
+    await db.registrations.update_one({"id": reg_id}, {"$set": {
+        "qr_token": qr_token, "qr_version": version, "qr_data": qr_data,
+        "qr_image_b64": qr_b64, "qr_generated_at": datetime.now(timezone.utc).isoformat(),
+        "qr_active": True, "last_updated_by": user["name"],
+    }})
+    head_name = ""
+    for a in reg.get("attendees", []):
+        if a.get("id") == reg.get("group_head_id"):
+            head_name = a.get("name", "")
+    await log_audit("qr_generate", "registration", reg_id, head_name or reg.get("primary_mobile", ""), f"QR v{version} generated", user["name"])
+    return {"qr_data": qr_data, "qr_token": qr_token, "qr_version": version, "qr_image_b64": qr_b64}
+
+@api_router.post("/admin/qr/generate-bulk")
+async def generate_qr_bulk(request: Request):
+    user = await get_current_user(request)
+    regs = await db.registrations.find({"approval_status": "approved", "arrival_status": {"$ne": "not_coming"}}, {"_id": 0, "id": 1, "qr_active": 1}).to_list(5000)
+    count = 0
+    for r in regs:
+        if r.get("qr_active"):
+            continue
+        qr_token = str(uuid.uuid4())[:12].upper()
+        qr_data = f"KATHA2026:{r['id']}:{qr_token}:v1"
+        qr_img = qrcode.make(qr_data)
+        buf = io.BytesIO()
+        qr_img.save(buf, format="PNG")
+        qr_b64 = base64.b64encode(buf.getvalue()).decode()
+        await db.registrations.update_one({"id": r["id"]}, {"$set": {
+            "qr_token": qr_token, "qr_version": 1, "qr_data": qr_data,
+            "qr_image_b64": qr_b64, "qr_generated_at": datetime.now(timezone.utc).isoformat(),
+            "qr_active": True,
+        }})
+        count += 1
+    await log_audit("qr_bulk_generate", "system", "", "", f"Bulk generated {count} QR codes", user["name"])
+    return {"generated": count, "skipped": len(regs) - count}
+
+@api_router.post("/admin/qr/scan")
+async def scan_qr(request: Request):
+    await get_current_user(request)
+    body = await request.json()
+    qr_raw = body.get("qr_data", "").strip()
+    if not qr_raw:
+        raise HTTPException(status_code=400, detail="No QR data provided")
+    parts = qr_raw.split(":")
+    if len(parts) < 3 or parts[0] != "KATHA2026":
+        raise HTTPException(status_code=400, detail="Invalid QR code format")
+    reg_id = parts[1]
+    qr_token = parts[2]
+    reg = await db.registrations.find_one({"id": reg_id}, {"_id": 0})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    if reg.get("qr_token") != qr_token:
+        raise HTTPException(status_code=410, detail="This QR code has been invalidated. A newer version was issued.")
+    if not reg.get("qr_active", False):
+        raise HTTPException(status_code=410, detail="This QR code is no longer active.")
+    ref_name = ""
+    if reg.get("reference_person_id"):
+        rp = await db.reference_persons.find_one({"id": reg["reference_person_id"]}, {"_id": 0, "name": 1})
+        ref_name = rp.get("name", "") if rp else ""
+    reg["reference_person_name"] = ref_name
+    return {"registration": reg}
+
+@api_router.put("/admin/qr/invalidate/{reg_id}")
+async def invalidate_qr(reg_id: str, request: Request):
+    user = await require_superadmin(request)
+    await db.registrations.update_one({"id": reg_id}, {"$set": {"qr_active": False, "last_updated_by": user["name"]}})
+    await log_audit("qr_invalidate", "registration", reg_id, "", f"QR invalidated", user["name"])
+    return {"message": "QR invalidated"}
+
+# ─── HELP CENTRE / TICKETING ───
+class TicketCreate(BaseModel):
+    title: str
+    description: str = ""
+    category: str = "other"
+    priority: str = "low"
+    source_type: str = "admin"
+    source_registration_id: str = ""
+    assigned_to: str = ""
+    resolution_time_minutes: int = 30
+
+class TicketUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+    assigned_to: Optional[str] = None
+    status: Optional[str] = None
+    resolution_time_minutes: Optional[int] = None
+    notes: Optional[str] = None
+
+class TicketResolve(BaseModel):
+    closing_note: str
+
+TICKET_CATEGORIES = [
+    {"id": "water", "label": "Water / Beverages", "priority": "low", "sla_minutes": 30},
+    {"id": "wheelchair", "label": "Wheelchair Arrangement", "priority": "medium", "sla_minutes": 20},
+    {"id": "medical", "label": "Medical Help", "priority": "high", "sla_minutes": 10},
+    {"id": "medical_emergency", "label": "Medical Emergency", "priority": "high", "sla_minutes": 5},
+    {"id": "lost_found", "label": "Lost & Found", "priority": "medium", "sla_minutes": 60},
+    {"id": "support", "label": "Support Services", "priority": "low", "sla_minutes": 45},
+    {"id": "report", "label": "Report Something", "priority": "medium", "sla_minutes": 30},
+    {"id": "room_issue", "label": "Room Issue", "priority": "medium", "sla_minutes": 30},
+    {"id": "food", "label": "Food / Dining", "priority": "low", "sla_minutes": 30},
+    {"id": "transport", "label": "Transport Assistance", "priority": "low", "sla_minutes": 45},
+    {"id": "other", "label": "Other Assistance", "priority": "low", "sla_minutes": 30},
+]
+
+@api_router.get("/admin/tickets/categories")
+async def get_ticket_categories(request: Request):
+    await get_current_user(request)
+    return TICKET_CATEGORIES
+
+@api_router.get("/admin/tickets/stats")
+async def get_ticket_stats(request: Request):
+    await get_current_user(request)
+    total = await db.tickets.count_documents({})
+    active = await db.tickets.count_documents({"status": {"$in": ["open", "in_progress"]}})
+    resolved = await db.tickets.count_documents({"status": "resolved"})
+    high = await db.tickets.count_documents({"status": {"$in": ["open", "in_progress"]}, "priority": "high"})
+    medium = await db.tickets.count_documents({"status": {"$in": ["open", "in_progress"]}, "priority": "medium"})
+    low = await db.tickets.count_documents({"status": {"$in": ["open", "in_progress"]}, "priority": "low"})
+    # Check escalated (past SLA)
+    now = datetime.now(timezone.utc)
+    escalated = 0
+    open_tickets = await db.tickets.find({"status": {"$in": ["open", "in_progress"]}}, {"_id": 0, "created_at": 1, "resolution_time_minutes": 1}).to_list(500)
+    for t in open_tickets:
+        try:
+            created = datetime.fromisoformat(t["created_at"].replace("Z", "+00:00"))
+            sla = timedelta(minutes=t.get("resolution_time_minutes", 30))
+            if now > created + sla:
+                escalated += 1
+        except:
+            pass
+    return {"total": total, "active": active, "resolved": resolved, "escalated": escalated, "by_priority": {"high": high, "medium": medium, "low": low}}
+
+@api_router.get("/admin/tickets")
+async def get_tickets(request: Request, status: Optional[str] = None, priority: Optional[str] = None, assigned_to: Optional[str] = None, page: int = 1, per_page: int = 50):
+    await get_current_user(request)
+    query = {}
+    if status:
+        query["status"] = status
+    if priority:
+        query["priority"] = priority
+    if assigned_to:
+        query["assigned_to"] = assigned_to
+    total = await db.tickets.count_documents(query)
+    skip = (page - 1) * per_page
+    tickets = await db.tickets.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": tickets, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+@api_router.get("/admin/tickets/{ticket_id}")
+async def get_ticket_detail(ticket_id: str, request: Request):
+    await get_current_user(request)
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
+@api_router.post("/admin/tickets")
+async def create_ticket(body: TicketCreate, request: Request):
+    user = await get_current_user(request)
+    cat = next((c for c in TICKET_CATEGORIES if c["id"] == body.category), None)
+    sla = body.resolution_time_minutes or (cat["sla_minutes"] if cat else 30)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "title": body.title,
+        "description": body.description,
+        "category": body.category,
+        "category_label": cat["label"] if cat else body.category,
+        "priority": body.priority or (cat["priority"] if cat else "low"),
+        "status": "open",
+        "source_type": body.source_type,
+        "source_registration_id": body.source_registration_id,
+        "created_by": user["username"],
+        "created_by_name": user["name"],
+        "assigned_to": body.assigned_to or user["username"],
+        "assigned_to_name": "",
+        "resolution_time_minutes": sla,
+        "notes": "",
+        "closing_note": "",
+        "resolved_at": "",
+        "resolved_by": "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.tickets.insert_one(doc)
+    doc.pop("_id", None)
+    await log_audit("ticket_create", "ticket", doc["id"], body.title, f"Ticket created: {body.category} ({body.priority})", user["name"])
+    return doc
+
+@api_router.put("/admin/tickets/{ticket_id}")
+async def update_ticket(ticket_id: str, body: TicketUpdate, request: Request):
+    user = await get_current_user(request)
+    ticket = await db.tickets.find_one({"id": ticket_id})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.tickets.update_one({"id": ticket_id}, {"$set": updates})
+    await log_audit("ticket_update", "ticket", ticket_id, ticket.get("title", ""), f"Updated: {', '.join(updates.keys())}", user["name"])
+    return {"message": "Ticket updated"}
+
+@api_router.put("/admin/tickets/{ticket_id}/assign")
+async def assign_ticket(ticket_id: str, request: Request):
+    user = await get_current_user(request)
+    body = await request.json()
+    assigned_to = body.get("assigned_to", "")
+    if not assigned_to:
+        raise HTTPException(status_code=400, detail="assigned_to required")
+    await db.tickets.update_one({"id": ticket_id}, {"$set": {"assigned_to": assigned_to, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    await log_audit("ticket_assign", "ticket", ticket_id, "", f"Assigned to {assigned_to}", user["name"])
+    return {"message": "Ticket assigned"}
+
+@api_router.put("/admin/tickets/{ticket_id}/resolve")
+async def resolve_ticket(ticket_id: str, body: TicketResolve, request: Request):
+    user = await get_current_user(request)
+    ticket = await db.tickets.find_one({"id": ticket_id})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    if ticket.get("assigned_to") != user["username"] and user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Only the assigned Swamsevak or Super Admin can resolve this ticket")
+    if not body.closing_note.strip():
+        raise HTTPException(status_code=400, detail="Closing note is required")
+    await db.tickets.update_one({"id": ticket_id}, {"$set": {
+        "status": "resolved", "closing_note": body.closing_note,
+        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "resolved_by": user["username"], "resolved_by_name": user["name"],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }})
+    await log_audit("ticket_resolve", "ticket", ticket_id, ticket.get("title", ""), f"Resolved by {user['name']}", user["name"])
+    return {"message": "Ticket resolved"}
+
+# ─── TO-DO MODULE ───
+class TodoCreate(BaseModel):
+    title: str
+    description: str = ""
+    assigned_to: str = ""
+    due_date: str = ""
+    priority: str = "medium"
+    todo_type: str = "manual"
+    related_registration_id: str = ""
+
+class TodoUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    assigned_to: Optional[str] = None
+    due_date: Optional[str] = None
+    priority: Optional[str] = None
+    completed: Optional[bool] = None
+
+@api_router.get("/admin/todos")
+async def get_todos(request: Request, assigned_to: Optional[str] = None, completed: Optional[str] = None, due_date: Optional[str] = None, page: int = 1, per_page: int = 50):
+    user = await get_current_user(request)
+    query = {}
+    if assigned_to:
+        query["assigned_to"] = assigned_to
+    elif user.get("role") != "superadmin":
+        query["assigned_to"] = user["username"]
+    if completed == "true":
+        query["completed"] = True
+    elif completed == "false":
+        query["completed"] = False
+    if due_date:
+        query["due_date"] = due_date
+    total = await db.todos.count_documents(query)
+    skip = (page - 1) * per_page
+    todos = await db.todos.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": todos, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+@api_router.post("/admin/todos")
+async def create_todo(body: TodoCreate, request: Request):
+    user = await get_current_user(request)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "title": body.title,
+        "description": body.description,
+        "assigned_to": body.assigned_to or user["username"],
+        "due_date": body.due_date,
+        "priority": body.priority,
+        "todo_type": body.todo_type,
+        "related_registration_id": body.related_registration_id,
+        "completed": False,
+        "completed_at": "",
+        "created_by": user["username"],
+        "created_by_name": user["name"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.todos.insert_one(doc)
+    doc.pop("_id", None)
+    await log_audit("todo_create", "todo", doc["id"], body.title, f"To-do created for {body.assigned_to or user['username']}", user["name"])
+    return doc
+
+@api_router.put("/admin/todos/{todo_id}")
+async def update_todo(todo_id: str, body: TodoUpdate, request: Request):
+    user = await get_current_user(request)
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "completed" in updates and updates["completed"]:
+        updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.todos.update_one({"id": todo_id}, {"$set": updates})
+    return {"message": "To-do updated"}
+
+@api_router.delete("/admin/todos/{todo_id}")
+async def delete_todo(todo_id: str, request: Request):
+    user = await get_current_user(request)
+    if user.get("role") != "superadmin":
+        todo = await db.todos.find_one({"id": todo_id})
+        if todo and todo.get("created_by") != user["username"]:
+            raise HTTPException(status_code=403, detail="Only Super Admin or creator can delete")
+    await db.todos.delete_one({"id": todo_id})
+    await log_audit("todo_delete", "todo", todo_id, "", f"To-do deleted", user["name"])
+    return {"message": "Deleted"}
+
+# ─── MESSAGE CENTER ───
+class MessageTemplateCreate(BaseModel):
+    name: str
+    content_en: str = ""
+    content_hi: str = ""
+    category: str = "shraddhalu"
+    trigger_type: str = "manual"
+    enabled: bool = True
+
+class MessageTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    content_en: Optional[str] = None
+    content_hi: Optional[str] = None
+    category: Optional[str] = None
+    trigger_type: Optional[str] = None
+    enabled: Optional[bool] = None
+
+class MessageSend(BaseModel):
+    template_id: str = ""
+    custom_message_en: str = ""
+    custom_message_hi: str = ""
+    target_type: str = "all_expected"
+    target_ids: List[str] = []
+
+DEFAULT_TEMPLATES = [
+    {"name": "OTP Message", "content_en": "Your OTP for Katha 2026 registration is: {otp}. Valid for 10 minutes.", "content_hi": "\u0915\u0925\u093E 2026 \u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0915\u093E OTP: {otp}\u0964 10 \u092E\u093F\u0928\u091F \u0915\u0947 \u0932\u093F\u090F \u0935\u0948\u0927\u0964", "category": "system", "trigger_type": "auto"},
+    {"name": "Registration Confirmation", "content_en": "Thank you for registering for Shrimad Bhagavat Katha 2026! You can update your details until 19 May 2026.", "content_hi": "\u0936\u094D\u0930\u0940\u092E\u0926\u094D\u092D\u093E\u0917\u0935\u0924 \u0915\u0925\u093E 2026 \u0915\u0947 \u0932\u093F\u090F \u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0915\u0947 \u0932\u093F\u090F \u0927\u0928\u094D\u092F\u0935\u093E\u0926! \u0906\u092A 19 \u092E\u0908 2026 \u0924\u0915 \u0905\u092A\u0928\u093E \u0935\u093F\u0935\u0930\u0923 \u0905\u092A\u0921\u0947\u091F \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902\u0964", "category": "shraddhalu", "trigger_type": "auto"},
+    {"name": "Form Closed", "content_en": "Registration for Katha 2026 closed on 19 May 2026. For changes, contact admin.", "content_hi": "\u0915\u0925\u093E 2026 \u0915\u093E \u092A\u0902\u091C\u0940\u0915\u0930\u0923 19 \u092E\u0908 2026 \u0915\u094B \u092C\u0902\u0926 \u0939\u094B \u0917\u092F\u093E\u0964 \u092A\u0930\u093F\u0935\u0930\u094D\u0924\u0928 \u0915\u0947 \u0932\u093F\u090F \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902\u0964", "category": "shraddhalu", "trigger_type": "auto"},
+    {"name": "Welcome + Room Allocation", "content_en": "Welcome to Shrimad Bhagavat Katha 2026! Your room: {room}. QR attached. Contact: {swamsevak_name} ({swamsevak_phone})", "content_hi": "\u0936\u094D\u0930\u0940\u092E\u0926\u094D\u092D\u093E\u0917\u0935\u0924 \u0915\u0925\u093E 2026 \u092E\u0947\u0902 \u0938\u094D\u0935\u093E\u0917\u0924! \u0906\u092A\u0915\u093E \u0915\u092E\u0930\u093E: {room}\u0964 QR \u0938\u0902\u0932\u0917\u094D\u0928\u0964 \u0938\u0902\u092A\u0930\u094D\u0915: {swamsevak_name} ({swamsevak_phone})", "category": "shraddhalu", "trigger_type": "manual"},
+    {"name": "Food Timing", "content_en": "Prasad timings today: Breakfast 7-9 AM, Lunch 12-2 PM, Dinner 7-9 PM. Please carry your ID card.", "content_hi": "\u0906\u091C \u0915\u093E \u092A\u094D\u0930\u0938\u093E\u0926 \u0938\u092E\u092F: \u0938\u0941\u092C\u0939 7-9, \u0926\u094B\u092A\u0939\u0930 12-2, \u0930\u093E\u0924\u094D\u0930\u093F 7-9\u0964 \u0915\u0943\u092A\u092F\u093E ID \u0915\u093E\u0930\u094D\u0921 \u0938\u093E\u0925 \u0930\u0916\u0947\u0902\u0964", "category": "shraddhalu", "trigger_type": "scheduled"},
+    {"name": "Katha Timing", "content_en": "Today's Katha: Morning session 9-12 AM, Evening session 4-7 PM. Venue: Main Hall.", "content_hi": "\u0906\u091C \u0915\u0940 \u0915\u0925\u093E: \u0938\u0941\u092C\u0939 9-12, \u0936\u093E\u092E 4-7\u0964 \u0938\u094D\u0925\u093E\u0928: \u092E\u0941\u0916\u094D\u092F \u0939\u0949\u0932\u0964", "category": "shraddhalu", "trigger_type": "scheduled"},
+    {"name": "Wear ID Card Reminder", "content_en": "Reminder: Please wear your ID card at all times within the premises.", "content_hi": "\u0905\u0928\u0941\u0938\u094D\u092E\u093E\u0930\u0915: \u0915\u0943\u092A\u092F\u093E \u092A\u0930\u093F\u0938\u0930 \u092E\u0947\u0902 \u0939\u0930 \u0938\u092E\u092F ID \u0915\u093E\u0930\u094D\u0921 \u092A\u0939\u0928\u0947\u0902\u0964", "category": "shraddhalu", "trigger_type": "scheduled"},
+    {"name": "Swamsevak Daily Briefing", "content_en": "Good morning! Today's departures: {departures}. Special needs: {special_needs}. Open tickets: {tickets}.", "content_hi": "\u0938\u0941\u092A\u094D\u0930\u092D\u093E\u0924! \u0906\u091C \u0915\u0947 \u092A\u094D\u0930\u0938\u094D\u0925\u093E\u0928: {departures}\u0964 \u0935\u093F\u0936\u0947\u0937 \u0906\u0935\u0936\u094D\u092F\u0915\u0924\u093E: {special_needs}\u0964 \u0916\u0941\u0932\u0947 \u091F\u093F\u0915\u091F: {tickets}\u0964", "category": "swamsevak", "trigger_type": "scheduled"},
+    {"name": "Revised QR", "content_en": "Your details have been updated. Please use the new QR code attached. Previous QR is no longer valid.", "content_hi": "\u0906\u092A\u0915\u0947 \u0935\u093F\u0935\u0930\u0923 \u0905\u092A\u0921\u0947\u091F \u0939\u094B \u0917\u090F \u0939\u0948\u0902\u0964 \u0915\u0943\u092A\u092F\u093E \u0928\u092F\u093E QR \u0915\u094B\u0921 \u0909\u092A\u092F\u094B\u0917 \u0915\u0930\u0947\u0902\u0964 \u092A\u0941\u0930\u093E\u0928\u093E QR \u0905\u092E\u093E\u0928\u094D\u092F \u0939\u0948\u0964", "category": "shraddhalu", "trigger_type": "manual"},
+    {"name": "Pre-Registration Invite", "content_en": "Namaste! You are invited to Shrimad Bhagavat Katha 2026 in Pushkar (28 May - 3 Jun). Interested? Reply YES.", "content_hi": "\u0928\u092E\u0938\u094D\u0924\u0947! \u0906\u092A\u0915\u094B \u092A\u0941\u0937\u094D\u0915\u0930 \u092E\u0947\u0902 \u0936\u094D\u0930\u0940\u092E\u0926\u094D\u092D\u093E\u0917\u0935\u0924 \u0915\u0925\u093E 2026 (28 \u092E\u0908 - 3 \u091C\u0942\u0928) \u0915\u093E \u0928\u093F\u092E\u0902\u0924\u094D\u0930\u0923\u0964 \u0930\u0941\u091A\u093F \u0939\u0948? YES \u0932\u093F\u0916\u0947\u0902\u0964", "category": "shraddhalu", "trigger_type": "manual"},
+]
+
+@api_router.get("/admin/messages/templates")
+async def get_message_templates(request: Request):
+    user = await require_superadmin(request)
+    templates = await db.message_templates.find({}, {"_id": 0}).sort("name", 1).to_list(100)
+    return templates
+
+@api_router.post("/admin/messages/templates")
+async def create_message_template(body: MessageTemplateCreate, request: Request):
+    user = await require_superadmin(request)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": body.name, "content_en": body.content_en, "content_hi": body.content_hi,
+        "category": body.category, "trigger_type": body.trigger_type, "enabled": body.enabled,
+        "created_at": datetime.now(timezone.utc).isoformat(), "created_by": user["name"],
+    }
+    await db.message_templates.insert_one(doc)
+    doc.pop("_id", None)
+    await log_audit("template_create", "message_template", doc["id"], body.name, f"Message template created", user["name"])
+    return doc
+
+@api_router.put("/admin/messages/templates/{tmpl_id}")
+async def update_message_template(tmpl_id: str, body: MessageTemplateUpdate, request: Request):
+    user = await require_superadmin(request)
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.message_templates.update_one({"id": tmpl_id}, {"$set": updates})
+    await log_audit("template_update", "message_template", tmpl_id, "", f"Template updated", user["name"])
+    return {"message": "Updated"}
+
+@api_router.delete("/admin/messages/templates/{tmpl_id}")
+async def delete_message_template(tmpl_id: str, request: Request):
+    user = await require_superadmin(request)
+    await db.message_templates.delete_one({"id": tmpl_id})
+    await log_audit("template_delete", "message_template", tmpl_id, "", f"Template deleted", user["name"])
+    return {"message": "Deleted"}
+
+@api_router.post("/admin/messages/send")
+async def send_message(body: MessageSend, request: Request):
+    user = await require_superadmin(request)
+    targets = []
+    if body.target_type == "all_expected":
+        targets = await db.registrations.find({"approval_status": "approved", "arrival_status": "not_arrived"}, {"_id": 0, "id": 1, "primary_mobile": 1, "preferred_language": 1}).to_list(5000)
+    elif body.target_type == "all_arrived":
+        targets = await db.registrations.find({"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived"]}}, {"_id": 0, "id": 1, "primary_mobile": 1, "preferred_language": 1}).to_list(5000)
+    elif body.target_type == "all_approved":
+        targets = await db.registrations.find({"approval_status": "approved"}, {"_id": 0, "id": 1, "primary_mobile": 1, "preferred_language": 1}).to_list(5000)
+    elif body.target_type == "selected" and body.target_ids:
+        targets = await db.registrations.find({"id": {"$in": body.target_ids}}, {"_id": 0, "id": 1, "primary_mobile": 1, "preferred_language": 1}).to_list(5000)
+    elif body.target_type == "all_swamsevaks":
+        swamsevaks = []
+        for uname, acc in ADMIN_ACCOUNTS.items():
+            if acc.get("role") != "superadmin":
+                swamsevaks.append({"id": uname, "primary_mobile": "", "preferred_language": "en"})
+        custom = await db.custom_admins.find({}, {"_id": 0}).to_list(100)
+        for c in custom:
+            swamsevaks.append({"id": c["username"], "primary_mobile": c.get("mobile", ""), "preferred_language": "en"})
+        targets = swamsevaks
+
+    # Simulate sending - log each delivery
+    campaign_id = str(uuid.uuid4())
+    sent = 0
+    for t in targets:
+        await db.message_deliveries.insert_one({
+            "id": str(uuid.uuid4()),
+            "campaign_id": campaign_id,
+            "template_id": body.template_id,
+            "target_id": t.get("id", ""),
+            "mobile": t.get("primary_mobile", ""),
+            "language": t.get("preferred_language", "en"),
+            "status": "sent",  # simulated
+            "sent_at": datetime.now(timezone.utc).isoformat(),
+        })
+        sent += 1
+    campaign = {
+        "id": campaign_id, "template_id": body.template_id,
+        "target_type": body.target_type, "total_targets": len(targets),
+        "sent": sent, "failed": 0,
+        "custom_message_en": body.custom_message_en, "custom_message_hi": body.custom_message_hi,
+        "sent_by": user["name"], "sent_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.message_campaigns.insert_one(campaign)
+    campaign.pop("_id", None)
+    await log_audit("message_send", "campaign", campaign_id, "", f"Sent to {sent} recipients ({body.target_type})", user["name"])
+    return {"campaign_id": campaign_id, "sent": sent, "total": len(targets)}
+
+@api_router.get("/admin/messages/campaigns")
+async def get_campaigns(request: Request, page: int = 1, per_page: int = 20):
+    user = await require_superadmin(request)
+    total = await db.message_campaigns.count_documents({})
+    skip = (page - 1) * per_page
+    campaigns = await db.message_campaigns.find({}, {"_id": 0}).sort("sent_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": campaigns, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+# ─── CUSTOM FIELDS ───
+class CustomFieldCreate(BaseModel):
+    name: str
+    field_type: str = "text"
+    default_value: str = ""
+    options: List[str] = []
+    scope: str = "registration"
+    visibility: str = "admin_only"
+
+@api_router.get("/admin/custom-fields")
+async def get_custom_fields(request: Request):
+    await get_current_user(request)
+    fields = await db.custom_fields.find({}, {"_id": 0}).sort("name", 1).to_list(100)
+    return fields
+
+@api_router.post("/admin/custom-fields")
+async def create_custom_field(body: CustomFieldCreate, request: Request):
+    user = await require_superadmin(request)
+    doc = {
+        "id": str(uuid.uuid4()), "name": body.name, "field_type": body.field_type,
+        "default_value": body.default_value, "options": body.options,
+        "scope": body.scope, "visibility": body.visibility,
+        "created_at": datetime.now(timezone.utc).isoformat(), "created_by": user["name"],
+    }
+    await db.custom_fields.insert_one(doc)
+    doc.pop("_id", None)
+    await log_audit("custom_field_create", "custom_field", doc["id"], body.name, f"Custom field created: {body.field_type}", user["name"])
+    return doc
+
+@api_router.put("/admin/custom-fields/{field_id}")
+async def update_custom_field(field_id: str, request: Request):
+    user = await require_superadmin(request)
+    body = await request.json()
+    updates = {k: v for k, v in body.items() if k not in ("id", "created_at", "created_by")}
+    await db.custom_fields.update_one({"id": field_id}, {"$set": updates})
+    await log_audit("custom_field_update", "custom_field", field_id, "", f"Custom field updated", user["name"])
+    return {"message": "Updated"}
+
+@api_router.delete("/admin/custom-fields/{field_id}")
+async def delete_custom_field(field_id: str, request: Request):
+    user = await require_superadmin(request)
+    await db.custom_fields.delete_one({"id": field_id})
+    await log_audit("custom_field_delete", "custom_field", field_id, "", f"Custom field deleted", user["name"])
+    return {"message": "Deleted"}
+
+@api_router.put("/admin/registrations/{reg_id}/custom-fields")
+async def update_reg_custom_fields(reg_id: str, request: Request):
+    user = await get_current_user(request)
+    body = await request.json()
+    fields = body.get("custom_field_values", {})
+    await db.registrations.update_one({"id": reg_id}, {"$set": {"custom_field_values": fields, "last_updated_by": user["name"], "last_updated_at": datetime.now(timezone.utc).isoformat()}})
+    return {"message": "Custom fields updated"}
+
+# ─── DEPARTURE MANAGEMENT ───
+@api_router.get("/admin/departures/today")
+async def get_todays_departures(request: Request):
+    await get_current_user(request)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    regs = await db.registrations.find({
+        "approval_status": "approved",
+        "departure_date": today,
+        "arrival_status": {"$in": ["arrived", "partially_arrived"]},
+    }, {"_id": 0}).to_list(500)
+    return regs
+
+@api_router.post("/admin/registrations/{reg_id}/confirm-departure")
+async def confirm_departure(reg_id: str, request: Request):
+    user = await get_current_user(request)
+    reg = await db.registrations.find_one({"id": reg_id})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    updates = {
+        "arrival_status": "departed",
+        "departed_at": datetime.now(timezone.utc).isoformat(),
+        "departed_confirmed_by": user["name"],
+        "last_updated_by": user["name"],
+        "last_updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # Update all attendees
+    attendees = reg.get("attendees", [])
+    for att in attendees:
+        att["arrival_status"] = "departed"
+    updates["attendees"] = attendees
+    await db.registrations.update_one({"id": reg_id}, {"$set": updates})
+    # Free rooms
+    for rc in reg.get("room_assignments", []):
+        room = await db.rooms.find_one({"room_code": rc})
+        if room:
+            occ_ids = [x for x in room.get("occupant_ids", []) if x != reg_id]
+            occ_names = [n for n in room.get("occupant_names", []) if n != ""]
+            status = "occupied" if occ_ids else "available"
+            await db.rooms.update_one({"room_code": rc}, {"$set": {"occupant_ids": occ_ids, "occupant_names": occ_names if occ_ids else [], "status": status}})
+    head_name = ""
+    for a in reg.get("attendees", []):
+        if a.get("id") == reg.get("group_head_id"):
+            head_name = a.get("name", "")
+    await log_audit("departure_confirm", "registration", reg_id, head_name or reg.get("primary_mobile", ""), f"Departure confirmed, rooms freed", user["name"])
+    return {"message": "Departure confirmed, rooms freed"}
+
+# ─── SWAMSEVAK ASSIGNMENT ───
+@api_router.put("/admin/registrations/{reg_id}/assign-swamsevak")
+async def assign_swamsevak(reg_id: str, request: Request):
+    user = await get_current_user(request)
+    body = await request.json()
+    swamsevak_username = body.get("swamsevak_username", "")
+    if not swamsevak_username:
+        raise HTTPException(status_code=400, detail="swamsevak_username required")
+    reg = await db.registrations.find_one({"id": reg_id})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    assignments = reg.get("swamsevak_assignments", [])
+    if swamsevak_username not in assignments:
+        assignments.append(swamsevak_username)
+    await db.registrations.update_one({"id": reg_id}, {"$set": {"swamsevak_assignments": assignments, "last_updated_by": user["name"], "last_updated_at": datetime.now(timezone.utc).isoformat()}})
+    await log_audit("swamsevak_assign", "registration", reg_id, "", f"Swamsevak {swamsevak_username} assigned", user["name"])
+    return {"message": f"Swamsevak {swamsevak_username} assigned"}
+
+# ─── HELP CHATBOT (PUBLIC) ───
+CHATBOT_FAQ = [
+    {"keywords": ["water", "pani", "\u092A\u093E\u0928\u0940"], "response_en": "A water request has been raised. Someone will assist you shortly.", "response_hi": "\u092A\u093E\u0928\u0940 \u0915\u093E \u0905\u0928\u0941\u0930\u094B\u0927 \u0926\u0930\u094D\u091C \u0915\u093F\u092F\u093E \u0917\u092F\u093E \u0939\u0948\u0964 \u091C\u0932\u094D\u0926 \u0939\u0940 \u0938\u0939\u093E\u092F\u0924\u093E \u092E\u093F\u0932\u0947\u0917\u0940\u0964", "category": "water"},
+    {"keywords": ["wheelchair", "\u0935\u094D\u0939\u0940\u0932\u091A\u0947\u092F\u0930"], "response_en": "A wheelchair has been requested. Our team will arrange it.", "response_hi": "\u0935\u094D\u0939\u0940\u0932\u091A\u0947\u092F\u0930 \u0915\u093E \u0905\u0928\u0941\u0930\u094B\u0927 \u0915\u093F\u092F\u093E \u0917\u092F\u093E\u0964 \u0939\u092E\u093E\u0930\u0940 \u091F\u0940\u092E \u0935\u094D\u092F\u0935\u0938\u094D\u0925\u093E \u0915\u0930\u0947\u0917\u0940\u0964", "category": "wheelchair"},
+    {"keywords": ["medical", "doctor", "\u0921\u0949\u0915\u094D\u091F\u0930", "health"], "response_en": "Medical help is on the way. If this is an emergency, please call the front desk.", "response_hi": "\u091A\u093F\u0915\u093F\u0924\u094D\u0938\u093E \u0938\u0939\u093E\u092F\u0924\u093E \u092D\u0947\u091C\u0940 \u091C\u093E \u0930\u0939\u0940 \u0939\u0948\u0964 \u0906\u092A\u093E\u0924\u0915\u093E\u0932 \u092E\u0947\u0902 \u092B\u094D\u0930\u0902\u091F \u0921\u0947\u0938\u094D\u0915 \u092A\u0930 \u0915\u0949\u0932 \u0915\u0930\u0947\u0902\u0964", "category": "medical"},
+    {"keywords": ["lost", "found", "\u0916\u094B\u092F\u093E"], "response_en": "Please describe the lost item. We'll check our lost & found.", "response_hi": "\u0915\u0943\u092A\u092F\u093E \u0916\u094B\u0908 \u0935\u0938\u094D\u0924\u0941 \u0915\u093E \u0935\u0930\u094D\u0923\u0928 \u0915\u0930\u0947\u0902\u0964 \u0939\u092E \u091C\u093E\u0901\u091A \u0915\u0930\u0947\u0902\u0917\u0947\u0964", "category": "lost_found"},
+    {"keywords": ["food", "khana", "\u0916\u093E\u0928\u093E", "prasad"], "response_en": "Prasad timings: Breakfast 7-9 AM, Lunch 12-2 PM, Dinner 7-9 PM. Main dining hall.", "response_hi": "\u092A\u094D\u0930\u0938\u093E\u0926 \u0938\u092E\u092F: \u0938\u0941\u092C\u0939 7-9, \u0926\u094B\u092A\u0939\u0930 12-2, \u0930\u093E\u0924\u094D\u0930\u093F 7-9\u0964 \u092E\u0941\u0916\u094D\u092F \u092D\u094B\u091C\u0928 \u0915\u0915\u094D\u0937\u0964", "category": "food"},
+    {"keywords": ["room", "kamra", "\u0915\u092E\u0930\u093E"], "response_en": "For room issues, a ticket has been raised. Your assigned Swamsevak will contact you.", "response_hi": "\u0915\u092E\u0930\u0947 \u0915\u0940 \u0938\u092E\u0938\u094D\u092F\u093E \u0915\u0947 \u0932\u093F\u090F \u091F\u093F\u0915\u091F \u092C\u0928\u093E\u092F\u093E \u0917\u092F\u093E\u0964 \u0906\u092A\u0915\u0947 \u0938\u094D\u0935\u093E\u092E\u0938\u0947\u0935\u0915 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902\u0917\u0947\u0964", "category": "room_issue"},
+    {"keywords": ["transport", "\u092F\u093E\u0924\u093E\u092F\u093E\u0924", "taxi", "car"], "response_en": "For transport assistance, please contact the front desk or your assigned Swamsevak.", "response_hi": "\u092F\u093E\u0924\u093E\u092F\u093E\u0924 \u0938\u0939\u093E\u092F\u0924\u093E \u0915\u0947 \u0932\u093F\u090F \u092B\u094D\u0930\u0902\u091F \u0921\u0947\u0938\u094D\u0915 \u092F\u093E \u0938\u094D\u0935\u093E\u092E\u0938\u0947\u0935\u0915 \u0938\u0947 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902\u0964", "category": "transport"},
+    {"keywords": ["schedule", "timing", "\u0938\u092E\u092F", "katha"], "response_en": "Katha Schedule: Morning 9-12 AM, Evening 4-7 PM daily. Check notice board for updates.", "response_hi": "\u0915\u0925\u093E \u0938\u092E\u092F: \u0938\u0941\u092C\u0939 9-12, \u0936\u093E\u092E 4-7 \u092A\u094D\u0930\u0924\u093F\u0926\u093F\u0928\u0964 \u0905\u092A\u0921\u0947\u091F \u0915\u0947 \u0932\u093F\u090F \u0928\u094B\u091F\u093F\u0938 \u092C\u094B\u0930\u094D\u0921 \u0926\u0947\u0916\u0947\u0902\u0964", "category": "other"},
+]
+
+@api_router.post("/chatbot/message")
+async def chatbot_message(request: Request):
+    body = await request.json()
+    message = body.get("message", "").lower().strip()
+    mobile = body.get("mobile", "").strip()
+    lang = body.get("language", "en")
+    # Check if user is in arrived list
+    if mobile:
+        reg = await db.registrations.find_one({"primary_mobile": mobile, "approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived"]}}, {"_id": 0, "id": 1})
+        if not reg:
+            resp = "This help service is available only for arrived guests. For other queries, please contact the registration desk." if lang == "en" else "\u092F\u0939 \u0938\u0939\u093E\u092F\u0924\u093E \u0938\u0947\u0935\u093E \u0915\u0947\u0935\u0932 \u0906\u090F \u0939\u0941\u090F \u0905\u0924\u093F\u0925\u093F\u092F\u094B\u0902 \u0915\u0947 \u0932\u093F\u090F \u0939\u0948\u0964 \u0905\u0928\u094D\u092F \u092A\u094D\u0930\u0936\u094D\u0928\u094B\u0902 \u0915\u0947 \u0932\u093F\u090F \u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0921\u0947\u0938\u094D\u0915 \u0938\u0947 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902\u0964"
+            return {"response": resp, "ticket_created": False}
+    # Match FAQ
+    for faq in CHATBOT_FAQ:
+        if any(kw in message for kw in faq["keywords"]):
+            resp = faq["response_hi"] if lang == "hi" else faq["response_en"]
+            # Auto-create ticket for actionable requests
+            if faq["category"] in ("water", "wheelchair", "medical", "medical_emergency", "lost_found", "room_issue", "transport"):
+                cat = next((c for c in TICKET_CATEGORIES if c["id"] == faq["category"]), TICKET_CATEGORIES[-1])
+                await db.tickets.insert_one({
+                    "id": str(uuid.uuid4()), "title": f"[Chatbot] {cat['label']}", "description": message,
+                    "category": faq["category"], "category_label": cat["label"],
+                    "priority": cat["priority"], "status": "open",
+                    "source_type": "chatbot", "source_registration_id": "",
+                    "created_by": "Madhav Bot", "created_by_name": "Madhav (AI Help Desk)",
+                    "assigned_to": "", "assigned_to_name": "", "resolution_time_minutes": cat["sla_minutes"],
+                    "notes": f"Mobile: {mobile}", "closing_note": "", "resolved_at": "", "resolved_by": "",
+                    "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat(),
+                })
+                return {"response": resp, "ticket_created": True, "category": faq["category"]}
+            return {"response": resp, "ticket_created": False}
+    # Default response
+    default_en = "I'm Madhav, your AI Help Desk for Katha 2026. I can help with: water, wheelchair, medical help, lost & found, food timings, room issues, transport, and schedule info. Please describe your need."
+    default_hi = "\u092E\u0948\u0902 \u092E\u093E\u0927\u0935 \u0939\u0942\u0901, \u0915\u0925\u093E 2026 \u0915\u093E AI \u0939\u0947\u0932\u094D\u092A \u0921\u0947\u0938\u094D\u0915\u0964 \u092E\u0948\u0902 \u092E\u0926\u0926 \u0915\u0930 \u0938\u0915\u0924\u093E \u0939\u0942\u0901: \u092A\u093E\u0928\u0940, \u0935\u094D\u0939\u0940\u0932\u091A\u0947\u092F\u0930, \u091A\u093F\u0915\u093F\u0924\u094D\u0938\u093E, \u0916\u094B\u092F\u093E-\u092A\u093E\u092F\u093E, \u092D\u094B\u091C\u0928, \u0915\u092E\u0930\u093E, \u092F\u093E\u0924\u093E\u092F\u093E\u0924, \u0938\u092E\u092F\u0938\u0942\u091A\u0940\u0964 \u0905\u092A\u0928\u0940 \u0906\u0935\u0936\u094D\u092F\u0915\u0924\u093E \u092C\u0924\u093E\u090F\u0902\u0964"
+    return {"response": default_hi if lang == "hi" else default_en, "ticket_created": False}
+
 app.include_router(api_router)
 
 app.add_middleware(
@@ -1199,6 +1822,10 @@ async def startup():
     await db.otp_sessions.create_index("mobile", unique=True, sparse=True)
     await db.reference_persons.create_index("id", unique=True, sparse=True)
     await db.relation_categories.create_index("id", unique=True, sparse=True)
+    await db.tickets.create_index("id", unique=True, sparse=True)
+    await db.todos.create_index("id", unique=True, sparse=True)
+    await db.message_templates.create_index("id", unique=True, sparse=True)
+    await db.custom_fields.create_index("id", unique=True, sparse=True)
 
     # Seed default relation categories if empty
     cat_count = await db.relation_categories.count_documents({})
@@ -1207,6 +1834,13 @@ async def startup():
         for name in defaults:
             await db.relation_categories.insert_one({"id": str(uuid.uuid4()), "name": name, "description": "", "created_at": datetime.now(timezone.utc).isoformat()})
         logger.info(f"Seeded {len(defaults)} default relation categories")
+
+    # Seed default message templates if empty
+    tmpl_count = await db.message_templates.count_documents({})
+    if tmpl_count == 0:
+        for t in DEFAULT_TEMPLATES:
+            await db.message_templates.insert_one({"id": str(uuid.uuid4()), **t, "enabled": True, "created_at": datetime.now(timezone.utc).isoformat(), "created_by": "System"})
+        logger.info(f"Seeded {len(DEFAULT_TEMPLATES)} default message templates")
 
     logger.info("V2 startup complete")
 
