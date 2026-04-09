@@ -1,51 +1,69 @@
 # PRD - Shrimad Bhagavat Katha Mahotsav 2026
 
 ## Original Problem Statement
-Premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2026" in Pushkar with multi-role admin dashboard. Sacred temple aesthetic with Krishna's divine presence. Bilingual (Hindi + English), golden door entry, multi-step registration, admin approval panel.
+Premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2026" in Pushkar with multi-role admin dashboard. Sacred temple aesthetic with Krishna's divine presence. Bilingual (Hindi + English), golden door entry, multi-step registration, admin approval panel. V2 overhaul added OTP-based registration, 3-bucket guest management, QR scanning, Help Centre, Message Center, Todo, and Custom Fields.
 
 ## Architecture
 - **Frontend**: React.js + Tailwind CSS + Shadcn UI (port 3000)
 - **Backend**: FastAPI + Motor (async MongoDB) (port 8001)
-- **Database**: MongoDB (registrations, rooms, audit_logs, custom_admins)
+- **Database**: MongoDB (registrations, rooms, audit_logs, custom_admins, help_tickets, message_templates, to_do_items, custom_fields, message_campaigns)
 - **Auth**: JWT Bearer tokens, hardcoded admins + dynamic custom admins
 - **PDF**: fpdf2
+- **QR**: qrcode (Python), html5-qrcode (React)
 
-## Completed Features (02 Apr 2026)
+## Terminology
+- **Swamsevak**: Admin/volunteer
+- **Shraddhalu**: Guest/attendee
+- **Panchariya AI**: Help desk chatbot (formerly Madhav AI)
 
-### Public Website
+## Completed Features
+
+### Public Website (Phase 1)
 - 15-Point FINAL SPEC complete
-- Section order: Hero → Quote → Memory → About → Acharya → Schedule+Other (merged, peach) → Episodes (dark blue) → Family (peach) → Registration (dark blue) → Venue (dark blue) → Footer
-- **Family image carousel redesign (02 Apr)**: 21-image slider, 3-sec auto-scroll, pause on hover/touch, desktop prev/next alongside slider, mobile prev/next below slider, counter (X / 21)
-- **In Loving Memory layout redesign (02 Apr)**: Hierarchical grid — top row 2 larger images (Durga Baisa, Alka Jiji), bottom row 2 smaller (Ram Swaroop ji, Shanta Devi ji), mobile maintains hierarchy
-- Timeline mobile center alignment fix
-- Registration form: Additional phone, Address (mandatory), num_people mandatory with attendee validation, language toggle below heading
+- Section order: Hero, Quote, Memory, About, Acharya, Schedule+Other, Episodes, Family, Registration, Venue, Footer
+- Family image carousel: 21-image slider, 3-sec auto-scroll, pause on hover
+- In Loving Memory: Hierarchical grid layout
+- Registration form: OTP-based (mocked OTP: 4132), attendee management
 
-### Admin Portal ("Shrimad Bhagavat 2026 Management Portal")
-- **Two-tier roles**: Admin (4 system accounts) + Super Admin (superashwini)
-- **Sidebar**: Dashboard → Final Guest List → Website Form Approval → Room Management → Bulk Guest Messaging → Audit Log → Admin Management (super admin only)
-- **Dashboard**: Full word labels (no abbreviations), Pending notification alert with "Review Now", Arrival Summary (Arrived/Not Arrived/Not Coming with families+people), Single rooms block (available + occupied/total), Daily Arrivals/Departures vertical layout (28 May - 3 Jun)
-- **Final Guest List**: Embedded Recycle Bin (red), 3 simplified filters (Arriving Date, Departure Date, Arrival Status), Action labels ("View", "Edit", "Delete" text), Arrival→Room assignment modal (search rooms, greyed out if booked, "Mark Arrived Without Room"), Row coloring (green=Arrived, red=Not Coming), Edit with Internal Notes, Manual Entry (simplified), CSV/PDF export
-- **Website Form Approval**: Per-form Accept/Reject (NO bulk approve/reject all), Disapproved section with View + Super Admin Delete
-- **Room Management**: Grid view, popup assignment with guest search, shift rooms, Super Admin exclusive CRUD
-- **Bulk Guest Messaging**: UI scaffold (SMS/WhatsApp pending)
-- **Audit Log**: Full trail, Super Admin clear button
-- **Admin Management**: (Super Admin only) System admins read-only, Custom admin CRUD (create/edit/delete/password change)
-- **Mobile UX**: Pulsing golden dot + "Tap for all settings" near hamburger
+### Admin Portal - Swamsevak Portal (Phase 2-3)
+- **Login**: Username/password JWT auth, 5 hardcoded accounts
+- **Dashboard**: Stats, pending alerts, arrival summary, room summary, daily arrivals/departures
+- **3-Bucket System**: Pending Form Approval, Expected Guest List, Arrived Guest List
+- **Room Management**: Grid view, assignment, shift rooms
+- **Audit Log**: Full trail, Super Admin clear
+- **Admin Management**: Super Admin only CRUD for custom admins
+
+### Phase 4-10 Modules (Completed 09 Apr 2026)
+- **QR Code System**: Scan mode (manual entry + camera), Generate mode (bulk/single), check-in flow with attendee selection
+- **Help Centre**: Ticket CRUD, stats dashboard, 11 categories, SLA timers, filter by status/priority, resolve with closing note, reassign
+- **Message Center** (Super Admin): Template CRUD (system/shraddhalu/swamsevak), Send message (MOCKED WhatsApp), Campaigns tracking
+- **Todo Module**: Task CRUD, priority levels (high/medium/low), assignee, due date, filter (pending/completed/all), toggle completion
+- **Custom Fields Manager** (Super Admin): Flexible fields (text/number/toggle/select/date), scope (registration/room/operational), visibility control
+- **Panchariya AI Chatbot**: Keyword-based auto-ticket creation, guided responses, bilingual support (EN/HI)
 
 ## API Endpoints
 - Auth: POST /api/auth/login, GET /api/auth/me
+- OTP: POST /api/auth/otp/send, POST /api/auth/otp/verify
 - Registrations: POST /api/registrations, GET /api/registrations/count
-- Admin Registrations: GET/PUT/POST /api/admin/registrations/*, DELETE /api/admin/registrations/{id}/permanent (superadmin)
+- Admin Registrations: GET/PUT/POST /api/admin/registrations/*, DELETE /api/admin/registrations/{id}/permanent
+- Admin Guests: GET /api/admin/guests/pending, /expected, /arrived
 - Rooms: GET/POST/DELETE /api/admin/rooms/*, PUT /api/admin/rooms/{code}/assign|unassign|shift
 - Dashboard: GET /api/admin/dashboard
 - Audit: GET/DELETE /api/admin/audit-logs
-- Admins: GET/POST/PUT/DELETE /api/admin/admins (superadmin)
+- Admins: GET/POST/PUT/DELETE /api/admin/admins
 - Export: GET /api/admin/export-csv, GET /api/admin/export-pdf
+- QR: POST /api/admin/qr/generate/{id}, POST /api/admin/qr/generate-bulk, POST /api/admin/qr/scan
+- Tickets: GET/POST /api/admin/tickets, GET /api/admin/tickets/stats, /categories, PUT resolve/assign
+- Todos: GET/POST/PUT/DELETE /api/admin/todos
+- Messages: GET/POST/PUT/DELETE /api/admin/messages/templates, POST /send, GET /campaigns
+- Custom Fields: GET/POST/DELETE /api/admin/custom-fields
+- Chatbot: POST /api/admin/chatbot/message
 
 ## DB Collections
-- registrations, rooms, audit_logs, custom_admins
+registrations, rooms, audit_logs, custom_admins, help_tickets, message_templates, to_do_items, custom_fields, message_campaigns
 
-## Remaining
-- P1: Bulk Guest Messaging SMS/WhatsApp integration
-- P2: Add to Calendar button
-- P2: QR Code for invitations
+## Remaining Tasks
+- P1: Panchariya AI Help Desk for Shraddhalu-side (sample FAQs, guided responses, fallback replies - config-driven)
+- P1: WhatsApp webhook simulation UI responsiveness
+- P2: Add to Calendar functionality
+- P2: Actual Twilio SMS / WhatsApp Business API integration (when credentials provided)
