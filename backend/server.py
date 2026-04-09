@@ -138,6 +138,8 @@ class RegistrationCreateV2(BaseModel):
     relation_category: str = ""
     message: str = ""
     consent: bool = False
+    travel_mode: str = ""
+    travel_details: str = ""
 
 class RegistrationUpdateV2(BaseModel):
     additional_phone: Optional[str] = None
@@ -158,6 +160,9 @@ class RegistrationUpdateV2(BaseModel):
     admin_notes: Optional[str] = None
     arrival_status: Optional[str] = None
     room_assignments: Optional[List[str]] = None
+    travel_mode: Optional[str] = None
+    travel_details: Optional[str] = None
+    assigned_swamsevak: Optional[str] = None
 
 class ManualEntryCreateV2(BaseModel):
     primary_mobile: str = ""
@@ -178,6 +183,8 @@ class ManualEntryCreateV2(BaseModel):
     message: str = ""
     admin_notes: str = ""
     target_bucket: str = "expected"
+    travel_mode: str = ""
+    travel_details: str = ""
 
 class StatusUpdate(BaseModel):
     status: str
@@ -324,6 +331,11 @@ async def get_registration_by_mobile(mobile: str = ""):
 
 @api_router.post("/registrations")
 async def create_registration(reg: RegistrationCreateV2):
+    # Cutoff enforcement
+    now_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if now_date > REGISTRATION_CUTOFF:
+        raise HTTPException(status_code=403, detail=f"Registration closed on {REGISTRATION_CUTOFF}. Please contact admin for changes.")
+
     existing = await db.registrations.find_one(
         {"primary_mobile": reg.primary_mobile, "approval_status": {"$nin": ["deleted"]}}
     )
@@ -363,6 +375,8 @@ async def create_registration(reg: RegistrationCreateV2):
         "relation_category": reg.relation_category,
         "message": reg.message,
         "consent": reg.consent,
+        "travel_mode": reg.travel_mode,
+        "travel_details": reg.travel_details,
         "approval_status": "pending",
         "arrival_status": "not_arrived",
         "room_assignments": [],
@@ -380,6 +394,11 @@ async def create_registration(reg: RegistrationCreateV2):
 
 @api_router.put("/registrations/{reg_id}/public")
 async def update_registration_public(reg_id: str, body: RegistrationUpdateV2):
+    # Cutoff enforcement
+    now_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if now_date > REGISTRATION_CUTOFF:
+        raise HTTPException(status_code=403, detail=f"Registration updates closed on {REGISTRATION_CUTOFF}. Please contact admin for changes.")
+
     reg = await db.registrations.find_one({"id": reg_id, "approval_status": {"$nin": ["deleted"]}})
     if not reg:
         raise HTTPException(status_code=404, detail="Registration not found")
@@ -792,6 +811,8 @@ async def create_manual_entry(entry: ManualEntryCreateV2, request: Request):
         "relation_category": entry.relation_category,
         "message": entry.message,
         "consent": True,
+        "travel_mode": entry.travel_mode,
+        "travel_details": entry.travel_details,
         "approval_status": "approved",
         "arrival_status": arrival_status,
         "room_assignments": [],
@@ -1020,16 +1041,24 @@ async def get_dashboard(request: Request):
     occupied_rooms = await db.rooms.count_documents({"status": "occupied"})
     available_rooms = total_rooms - occupied_rooms
 
+    # Help tickets active
+    active_tickets = await db.tickets.count_documents({"status": {"$in": ["open", "in_progress"]}})
+
+    # Not arrived count
+    not_arrived_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "not_arrived"})
+
     return {
         "pending_count": pending_count,
         "approved_count": approved_count,
         "rejected_count": rejected_count,
         "total_people": total_people,
+        "active_tickets": active_tickets,
         "arrival_summary": {
             "expected": {"families": expected_fam, "people": expected_p},
             "arrived": {"families": arrived_fam, "people": arrived_p},
             "not_coming": {"families": not_coming_fam, "people": not_coming_p},
             "departed": {"families": departed_fam, "people": departed_p},
+            "not_arrived": {"families": not_arrived_fam, "people": expected_p},
         },
         "daily_schedule": daily,
         "total_rooms": total_rooms,
@@ -1805,6 +1834,193 @@ async def chatbot_message(request: Request):
     return {"response": default_hi if lang == "hi" else default_en, "ticket_created": False}
 
 app.include_router(api_router)
+
+# ─── ADDITIONAL V2.5 ENDPOINTS ───
+extra_router = APIRouter(prefix="/api")
+
+@extra_router.get("/admin/registration-cutoff-status")
+async def get_cutoff_status():
+    now_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return {
+        "cutoff_date": REGISTRATION_CUTOFF,
+        "finalization_date": FINALIZATION_DATE,
+        "is_open": now_date <= REGISTRATION_CUTOFF,
+        "is_finalization_window": REGISTRATION_CUTOFF < now_date <= FINALIZATION_DATE,
+        "is_post_finalization": now_date > FINALIZATION_DATE,
+        "current_date": now_date,
+    }
+
+@extra_router.get("/admin/dashboard/drill-down")
+async def dashboard_drill_down(request: Request, field: str = "", value: str = ""):
+    await get_current_user(request)
+    query = {"approval_status": "approved"}
+    if field == "arrival_date":
+        query["arrival_date"] = value
+    elif field == "departure_date":
+        query["departure_date"] = value
+    elif field == "arrival_status":
+        if value == "arrived":
+            query["arrival_status"] = {"$in": ["arrived", "partially_arrived"]}
+        else:
+            query["arrival_status"] = value
+    elif field == "pending":
+        query = {"approval_status": "pending"}
+    regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
+    results = []
+    for r in regs:
+        head_name = ""
+        for a in r.get("attendees", []):
+            if a.get("id") == r.get("group_head_id"):
+                head_name = a.get("name", "")
+        results.append({
+            "id": r.get("id"), "head_name": head_name or r.get("primary_mobile", ""),
+            "num_people": r.get("num_people", 1), "rooms": r.get("room_assignments", []),
+            "arrival_status": r.get("arrival_status", ""), "arrival_date": r.get("arrival_date", ""),
+            "departure_date": r.get("departure_date", ""), "primary_mobile": r.get("primary_mobile", ""),
+        })
+    return results
+
+@extra_router.get("/admin/registrations/rejected")
+async def get_rejected_registrations(request: Request, page: int = 1, per_page: int = 20, search: str = ""):
+    await get_current_user(request)
+    query = {"approval_status": "rejected"}
+    if search:
+        query["$or"] = [
+            {"attendees.name": {"$regex": search, "$options": "i"}},
+            {"primary_mobile": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.registrations.count_documents(query)
+    skip = (page - 1) * per_page
+    regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+@extra_router.put("/admin/registrations/{reg_id}/undo-arrival")
+async def undo_arrival(reg_id: str, request: Request):
+    user = await require_superadmin(request)
+    reg = await db.registrations.find_one({"id": reg_id})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    attendees = reg.get("attendees", [])
+    for att in attendees:
+        att["arrival_status"] = "not_arrived"
+    await db.registrations.update_one({"id": reg_id}, {"$set": {
+        "arrival_status": "not_arrived", "attendees": attendees,
+        "last_updated_by": user["name"], "last_updated_at": datetime.now(timezone.utc).isoformat(),
+    }})
+    await log_audit("undo_arrival", "registration", reg_id, "", "Moved back to Expected by Super Admin", user["name"])
+    return {"message": "Moved back to Expected Guest List"}
+
+@extra_router.put("/admin/registrations/{reg_id}/undo-departure")
+async def undo_departure(reg_id: str, request: Request):
+    user = await require_superadmin(request)
+    reg = await db.registrations.find_one({"id": reg_id})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    attendees = reg.get("attendees", [])
+    for att in attendees:
+        att["arrival_status"] = "arrived"
+    await db.registrations.update_one({"id": reg_id}, {"$set": {
+        "arrival_status": "arrived", "attendees": attendees,
+        "departed_at": "", "departed_confirmed_by": "",
+        "last_updated_by": user["name"], "last_updated_at": datetime.now(timezone.utc).isoformat(),
+    }})
+    await log_audit("undo_departure", "registration", reg_id, "", "Departure undone by Super Admin", user["name"])
+    return {"message": "Departure undone, guest is back in Arrived"}
+
+@extra_router.get("/admin/sla-config")
+async def get_sla_config(request: Request):
+    await get_current_user(request)
+    config = await db.sla_config.find({}, {"_id": 0}).to_list(50)
+    if not config:
+        return TICKET_CATEGORIES
+    return config
+
+@extra_router.put("/admin/sla-config")
+async def update_sla_config(request: Request):
+    user = await require_superadmin(request)
+    body = await request.json()
+    categories = body.get("categories", [])
+    await db.sla_config.delete_many({})
+    for cat in categories:
+        await db.sla_config.insert_one(cat)
+    await log_audit("sla_config_update", "system", "", "", "SLA configuration updated", user["name"])
+    return {"message": "SLA configuration updated"}
+
+@extra_router.get("/admin/qr-management")
+async def get_qr_management(request: Request):
+    await require_superadmin(request)
+    regs = await db.registrations.find(
+        {"qr_active": {"$exists": True}},
+        {"_id": 0, "id": 1, "primary_mobile": 1, "attendees": 1, "group_head_id": 1,
+         "qr_token": 1, "qr_version": 1, "qr_data": 1, "qr_active": 1, "qr_generated_at": 1,
+         "room_assignments": 1, "arrival_status": 1}
+    ).sort("qr_generated_at", -1).to_list(5000)
+    results = []
+    for r in regs:
+        head_name = ""
+        for a in r.get("attendees", []):
+            if a.get("id") == r.get("group_head_id"):
+                head_name = a.get("name", "")
+        results.append({
+            "id": r["id"], "head_name": head_name or r.get("primary_mobile", ""),
+            "qr_token": r.get("qr_token", ""), "qr_version": r.get("qr_version", 0),
+            "qr_active": r.get("qr_active", False), "qr_generated_at": r.get("qr_generated_at", ""),
+            "rooms": r.get("room_assignments", []), "arrival_status": r.get("arrival_status", ""),
+        })
+    return results
+
+# ─── GUEST LIST ENDPOINTS (Aliases for frontend) ───
+@extra_router.get("/admin/guests/pending")
+async def get_pending_guests(request: Request, search: str = "", page: int = 1, per_page: int = 50):
+    """Get pending approval registrations"""
+    await get_current_user(request)
+    query = {"approval_status": "pending"}
+    if search:
+        query["$or"] = [
+            {"attendees.name": {"$regex": search, "$options": "i"}},
+            {"primary_mobile": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.registrations.count_documents(query)
+    skip = (page - 1) * per_page
+    regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+@extra_router.get("/admin/guests/expected")
+async def get_expected_guests(request: Request, search: str = "", page: int = 1, per_page: int = 50):
+    """Get expected guests (approved, not yet arrived)"""
+    await get_current_user(request)
+    query = {"approval_status": "approved", "arrival_status": {"$in": ["not_arrived", "not_coming"]}}
+    if search:
+        query["$or"] = [
+            {"attendees.name": {"$regex": search, "$options": "i"}},
+            {"primary_mobile": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.registrations.count_documents(query)
+    skip = (page - 1) * per_page
+    regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    # Enrich with reference person name
+    for r in regs:
+        if r.get("reference_person_id"):
+            rp = await db.reference_persons.find_one({"id": r["reference_person_id"]}, {"_id": 0, "name": 1})
+            r["reference_person_name"] = rp.get("name", "") if rp else ""
+    return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+@extra_router.get("/admin/guests/arrived")
+async def get_arrived_guests(request: Request, search: str = "", page: int = 1, per_page: int = 50):
+    """Get arrived guests (arrived, partially_arrived, departed)"""
+    await get_current_user(request)
+    query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived", "departed"]}}
+    if search:
+        query["$or"] = [
+            {"attendees.name": {"$regex": search, "$options": "i"}},
+            {"primary_mobile": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.registrations.count_documents(query)
+    skip = (page - 1) * per_page
+    regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+app.include_router(extra_router)
 
 app.add_middleware(
     CORSMiddleware,

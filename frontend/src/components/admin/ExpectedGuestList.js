@@ -1,248 +1,366 @@
-import { useState, useEffect } from "react";
-import { Search, ChevronLeft, ChevronRight, Users, Eye, UserPlus, MapPin, Phone } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { useState, useEffect, useCallback } from "react";
+import { Eye, Plus, Search, QrCode, Hotel, UserPlus, Download } from "lucide-react";
 import axios from "axios";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import { FullRegistrationView } from "./PendingApproval";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = process.env.REACT_APP_BACKEND_URL;
 
-function getGroupHead(reg) {
-  const head = (reg.attendees || []).find(a => a.id === reg.group_head_id);
-  return head?.name || reg.attendees?.[0]?.name || reg.primary_mobile || "Unknown";
-}
-
-export default function ExpectedGuestList({ user, authHeaders }) {
+export default function ExpectedGuestList({ user }) {
   const [regs, setRegs] = useState([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [detailReg, setDetailReg] = useState(null);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [viewReg, setViewReg] = useState(null);
   const [showManual, setShowManual] = useState(false);
+  const [showAssign, setShowAssign] = useState(null);
+  const [showRoomAssign, setShowRoomAssign] = useState(null);
+  const [admins, setAdmins] = useState([]);
+  const [rooms, setRooms] = useState([]);
+  const isSuper = user?.role === "superadmin";
 
-  const fetch = async (p = page, s = search) => {
+  const authHeaders = useCallback(() => ({
+    Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
+  }), []);
+
+  const fetchRegs = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`${API}/admin/registrations`, {
-        headers: authHeaders(),
-        params: { bucket: "expected", search: s || undefined, page: p, per_page: 20 }
+      const { data } = await axios.get(`${API}/api/admin/guests/expected`, {
+        headers: authHeaders(), params: { search, page, per_page: 20 }
       });
-      setRegs(data.data);
-      setTotal(data.total);
-    } catch (err) {
-      toast.error("Failed to load expected guests");
-    } finally {
-      setLoading(false);
-    }
-  };
+      setRegs(data.data || []);
+      setTotal(data.total || 0);
+    } catch {}
+    setLoading(false);
+  }, [authHeaders, search, page]);
 
-  useEffect(() => { fetch(1); }, []);
-  const handleSearch = () => { setPage(1); fetch(1, search); };
-  const handlePage = (p) => { setPage(p); fetch(p); };
-
-  const handleMarkNotComing = async (id) => {
+  const fetchAdmins = useCallback(async () => {
     try {
-      await axios.post(`${API}/admin/registrations/${id}/mark-arrival`, { arrival_status: "not_coming", arrived_attendee_ids: [] }, { headers: authHeaders() });
-      toast.success("Marked as not coming");
-      fetch();
-    } catch (err) {
-      toast.error("Failed to update");
-    }
+      const { data } = await axios.get(`${API}/api/admin/admins`, { headers: authHeaders() });
+      setAdmins(data);
+    } catch {}
+  }, [authHeaders]);
+
+  const fetchRooms = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`${API}/api/admin/rooms`, { headers: authHeaders() });
+      setRooms(data.data || []);
+    } catch {}
+  }, [authHeaders]);
+
+  useEffect(() => { fetchRegs(); }, [fetchRegs]);
+  useEffect(() => { fetchAdmins(); fetchRooms(); }, [fetchAdmins, fetchRooms]);
+
+  const getHeadName = (r) => {
+    const h = (r.attendees || []).find(a => a.id === r.group_head_id);
+    return h?.name || r.primary_mobile;
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / 20));
+  const assignSwamsevak = async (regId, swamsevakName) => {
+    try {
+      await axios.put(`${API}/api/admin/registrations/${regId}`, { assigned_swamsevak: swamsevakName }, { headers: authHeaders() });
+      toast.success("Swamsevak assigned");
+      setShowAssign(null);
+      fetchRegs();
+    } catch { toast.error("Failed"); }
+  };
+
+  const assignRoom = async (regId, roomCode) => {
+    try {
+      await axios.put(`${API}/api/admin/rooms/${roomCode}/assign`, { registration_id: regId }, { headers: authHeaders() });
+      toast.success("Room assigned");
+      setShowRoomAssign(null);
+      fetchRegs();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const generateQR = async (regId) => {
+    try {
+      await axios.post(`${API}/api/admin/qr/generate/${regId}`, {}, { headers: authHeaders() });
+      toast.success("QR generated");
+      fetchRegs();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const exportCSV = async () => {
+    try {
+      const resp = await axios.get(`${API}/api/admin/export-csv`, { headers: authHeaders(), responseType: "blob" });
+      const url = window.URL.createObjectURL(resp.data);
+      const a = document.createElement("a"); a.href = url; a.download = "expected_guests.csv"; a.click();
+    } catch { toast.error("Export failed"); }
+  };
 
   return (
-    <div data-testid="expected-guest-view">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div className="p-4 md:p-6 space-y-4" data-testid="expected-guest-list">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Expected Guest List</h2>
-          <p className="text-[#0B1C3D]/50 text-sm mt-1">{total} expected group(s)</p>
+          <h1 className="text-xl font-bold text-[#0B1C3D]">Expected Guest List</h1>
+          <p className="text-sm text-gray-500">{total} families</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/30" />
-            <Input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()}
-              placeholder="Search..." className="pl-9 bg-white border-[#D4AF37]/20 w-56" data-testid="expected-search" />
-          </div>
-          <Button onClick={handleSearch} size="sm" className="bg-[#D4AF37] text-[#0B1C3D]">Search</Button>
-          <Button onClick={() => setShowManual(true)} size="sm" variant="outline" className="border-[#D4AF37]/40 text-[#0B1C3D]" data-testid="add-manual-expected">
-            <UserPlus size={14} className="mr-1" /> Add Manual
-          </Button>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setShowManual(true)} data-testid="add-manual-expected"
+            className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1">
+            <Plus size={14} /> Add Manual
+          </button>
+          <button onClick={exportCSV} data-testid="export-csv"
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
+            <Download size={14} /> Export
+          </button>
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-center py-20 text-[#0B1C3D]/40">Loading...</div>
-      ) : regs.length === 0 ? (
-        <div className="text-center py-20 text-[#0B1C3D]/40 bg-white rounded-xl border border-[#D4AF37]/10" data-testid="expected-empty">
-          No expected guests yet
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {regs.map(reg => (
-            <div key={reg.id} className="bg-white rounded-xl border border-[#D4AF37]/10 p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid={`expected-row-${reg.id}`}>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold text-[#0B1C3D] text-sm">{getGroupHead(reg)}</span>
-                  <span className="text-[10px] bg-blue-50 px-2 py-0.5 rounded-full text-blue-600 flex items-center gap-1">
-                    <Users size={10} /> {reg.num_people}
-                  </span>
-                  {reg.entry_type === "manual" && <span className="text-[10px] bg-purple-50 px-2 py-0.5 rounded-full text-purple-600">Manual</span>}
-                  {reg.arrival_status === "not_coming" && <span className="text-[10px] bg-red-50 px-2 py-0.5 rounded-full text-red-600">Not Coming</span>}
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+        <input data-testid="expected-search" className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm"
+          placeholder="Search by name or mobile..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+      </div>
+
+      <div className="space-y-2" data-testid="expected-list">
+        {loading ? <p className="text-center text-gray-500 py-4">Loading...</p> :
+          regs.length === 0 ? <p className="text-center text-gray-400 py-8">No expected guests found</p> :
+          regs.map((r) => (
+            <div key={r.id} className="bg-white rounded-xl p-4 border hover:shadow-sm transition">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-[#0B1C3D] truncate">{getHeadName(r)}</p>
+                  <p className="text-xs text-gray-500">{r.num_people} people • {r.primary_mobile}</p>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {r.assigned_swamsevak && (
+                      <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">Contact: {r.assigned_swamsevak}</span>
+                    )}
+                    {(r.room_assignments || []).length > 0 && (
+                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">Room: {r.room_assignments.join(", ")}</span>
+                    )}
+                    {r.qr_token && (
+                      <span className="text-xs bg-green-50 text-green-700 px-2 py-0.5 rounded-full">QR Ready</span>
+                    )}
+                    {r.reference_person_name && (
+                      <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">Ref: {r.reference_person_name}</span>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-center gap-3 text-[#0B1C3D]/50 text-xs">
-                  <span className="flex items-center gap-1"><Phone size={10} />{reg.primary_mobile}</span>
-                  <span className="flex items-center gap-1"><MapPin size={10} />{reg.address?.city || "N/A"}</span>
-                  <span>{reg.arrival_date} - {reg.departure_date}</span>
+                <div className="flex gap-1 shrink-0 flex-wrap">
+                  <button onClick={() => setViewReg(r)} data-testid={`view-expected-${r.id}`}
+                    className="bg-blue-50 text-blue-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-blue-100">
+                    <Eye size={12} /> View
+                  </button>
+                  {isSuper && (
+                    <>
+                      <button onClick={() => setShowAssign(r)} data-testid={`assign-swamsevak-${r.id}`}
+                        className="bg-purple-50 text-purple-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-purple-100">
+                        <UserPlus size={12} /> Assign
+                      </button>
+                      <button onClick={() => setShowRoomAssign(r)} data-testid={`assign-room-${r.id}`}
+                        className="bg-amber-50 text-amber-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-amber-100">
+                        <Hotel size={12} /> Room
+                      </button>
+                      <button onClick={() => generateQR(r.id)} data-testid={`generate-qr-${r.id}`}
+                        className="bg-green-50 text-green-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-green-100">
+                        <QrCode size={12} /> QR
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Button size="sm" variant="outline" onClick={() => setDetailReg(reg)} className="border-[#D4AF37]/30" data-testid={`view-expected-${reg.id}`}>
-                  <Eye size={14} className="mr-1" /> View
-                </Button>
-                {reg.arrival_status !== "not_coming" && (
-                  <Button size="sm" variant="outline" onClick={() => handleMarkNotComing(reg.id)} className="border-red-300 text-red-600 hover:bg-red-50" data-testid={`not-coming-${reg.id}`}>
-                    Not Coming
-                  </Button>
-                )}
-              </div>
             </div>
-          ))}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 pt-4">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => handlePage(page - 1)}><ChevronLeft size={14} /></Button>
-              <span className="text-sm text-[#0B1C3D]/60">Page {page} of {totalPages}</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => handlePage(page + 1)}><ChevronRight size={14} /></Button>
-            </div>
-          )}
+          ))
+        }
+      </div>
+
+      {/* Pagination */}
+      {total > 20 && (
+        <div className="flex justify-center gap-2">
+          <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={page === 1} className="px-3 py-1 bg-gray-100 rounded text-sm disabled:opacity-50">Prev</button>
+          <span className="px-3 py-1 text-sm text-gray-600">Page {page}</span>
+          <button onClick={() => setPage(p => p+1)} disabled={regs.length < 20} className="px-3 py-1 bg-gray-100 rounded text-sm disabled:opacity-50">Next</button>
         </div>
       )}
 
-      {/* Detail Dialog */}
-      <RegistrationDetailDialog reg={detailReg} open={!!detailReg} onClose={() => setDetailReg(null)} />
+      {/* Full View */}
+      <Dialog open={!!viewReg} onOpenChange={() => setViewReg(null)}>
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Complete Registration Details</DialogTitle></DialogHeader>
+          {viewReg && <FullRegistrationView reg={viewReg} />}
+        </DialogContent>
+      </Dialog>
 
-      {/* Manual Entry Dialog */}
-      <ManualEntryDialog open={showManual} onClose={() => setShowManual(false)} authHeaders={authHeaders} targetBucket="expected" onSaved={() => { setShowManual(false); fetch(); }} />
+      {/* Swamsevak Assignment Dialog */}
+      <Dialog open={!!showAssign} onOpenChange={() => setShowAssign(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Assign Swamsevak</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-500 mb-3">Assign a first point of contact for: {showAssign && getHeadName(showAssign)}</p>
+          <div className="space-y-2">
+            {admins.map((a) => (
+              <button key={a.username} onClick={() => assignSwamsevak(showAssign.id, a.display_name || a.username)}
+                data-testid={`pick-swamsevak-${a.username}`}
+                className="w-full text-left bg-gray-50 hover:bg-purple-50 p-3 rounded-lg text-sm transition flex justify-between items-center">
+                <span className="font-medium">{a.display_name || a.username}</span>
+                <span className="text-xs text-gray-400">{a.role}</span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Room Assignment Dialog */}
+      <Dialog open={!!showRoomAssign} onOpenChange={() => setShowRoomAssign(null)}>
+        <DialogContent className="max-w-sm max-h-[60vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Assign Room</DialogTitle></DialogHeader>
+          <p className="text-sm text-gray-500 mb-3">Available rooms for: {showRoomAssign && getHeadName(showRoomAssign)}</p>
+          <div className="space-y-2">
+            {rooms.filter(rm => rm.status === "available").map((rm) => (
+              <button key={rm.room_code} onClick={() => assignRoom(showRoomAssign.id, rm.room_code)}
+                className="w-full text-left bg-gray-50 hover:bg-amber-50 p-3 rounded-lg text-sm transition flex justify-between items-center">
+                <span className="font-medium">{rm.room_code}</span>
+                <span className="text-xs text-gray-400">Floor {rm.floor} • Cap: {rm.capacity}</span>
+              </button>
+            ))}
+            {rooms.filter(rm => rm.status === "available").length === 0 && (
+              <p className="text-gray-400 text-center py-4">No available rooms</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manual Add Dialog */}
+      {showManual && <ManualAddDialog onClose={() => { setShowManual(false); fetchRegs(); }} authHeaders={authHeaders} />}
     </div>
   );
 }
 
-function RegistrationDetailDialog({ reg, open, onClose }) {
-  if (!reg) return null;
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="expected-detail-dialog">
-        <DialogHeader><DialogTitle className="text-[#0B1C3D]">Guest Details</DialogTitle></DialogHeader>
-        <div className="space-y-4 text-sm">
-          <div className="grid grid-cols-2 gap-3">
-            <D label="Primary WhatsApp" value={reg.primary_mobile} />
-            <D label="Additional Phone" value={reg.additional_phone} />
-            <D label="Email" value={reg.email} />
-            <D label="Total People" value={reg.num_people} />
-            <D label="Attendance" value={reg.attendance_intent} />
-            <D label="Status" value={reg.arrival_status} />
-            <D label="Arrival" value={reg.arrival_date} />
-            <D label="Departure" value={reg.departure_date} />
-          </div>
-          {reg.address && <D label="Address" value={[reg.address.full_address, reg.address.city, reg.address.state, reg.address.country].filter(Boolean).join(", ")} />}
-          <div>
-            <span className="text-[#0B1C3D]/50 text-xs block mb-1">Attendees:</span>
-            {(reg.attendees || []).map((a, i) => (
-              <div key={i} className={`py-1.5 px-3 rounded-lg mb-1 ${a.id === reg.group_head_id ? "bg-[#D4AF37]/10 border border-[#D4AF37]/30" : "bg-[#F8F1E5]"}`}>
-                <span className="font-medium">{a.name}</span>
-                {a.age && <span className="text-[#0B1C3D]/50 ml-2">Age: {a.age}</span>}
-                {a.special_needs && <span className="text-orange-600 ml-2">| {a.special_needs}</span>}
-                {a.id === reg.group_head_id && <span className="text-[#D4AF37] text-[10px] ml-2 font-bold">[HEAD]</span>}
-              </div>
-            ))}
-          </div>
-          {reg.room_assignments?.length > 0 && <D label="Room(s)" value={reg.room_assignments.join(", ")} />}
-          {reg.family_special_request && <D label="Family Request" value={reg.family_special_request} />}
-          {reg.message && <D label="Message" value={reg.message} />}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ManualEntryDialog({ open, onClose, authHeaders, targetBucket, onSaved }) {
-  const [name, setName] = useState("");
-  const [mobile, setMobile] = useState("");
-  const [additionalPhone, setAdditionalPhone] = useState("");
-  const [numPeople, setNumPeople] = useState(1);
-  const [city, setCity] = useState("");
-  const [notes, setNotes] = useState("");
+function ManualAddDialog({ onClose, authHeaders }) {
+  const [form, setForm] = useState({
+    primary_mobile: "", additional_phone: "", email: "", preferred_language: "hi",
+    address: { full_address: "", city: "", state: "", country: "India" },
+    num_people: 1, attendees: [{ id: "a1", name: "", age: "", special_needs: "" }],
+    group_head_id: "a1", family_special_request: "", attendance_intent: "Yes",
+    selected_days: [], expected_arrival_time: "", expected_departure_time: "",
+    reference_person_id: "", relation_category: "", message: "", admin_notes: "",
+    target_bucket: "expected", travel_mode: "", travel_details: "",
+  });
   const [saving, setSaving] = useState(false);
 
-  const handleSave = async () => {
-    if (!name.trim()) { toast.error("Name is required"); return; }
-    setSaving(true);
-    try {
-      await axios.post(`${API}/admin/registrations/manual`, {
-        primary_mobile: mobile,
-        additional_phone: additionalPhone,
-        address: { full_address: "", city, state: "", country: "" },
-        num_people: numPeople,
-        attendees: [{ name, age: "", special_needs: "" }],
-        group_head_id: "",
-        attendance_intent: "Yes",
-        selected_days: [],
-        admin_notes: notes,
-        target_bucket: targetBucket,
-      }, { headers: authHeaders() });
-      toast.success("Manual entry added");
-      setName(""); setMobile(""); setAdditionalPhone(""); setNumPeople(1); setCity(""); setNotes("");
-      onSaved();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed to add");
-    } finally {
-      setSaving(false);
+  const updatePeople = (n) => {
+    const num = Math.max(1, Math.min(20, parseInt(n) || 1));
+    const atts = [];
+    for (let i = 0; i < num; i++) {
+      atts.push(form.attendees[i] || { id: `a${i+1}`, name: "", age: "", special_needs: "" });
     }
+    setForm({ ...form, num_people: num, attendees: atts, group_head_id: atts[0]?.id || "a1" });
   };
 
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md" data-testid="manual-entry-dialog">
-        <DialogHeader><DialogTitle>Add Manual Entry ({targetBucket === "arrived" ? "Arrived" : "Expected"})</DialogTitle></DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label className="text-xs text-[#0B1C3D]/60">Name *</Label>
-            <Input value={name} onChange={e => setName(e.target.value)} className="mt-1" data-testid="manual-name" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-[#0B1C3D]/60">Mobile</Label>
-              <Input value={mobile} onChange={e => setMobile(e.target.value)} className="mt-1" data-testid="manual-mobile" />
-            </div>
-            <div>
-              <Label className="text-xs text-[#0B1C3D]/60">People</Label>
-              <Input type="number" min={1} value={numPeople} onChange={e => setNumPeople(parseInt(e.target.value) || 1)} className="mt-1" data-testid="manual-people" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-xs text-[#0B1C3D]/60">City</Label>
-            <Input value={city} onChange={e => setCity(e.target.value)} className="mt-1" data-testid="manual-city" />
-          </div>
-          <div>
-            <Label className="text-xs text-[#0B1C3D]/60">Admin Notes</Label>
-            <Textarea value={notes} onChange={e => setNotes(e.target.value)} className="mt-1" rows={2} data-testid="manual-notes" />
-          </div>
-          <Button onClick={handleSave} disabled={saving} className="w-full bg-[#D4AF37] text-[#0B1C3D]" data-testid="manual-save-btn">
-            {saving ? "Saving..." : "Add Entry"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
+  const updateAttendee = (idx, field, val) => {
+    const atts = [...form.attendees];
+    atts[idx] = { ...atts[idx], [field]: val };
+    setForm({ ...form, attendees: atts });
+  };
 
-function D({ label, value }) {
-  if (!value && value !== 0) return null;
-  return <div><span className="text-[#0B1C3D]/50 text-xs">{label}</span><p className="text-[#0B1C3D] font-medium text-sm">{value}</p></div>;
+  const save = async () => {
+    setSaving(true);
+    try {
+      await axios.post(`${API}/api/admin/registrations/manual`, form, { headers: authHeaders() });
+      toast.success("Guest added to Expected list");
+      onClose();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    setSaving(false);
+  };
+
+  const DAYS = ["2026-05-27","2026-05-28","2026-05-29","2026-05-30","2026-05-31","2026-06-01","2026-06-02","2026-06-03","2026-06-04"];
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[85vh] overflow-y-auto p-6 space-y-4">
+        <h2 className="font-bold text-[#0B1C3D] text-lg">Add Guest (Manual Entry)</h2>
+
+        <div className="grid grid-cols-2 gap-3">
+          <input className="border rounded px-3 py-2 text-sm col-span-2" placeholder="Primary Mobile*" value={form.primary_mobile}
+            onChange={(e) => setForm({ ...form, primary_mobile: e.target.value })} />
+          <input className="border rounded px-3 py-2 text-sm" placeholder="Additional Phone*" value={form.additional_phone}
+            onChange={(e) => setForm({ ...form, additional_phone: e.target.value })} />
+          <input className="border rounded px-3 py-2 text-sm" placeholder="Email" value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        </div>
+
+        <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Full Address*" value={form.address.full_address}
+          onChange={(e) => setForm({ ...form, address: { ...form.address, full_address: e.target.value } })} />
+        <div className="grid grid-cols-3 gap-3">
+          <input className="border rounded px-3 py-2 text-sm" placeholder="City*" value={form.address.city}
+            onChange={(e) => setForm({ ...form, address: { ...form.address, city: e.target.value } })} />
+          <input className="border rounded px-3 py-2 text-sm" placeholder="State*" value={form.address.state}
+            onChange={(e) => setForm({ ...form, address: { ...form.address, state: e.target.value } })} />
+          <input className="border rounded px-3 py-2 text-sm" placeholder="Country*" value={form.address.country}
+            onChange={(e) => setForm({ ...form, address: { ...form.address, country: e.target.value } })} />
+        </div>
+
+        <div>
+          <label className="text-sm font-medium text-gray-700">Number of People</label>
+          <input type="number" min="1" max="20" className="w-full border rounded px-3 py-2 text-sm mt-1"
+            value={form.num_people} onChange={(e) => updatePeople(e.target.value)} />
+        </div>
+
+        {form.attendees.map((a, i) => (
+          <div key={a.id} className="bg-gray-50 rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-500">Person {i+1}</span>
+              <label className="flex items-center gap-1 text-xs">
+                <input type="radio" name="head" checked={form.group_head_id === a.id}
+                  onChange={() => setForm({ ...form, group_head_id: a.id })} /> Head
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input className="border rounded px-2 py-1.5 text-sm" placeholder="Name*" value={a.name} onChange={(e) => updateAttendee(i, "name", e.target.value)} />
+              <input className="border rounded px-2 py-1.5 text-sm" placeholder="Age" type="number" value={a.age} onChange={(e) => updateAttendee(i, "age", e.target.value)} />
+            </div>
+            <input className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Special needs" value={a.special_needs} onChange={(e) => updateAttendee(i, "special_needs", e.target.value)} />
+          </div>
+        ))}
+
+        <textarea className="w-full border rounded px-3 py-2 text-sm" rows={2} placeholder="Family special request"
+          value={form.family_special_request} onChange={(e) => setForm({ ...form, family_special_request: e.target.value })} />
+
+        <div>
+          <label className="text-sm font-medium text-gray-700">Days Present</label>
+          <div className="flex flex-wrap gap-1 mt-1">
+            {DAYS.map(d => (
+              <button key={d} type="button"
+                className={`px-2 py-1 rounded text-xs ${form.selected_days.includes(d) ? "bg-[#0B1C3D] text-white" : "bg-gray-100 text-gray-600"}`}
+                onClick={() => setForm({
+                  ...form,
+                  selected_days: form.selected_days.includes(d) ? form.selected_days.filter(x=>x!==d) : [...form.selected_days, d].sort()
+                })}>
+                {new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <input className="border rounded px-3 py-2 text-sm" placeholder="Arrival Time" value={form.expected_arrival_time}
+            onChange={(e) => setForm({ ...form, expected_arrival_time: e.target.value })} />
+          <input className="border rounded px-3 py-2 text-sm" placeholder="Departure Time" value={form.expected_departure_time}
+            onChange={(e) => setForm({ ...form, expected_departure_time: e.target.value })} />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <input className="border rounded px-3 py-2 text-sm" placeholder="Travel Mode" value={form.travel_mode}
+            onChange={(e) => setForm({ ...form, travel_mode: e.target.value })} />
+          <input className="border rounded px-3 py-2 text-sm" placeholder="Travel Details" value={form.travel_details}
+            onChange={(e) => setForm({ ...form, travel_details: e.target.value })} />
+        </div>
+
+        <textarea className="w-full border rounded px-3 py-2 text-sm" rows={2} placeholder="Admin notes"
+          value={form.admin_notes} onChange={(e) => setForm({ ...form, admin_notes: e.target.value })} />
+
+        <div className="flex gap-2">
+          <button onClick={save} disabled={saving} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+            {saving ? "Adding..." : "Add to Expected List"}
+          </button>
+          <button onClick={onClose} className="flex-1 border py-2 rounded-lg text-sm">Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
 }

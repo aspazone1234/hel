@@ -1,270 +1,318 @@
-import { useState, useEffect, useRef } from "react";
-import { QrCode, ScanLine, Camera, Check, Users, MapPin, Phone, AlertTriangle, RefreshCw, Download } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { ScanLine, QrCode, Search, Shield, Ban, List } from "lucide-react";
 import axios from "axios";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = process.env.REACT_APP_BACKEND_URL;
 
-export default function QRScanner({ user, authHeaders }) {
-  const [mode, setMode] = useState("scan"); // scan | generate
-  const [manualCode, setManualCode] = useState("");
+export default function QRScanner({ user }) {
+  const [mode, setMode] = useState("scan");
+  const [scanInput, setScanInput] = useState("");
   const [scanResult, setScanResult] = useState(null);
   const [scanning, setScanning] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [selectedReg, setSelectedReg] = useState(null);
+  const [qrList, setQrList] = useState([]);
+  const [qrListLoading, setQrListLoading] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const [checkinDialog, setCheckinDialog] = useState(null);
-  const [selectedAttendees, setSelectedAttendees] = useState([]);
-  const [generating, setGenerating] = useState(false);
+  const isSuper = user?.role === "superadmin";
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
+  const authHeaders = useCallback(() => ({
+    Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
+  }), []);
+
+  // QR Scan
+  const handleScan = async (token) => {
+    if (!token?.trim()) return;
+    setScanning(true);
+    try {
+      const { data } = await axios.post(`${API}/api/admin/qr/scan`, { qr_token: token.trim() }, { headers: authHeaders() });
+      setScanResult(data);
+      toast.success("QR scanned successfully");
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Invalid QR");
+      setScanResult(null);
     }
-    setCameraActive(false);
+    setScanning(false);
   };
 
-  useEffect(() => () => stopCamera(), []);
+  // Manual search for attendance
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearchLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/api/admin/guests/expected`, {
+        headers: authHeaders(), params: { search: searchQuery, per_page: 20 }
+      });
+      setSearchResults(data.data || []);
+    } catch { setSearchResults([]); }
+    setSearchLoading(false);
+  };
 
+  // Mark attendance from search
+  const markAttendance = async (reg, attendeeIds) => {
+    try {
+      await axios.put(`${API}/api/admin/registrations/${reg.id}`, {
+        arrival_status: attendeeIds.length === reg.attendees?.length ? "arrived" : "partially_arrived"
+      }, { headers: authHeaders() });
+      // Update individual attendees
+      const updatedAttendees = (reg.attendees || []).map(a => ({
+        ...a, arrival_status: attendeeIds.includes(a.id) ? "arrived" : a.arrival_status
+      }));
+      await axios.put(`${API}/api/admin/registrations/${reg.id}`, { attendees: updatedAttendees }, { headers: authHeaders() });
+      toast.success("Attendance marked");
+      setSelectedReg(null);
+      setSearchResults([]);
+      setSearchQuery("");
+    } catch { toast.error("Failed"); }
+  };
+
+  // Bulk QR generation (super admin only)
+  const generateBulkQR = async () => {
+    try {
+      const { data } = await axios.post(`${API}/api/admin/qr/generate-bulk`, {}, { headers: authHeaders() });
+      toast.success(`Generated ${data.generated} QR codes`);
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  // QR Management list (super admin)
+  const fetchQRList = useCallback(async () => {
+    if (!isSuper) return;
+    setQrListLoading(true);
+    try {
+      const { data } = await axios.get(`${API}/api/admin/qr-management`, { headers: authHeaders() });
+      setQrList(data);
+    } catch {}
+    setQrListLoading(false);
+  }, [authHeaders, isSuper]);
+
+  // Disable QR
+  const disableQR = async (regId) => {
+    if (!window.confirm("Disable this QR code?")) return;
+    try {
+      await axios.put(`${API}/api/admin/registrations/${regId}`, { qr_active: false }, { headers: authHeaders() });
+      toast.success("QR disabled");
+      fetchQRList();
+    } catch { toast.error("Failed"); }
+  };
+
+  // Camera scan
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
       }
-      setCameraActive(true);
-      toast.info("Camera active. Point at QR code.");
-      scanFromCamera();
-    } catch {
-      toast.error("Camera access denied");
-    }
+    } catch { toast.error("Camera access denied"); }
   };
 
-  const scanFromCamera = () => {
+  const captureFrame = () => {
     if (!videoRef.current || !canvasRef.current) return;
-    const interval = setInterval(async () => {
-      if (!streamRef.current) { clearInterval(interval); return; }
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      if (!video || !canvas || video.readyState < 2) return;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(video, 0, 0);
-      // Use manual input for now - browser QR scanning via camera requires additional setup
-    }, 500);
-  };
-
-  const handleManualScan = async () => {
-    if (!manualCode.trim()) return;
-    setScanning(true);
-    try {
-      const { data } = await axios.post(`${API}/admin/qr/scan`, { qr_data: manualCode.trim() }, { headers: authHeaders() });
-      setScanResult(data.registration);
-      setManualCode("");
-      toast.success("QR verified successfully!");
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Invalid or expired QR code");
-      setScanResult(null);
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  const openCheckin = (reg) => {
-    setCheckinDialog(reg);
-    setSelectedAttendees((reg.attendees || []).map(a => a.id));
-  };
-
-  const handleCheckin = async () => {
-    if (!checkinDialog) return;
-    const arrivalStatus = selectedAttendees.length === checkinDialog.attendees.length ? "arrived" : "partially_arrived";
-    try {
-      await axios.post(`${API}/admin/registrations/${checkinDialog.id}/mark-arrival`, {
-        arrival_status: arrivalStatus,
-        arrived_attendee_ids: selectedAttendees,
-      }, { headers: authHeaders() });
-      toast.success(`Check-in successful! ${selectedAttendees.length}/${checkinDialog.attendees.length} arrived.`);
-      setCheckinDialog(null);
-      setScanResult(null);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Check-in failed");
-    }
-  };
-
-  const handleBulkGenerate = async () => {
-    setGenerating(true);
-    try {
-      const { data } = await axios.post(`${API}/admin/qr/generate-bulk`, {}, { headers: authHeaders() });
-      toast.success(`Generated ${data.generated} QR codes (${data.skipped} already had QR)`);
-    } catch (err) {
-      toast.error("Bulk generation failed");
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const handleSingleGenerate = async (regId) => {
-    try {
-      const { data } = await axios.post(`${API}/admin/qr/generate/${regId}`, {}, { headers: authHeaders() });
-      toast.success(`QR v${data.qr_version} generated`);
-    } catch (err) {
-      toast.error("QR generation failed");
-    }
-  };
-
-  const getHead = (reg) => {
-    const h = (reg.attendees || []).find(a => a.id === reg.group_head_id);
-    return h?.name || reg.attendees?.[0]?.name || reg.primary_mobile || "Unknown";
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    toast.info("Frame captured - enter token manually for now");
   };
 
   return (
-    <div data-testid="qr-scanner-view">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>QR Code System</h2>
-          <p className="text-[#0B1C3D]/50 text-sm mt-1">Scan for check-in or generate QR codes</p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setMode("scan")} size="sm" className={mode === "scan" ? "bg-[#D4AF37] text-[#0B1C3D]" : "bg-white text-[#0B1C3D]/60 border border-[#D4AF37]/20"} data-testid="qr-mode-scan">
-            <ScanLine size={14} className="mr-1" /> Scan
-          </Button>
-          <Button onClick={() => setMode("generate")} size="sm" className={mode === "generate" ? "bg-[#D4AF37] text-[#0B1C3D]" : "bg-white text-[#0B1C3D]/60 border border-[#D4AF37]/20"} data-testid="qr-mode-generate">
-            <QrCode size={14} className="mr-1" /> Generate
-          </Button>
-        </div>
+    <div className="p-4 md:p-6 space-y-4" data-testid="attendance-marker">
+      <h1 className="text-xl font-bold text-[#0B1C3D]">Attendance Marker</h1>
+
+      {/* Mode Tabs */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1" data-testid="marker-mode-toggle">
+        <button onClick={() => setMode("scan")} className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${mode === "scan" ? "bg-white shadow font-medium" : "text-gray-600"}`}>
+          <ScanLine size={14} /> QR Scan
+        </button>
+        <button onClick={() => setMode("search")} className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${mode === "search" ? "bg-white shadow font-medium" : "text-gray-600"}`}>
+          <Search size={14} /> Manual Search
+        </button>
+        {isSuper && (
+          <>
+            <button onClick={() => setMode("generate")} className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${mode === "generate" ? "bg-white shadow font-medium" : "text-gray-600"}`}>
+              <QrCode size={14} /> Generate
+            </button>
+            <button onClick={() => { setMode("manage"); fetchQRList(); }} className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${mode === "manage" ? "bg-white shadow font-medium" : "text-gray-600"}`}>
+              <List size={14} /> QR List
+            </button>
+          </>
+        )}
       </div>
 
+      {/* QR Scan Mode */}
       {mode === "scan" && (
-        <div className="space-y-4">
-          {/* Camera Scanner */}
-          <div className="bg-white rounded-xl border border-[#D4AF37]/15 p-5">
-            <h3 className="text-base font-semibold text-[#0B1C3D] mb-3 flex items-center gap-2">
-              <Camera size={16} className="text-[#D4AF37]" /> Camera Scanner
-            </h3>
-            <div className="relative bg-black rounded-lg overflow-hidden mb-3" style={{ height: cameraActive ? 280 : 100 }}>
-              <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
-              <canvas ref={canvasRef} className="hidden" />
-              {!cameraActive && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Button onClick={startCamera} className="bg-[#D4AF37] text-[#0B1C3D]" data-testid="start-camera-btn">
-                    <Camera size={16} className="mr-2" /> Start Camera
-                  </Button>
-                </div>
-              )}
-            </div>
-            {cameraActive && <Button onClick={stopCamera} size="sm" variant="outline" className="text-red-500 border-red-300">Stop Camera</Button>}
-          </div>
-
-          {/* Manual Input */}
-          <div className="bg-white rounded-xl border border-[#D4AF37]/15 p-5">
-            <h3 className="text-base font-semibold text-[#0B1C3D] mb-3">Manual QR Entry</h3>
+        <div className="space-y-4" data-testid="scan-mode">
+          <div className="bg-white rounded-xl p-4 border space-y-3">
+            <p className="text-sm text-gray-600">Scan a QR code or enter the token manually:</p>
             <div className="flex gap-2">
-              <Input value={manualCode} onChange={e => setManualCode(e.target.value)} placeholder="Enter QR code (e.g. KATHA2026:...)" className="bg-white border-[#D4AF37]/20" data-testid="qr-manual-input"
-                onKeyDown={e => e.key === "Enter" && handleManualScan()} />
-              <Button onClick={handleManualScan} disabled={scanning} className="bg-[#D4AF37] text-[#0B1C3D] shrink-0" data-testid="qr-scan-btn">
-                {scanning ? "Scanning..." : "Verify"}
-              </Button>
+              <input className="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="Enter QR token..."
+                value={scanInput} onChange={(e) => setScanInput(e.target.value)} data-testid="qr-token-input"
+                onKeyDown={(e) => e.key === "Enter" && handleScan(scanInput)} />
+              <button onClick={() => handleScan(scanInput)} disabled={scanning} data-testid="scan-btn"
+                className="bg-[#0B1C3D] text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50">
+                {scanning ? "..." : "Scan"}
+              </button>
             </div>
+            <button onClick={startCamera} className="text-sm text-blue-600 hover:underline">Open Camera</button>
+            <video ref={videoRef} className="w-full max-w-sm rounded-lg hidden" />
+            <canvas ref={canvasRef} className="hidden" />
           </div>
 
           {/* Scan Result */}
-          {scanResult && (
-            <div className="bg-white rounded-xl border-2 border-green-300 p-5" data-testid="qr-scan-result">
-              <div className="flex items-start justify-between mb-4">
-                <div>
-                  <h3 className="text-lg font-bold text-green-700 flex items-center gap-2"><Check size={20} /> QR Verified</h3>
-                  <p className="text-[#0B1C3D]/50 text-xs mt-1">QR v{scanResult.qr_version}</p>
-                </div>
-                <span className={`text-xs px-2 py-1 rounded-full ${scanResult.arrival_status === "arrived" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
-                  {scanResult.arrival_status}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-sm mb-4">
-                <div><span className="text-[#0B1C3D]/50 text-xs">Group Head</span><p className="font-semibold">{getHead(scanResult)}</p></div>
-                <div><span className="text-[#0B1C3D]/50 text-xs">People</span><p className="font-semibold">{scanResult.num_people}</p></div>
-                <div><span className="text-[#0B1C3D]/50 text-xs flex items-center gap-1"><Phone size={10} /> WhatsApp</span><p className="font-medium">{scanResult.primary_mobile}</p></div>
-                <div><span className="text-[#0B1C3D]/50 text-xs">Room(s)</span><p className="font-medium">{scanResult.room_assignments?.join(", ") || "Not assigned"}</p></div>
-              </div>
-              <div className="mb-3">
-                <span className="text-[#0B1C3D]/50 text-xs block mb-1">Attendees:</span>
-                {(scanResult.attendees || []).map((a, i) => (
-                  <div key={i} className={`py-1.5 px-3 rounded-lg mb-1 text-sm ${a.id === scanResult.group_head_id ? "bg-[#D4AF37]/10 border border-[#D4AF37]/30" : "bg-[#F8F1E5]"}`}>
-                    <span className="font-medium">{a.name}</span>
-                    {a.age && <span className="text-[#0B1C3D]/50 ml-2">Age: {a.age}</span>}
-                    {a.special_needs && <span className="text-orange-600 ml-2 font-medium">| {a.special_needs}</span>}
-                    {a.id === scanResult.group_head_id && <span className="text-[#D4AF37] text-[10px] ml-2 font-bold">[HEAD]</span>}
-                  </div>
-                ))}
-              </div>
-              {scanResult.family_special_request && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
-                  <p className="text-amber-700 text-sm flex items-center gap-1"><AlertTriangle size={14} /> {scanResult.family_special_request}</p>
-                </div>
-              )}
-              {scanResult.arrival_status !== "arrived" && (
-                <Button onClick={() => openCheckin(scanResult)} className="w-full bg-green-600 text-white hover:bg-green-700" data-testid="checkin-btn">
-                  <Check size={16} className="mr-2" /> Check In Guest(s)
-                </Button>
-              )}
-            </div>
-          )}
+          {scanResult && <AttendanceCheckin reg={scanResult} authHeaders={authHeaders} onDone={() => { setScanResult(null); setScanInput(""); }} />}
         </div>
       )}
 
-      {mode === "generate" && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-[#D4AF37]/15 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-base font-semibold text-[#0B1C3D]">Bulk QR Generation</h3>
-              <Button onClick={handleBulkGenerate} disabled={generating} className="bg-[#D4AF37] text-[#0B1C3D]" data-testid="bulk-generate-btn">
-                <RefreshCw size={14} className={`mr-2 ${generating ? "animate-spin" : ""}`} />
-                {generating ? "Generating..." : "Generate All Missing QRs"}
-              </Button>
-            </div>
-            <p className="text-[#0B1C3D]/50 text-sm">This will generate QR codes for all approved registrations that don't have one yet.</p>
+      {/* Manual Search Mode */}
+      {mode === "search" && (
+        <div className="space-y-4" data-testid="search-mode">
+          <div className="flex gap-2">
+            <input className="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="Search by family/person name or mobile..."
+              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} data-testid="manual-search-input"
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()} />
+            <button onClick={handleSearch} disabled={searchLoading} className="bg-[#0B1C3D] text-white px-4 py-2 rounded-lg text-sm">
+              {searchLoading ? "..." : "Search"}
+            </button>
+          </div>
+          <div className="space-y-2">
+            {searchResults.map(r => {
+              const head = (r.attendees || []).find(a => a.id === r.group_head_id);
+              return (
+                <button key={r.id} onClick={() => setSelectedReg(r)} data-testid={`search-result-${r.id}`}
+                  className="w-full text-left bg-white rounded-xl p-4 border hover:shadow-sm transition">
+                  <p className="font-medium text-[#0B1C3D]">{head?.name || r.primary_mobile}</p>
+                  <p className="text-xs text-gray-500">{r.num_people} people • {r.primary_mobile} • Status: {r.arrival_status}</p>
+                </button>
+              );
+            })}
+            {searchResults.length === 0 && searchQuery && !searchLoading && (
+              <p className="text-gray-400 text-center py-4">No expected guests found matching "{searchQuery}"</p>
+            )}
+          </div>
+
+          {selectedReg && <AttendanceCheckin reg={selectedReg} authHeaders={authHeaders} onDone={() => { setSelectedReg(null); setSearchResults([]); setSearchQuery(""); }} />}
+        </div>
+      )}
+
+      {/* Generate Mode (Super Admin Only) */}
+      {mode === "generate" && isSuper && (
+        <div className="space-y-4" data-testid="generate-mode">
+          <div className="bg-white rounded-xl p-6 border text-center space-y-4">
+            <QrCode size={48} className="mx-auto text-[#B8860B]" />
+            <p className="text-sm text-gray-600">Generate QR codes for all expected guests who don't have one yet.</p>
+            <p className="text-xs text-amber-600 bg-amber-50 rounded-lg p-2">QR codes will NOT be auto-sent to guests. Send them manually via Message Center.</p>
+            <button onClick={generateBulkQR} data-testid="bulk-generate-btn"
+              className="bg-[#0B1C3D] text-white px-6 py-3 rounded-lg font-medium">
+              Generate All Missing QRs
+            </button>
+            <p className="text-xs text-gray-400">QR data is stored as base64 PNG in the database, attached to each registration record.</p>
           </div>
         </div>
       )}
 
-      {/* Check-in Dialog */}
-      {checkinDialog && (
-        <Dialog open onOpenChange={() => setCheckinDialog(null)}>
-          <DialogContent className="max-w-md" data-testid="checkin-dialog">
-            <DialogHeader><DialogTitle>Check In: {getHead(checkinDialog)}</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <p className="text-sm text-[#0B1C3D]/60">Select attendees who have arrived:</p>
-              {(checkinDialog.attendees || []).map((a, i) => (
-                <label key={i} className="flex items-center gap-3 p-3 rounded-lg border border-[#D4AF37]/15 cursor-pointer hover:bg-[#F8F1E5]">
-                  <Checkbox checked={selectedAttendees.includes(a.id)} onCheckedChange={(checked) => {
-                    setSelectedAttendees(prev => checked ? [...prev, a.id] : prev.filter(x => x !== a.id));
-                  }} />
-                  <div>
-                    <span className="text-sm font-medium">{a.name}</span>
-                    {a.age && <span className="text-[#0B1C3D]/50 text-xs ml-2">Age: {a.age}</span>}
-                    {a.id === checkinDialog.group_head_id && <span className="text-[#D4AF37] text-[10px] ml-2 font-bold">[HEAD]</span>}
-                  </div>
-                </label>
-              ))}
-              <div className="flex gap-2 pt-2">
-                <Button onClick={() => setSelectedAttendees((checkinDialog.attendees || []).map(a => a.id))} size="sm" variant="outline" className="text-xs">Select All</Button>
-                <Button onClick={() => setSelectedAttendees([])} size="sm" variant="outline" className="text-xs">Clear</Button>
+      {/* QR Management View (Super Admin Only) */}
+      {mode === "manage" && isSuper && (
+        <div className="space-y-2" data-testid="qr-management">
+          {qrListLoading ? <p className="text-center text-gray-500 py-4">Loading...</p> :
+            qrList.length === 0 ? <p className="text-center text-gray-400 py-8">No QR codes generated yet</p> :
+            qrList.map(qr => (
+              <div key={qr.id} className="bg-white rounded-xl p-4 border flex items-center justify-between" data-testid={`qr-item-${qr.id}`}>
+                <div>
+                  <p className="font-medium text-[#0B1C3D] text-sm">{qr.head_name}</p>
+                  <p className="text-xs text-gray-500">v{qr.qr_version} • {qr.qr_active ? "Active" : "Disabled"} • {qr.arrival_status}</p>
+                  <p className="text-xs text-gray-400">{qr.qr_generated_at && new Date(qr.qr_generated_at).toLocaleString()}</p>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${qr.qr_active ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                    {qr.qr_active ? "Active" : "Disabled"}
+                  </span>
+                  {qr.qr_active && (
+                    <button onClick={() => disableQR(qr.id)} data-testid={`disable-qr-${qr.id}`}
+                      className="text-red-500 hover:text-red-700">
+                      <Ban size={14} />
+                    </button>
+                  )}
+                </div>
               </div>
-              <Button onClick={handleCheckin} disabled={selectedAttendees.length === 0} className="w-full bg-green-600 text-white" data-testid="confirm-checkin-btn">
-                Check In {selectedAttendees.length}/{(checkinDialog.attendees || []).length} Attendees
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            ))
+          }
+        </div>
       )}
+    </div>
+  );
+}
+
+function AttendanceCheckin({ reg, authHeaders, onDone }) {
+  const [checkedIds, setCheckedIds] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const head = (reg.attendees || []).find(a => a.id === reg.group_head_id);
+  const allIds = (reg.attendees || []).map(a => a.id);
+
+  const toggleAll = () => {
+    setCheckedIds(checkedIds.length === allIds.length ? [] : [...allIds]);
+  };
+
+  const toggle = (id) => {
+    setCheckedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const submit = async () => {
+    if (checkedIds.length === 0) { toast.error("Select at least one person"); return; }
+    setSubmitting(true);
+    try {
+      const arrStatus = checkedIds.length === allIds.length ? "arrived" : "partially_arrived";
+      const updatedAttendees = (reg.attendees || []).map(a => ({
+        ...a, arrival_status: checkedIds.includes(a.id) ? "arrived" : (a.arrival_status || "not_arrived")
+      }));
+      await axios.put(`${API}/api/admin/registrations/${reg.id}`, {
+        arrival_status: arrStatus, attendees: updatedAttendees
+      }, { headers: authHeaders() });
+      toast.success("Attendance marked");
+      onDone();
+    } catch { toast.error("Failed"); }
+    setSubmitting(false);
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-4 border space-y-3" data-testid="attendance-checkin">
+      <div className="flex justify-between items-center">
+        <div>
+          <p className="font-semibold text-[#0B1C3D]">{head?.name || reg.primary_mobile}</p>
+          <p className="text-xs text-gray-500">{reg.num_people} people • Room: {(reg.room_assignments || []).join(", ") || "None"}</p>
+          {reg.assigned_swamsevak && <p className="text-xs text-purple-600">Contact: {reg.assigned_swamsevak}</p>}
+          {reg.family_special_request && <p className="text-xs text-amber-600">Note: {reg.family_special_request}</p>}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <button onClick={toggleAll} className="text-xs text-blue-600 hover:underline">
+          {checkedIds.length === allIds.length ? "Deselect All" : "Select All"}
+        </button>
+        {(reg.attendees || []).map((a) => (
+          <label key={a.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 cursor-pointer" data-testid={`check-${a.id}`}>
+            <input type="checkbox" checked={checkedIds.includes(a.id)} onChange={() => toggle(a.id)}
+              className="w-4 h-4 rounded border-gray-300" />
+            <div>
+              <p className="text-sm font-medium text-[#0B1C3D]">
+                {a.name} {a.id === reg.group_head_id && <span className="text-xs text-amber-600">(Head)</span>}
+              </p>
+              <p className="text-xs text-gray-500">Age: {a.age} {a.special_needs && `• ${a.special_needs}`}</p>
+            </div>
+          </label>
+        ))}
+      </div>
+
+      <button onClick={submit} disabled={submitting || checkedIds.length === 0} data-testid="confirm-checkin"
+        className="w-full bg-green-600 text-white py-2.5 rounded-lg font-medium text-sm disabled:opacity-50 hover:bg-green-700 transition">
+        {submitting ? "Marking..." : `Mark ${checkedIds.length} as Arrived`}
+      </button>
     </div>
   );
 }

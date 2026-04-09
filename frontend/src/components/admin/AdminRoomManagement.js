@@ -1,376 +1,243 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Search, Trash2, ArrowRight, Download, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { Hotel, Plus, Trash2, Download, Users, Layers, UserCheck } from "lucide-react";
 import axios from "axios";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = process.env.REACT_APP_BACKEND_URL;
 
-export default function AdminRoomManagement({ user, authHeaders }) {
+export default function AdminRoomManagement({ user }) {
   const [rooms, setRooms] = useState([]);
+  const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAddRoom, setShowAddRoom] = useState(false);
-  const [showBulkAdd, setShowBulkAdd] = useState(false);
-  const [assignRoom, setAssignRoom] = useState(null);
-  const [shiftRoom, setShiftRoom] = useState(null);
-  const [confirmAction, setConfirmAction] = useState(null);
-  const isSuperAdmin = user.role === "superadmin";
+  const [showAdd, setShowAdd] = useState(false);
+  const [viewMode, setViewMode] = useState("floor");
+  const [form, setForm] = useState({ room_code: "", floor: 1, capacity: 4 });
+  const isSuper = user?.role === "superadmin";
 
-  const fetchRooms = useCallback(async () => {
+  const authHeaders = useCallback(() => ({
+    Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
+  }), []);
+
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`${API}/admin/rooms`, { headers: authHeaders() });
-      setRooms(data);
-    } catch { toast.error("Failed to load rooms"); }
-    finally { setLoading(false); }
+      const [roomRes, regRes] = await Promise.all([
+        axios.get(`${API}/api/admin/rooms`, { headers: authHeaders() }),
+        axios.get(`${API}/api/admin/guests/expected`, { headers: authHeaders(), params: { per_page: 500 } }),
+      ]);
+      setRooms(roomRes.data.data || []);
+      setRegs(regRes.data.data || []);
+    } catch {}
+    setLoading(false);
   }, [authHeaders]);
 
-  useEffect(() => { fetchRooms(); }, [fetchRooms]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleExportPDF = async () => {
+  const createRoom = async () => {
     try {
-      const res = await axios.get(`${API}/admin/export-pdf`, { headers: authHeaders(), params: { report_type: "rooms" }, responseType: "blob" });
-      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
-      const a = document.createElement("a"); a.href = url; a.download = "room_allocation.pdf"; a.click(); URL.revokeObjectURL(url);
-    } catch { toast.error("PDF export failed"); }
+      await axios.post(`${API}/api/admin/rooms`, form, { headers: authHeaders() });
+      toast.success("Room created");
+      setShowAdd(false);
+      setForm({ room_code: "", floor: 1, capacity: 4 });
+      fetchData();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
-  const handleExportCSV = async () => {
-    const csv = ["Room Code,Floor,Capacity,AC Type,Status,Occupants,Notes"];
-    rooms.forEach(r => csv.push(`${r.room_code},${r.floor || ""},${r.capacity},${r.ac_type},${r.status},"${(r.occupant_names || []).join(", ")}",${r.notes || ""}`));
-    const blob = new Blob([csv.join("\n")], { type: "text/csv" });
-    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "rooms.csv"; a.click(); URL.revokeObjectURL(url);
-  };
-
-  const handleDelete = async (code) => {
+  const deleteRoom = async (code) => {
+    if (!window.confirm(`Delete room ${code}?`)) return;
     try {
-      await axios.delete(`${API}/admin/rooms/${code}`, { headers: authHeaders() });
-      toast.success(`Room ${code} deleted`);
-      fetchRooms();
-    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Delete failed"); }
-    setConfirmAction(null);
+      await axios.delete(`${API}/api/admin/rooms/${code}`, { headers: authHeaders() });
+      toast.success("Room deleted");
+      fetchData();
+    } catch { toast.error("Failed"); }
   };
 
-  const handleUnassign = async (code) => {
+  const exportPDF = async () => {
     try {
-      await axios.put(`${API}/admin/rooms/${code}/unassign`, {}, { headers: authHeaders() });
-      toast.success(`Room ${code} unassigned`);
-      fetchRooms();
-    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Unassign failed"); }
-    setConfirmAction(null);
+      const resp = await axios.get(`${API}/api/admin/export-pdf`, { headers: authHeaders(), responseType: "blob" });
+      const url = window.URL.createObjectURL(resp.data);
+      const a = document.createElement("a"); a.href = url; a.download = "rooms.pdf"; a.click();
+    } catch { toast.error("Export failed"); }
   };
 
-  const available = rooms.filter(r => r.status !== "occupied").length;
-  const occupied = rooms.filter(r => r.status === "occupied").length;
+  // Build occupant map from registrations
+  const roomOccupants = {};
+  regs.forEach(r => {
+    (r.room_assignments || []).forEach(code => {
+      if (!roomOccupants[code]) roomOccupants[code] = [];
+      const head = (r.attendees || []).find(a => a.id === r.group_head_id);
+      roomOccupants[code].push({
+        name: head?.name || r.primary_mobile,
+        num: r.num_people,
+        ref: r.reference_person_name || "",
+        relation: r.relation_category || "",
+        swamsevak: r.assigned_swamsevak || "",
+        regId: r.id,
+      });
+    });
+  });
+
+  // Group rooms by different views
+  const groupRooms = () => {
+    if (viewMode === "floor") {
+      const groups = {};
+      rooms.forEach(r => {
+        const key = `Floor ${r.floor}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(r);
+      });
+      return groups;
+    }
+    if (viewMode === "reference") {
+      const groups = { "Unassigned": [] };
+      rooms.forEach(r => {
+        const occupants = roomOccupants[r.room_code] || [];
+        if (occupants.length === 0) {
+          groups["Unassigned"].push(r);
+        } else {
+          occupants.forEach(occ => {
+            const key = occ.ref || "No Reference Person";
+            if (!groups[key]) groups[key] = [];
+            if (!groups[key].find(rm => rm.room_code === r.room_code)) groups[key].push(r);
+          });
+        }
+      });
+      if (groups["Unassigned"].length === 0) delete groups["Unassigned"];
+      return groups;
+    }
+    if (viewMode === "swamsevak") {
+      const groups = { "Unassigned": [] };
+      rooms.forEach(r => {
+        const occupants = roomOccupants[r.room_code] || [];
+        if (occupants.length === 0) {
+          groups["Unassigned"].push(r);
+        } else {
+          occupants.forEach(occ => {
+            const key = occ.swamsevak || "Unassigned Swamsevak";
+            if (!groups[key]) groups[key] = [];
+            if (!groups[key].find(rm => rm.room_code === r.room_code)) groups[key].push(r);
+          });
+        }
+      });
+      if (groups["Unassigned"].length === 0) delete groups["Unassigned"];
+      return groups;
+    }
+    return {};
+  };
+
+  const grouped = groupRooms();
 
   return (
-    <div className="space-y-6" data-testid="room-management-view">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Room Management</h2>
-          <p className="text-sm text-[#0B1C3D]/50">{rooms.length} rooms &middot; {available} available &middot; {occupied} occupied</p>
-        </div>
+    <div className="p-4 md:p-6 space-y-4" data-testid="room-management">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <h1 className="text-xl font-bold text-[#0B1C3D]">Room Management</h1>
         <div className="flex gap-2 flex-wrap">
-          {isSuperAdmin && (
-            <>
-              <Button size="sm" onClick={() => setShowAddRoom(true)} className="bg-[#D4AF37] text-[#0B1C3D] h-8 text-xs" data-testid="add-room-btn">
-                <Plus size={14} className="mr-1" /> Add Room
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => setShowBulkAdd(true)} className="h-8 text-xs" data-testid="bulk-add-rooms-btn">
-                <Plus size={14} className="mr-1" /> Bulk Add
-              </Button>
-            </>
+          {isSuper && (
+            <button onClick={() => setShowAdd(true)} data-testid="add-room-btn"
+              className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1">
+              <Plus size={14} /> Add Room
+            </button>
           )}
-          <Button size="sm" variant="outline" onClick={handleExportPDF} className="h-8 text-xs" data-testid="export-rooms-pdf">
-            <Download size={14} className="mr-1" /> PDF
-          </Button>
-          <Button size="sm" variant="outline" onClick={handleExportCSV} className="h-8 text-xs" data-testid="export-rooms-csv">
-            <Download size={14} className="mr-1" /> CSV
-          </Button>
+          <button onClick={exportPDF} data-testid="export-pdf"
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
+            <Download size={14} /> PDF
+          </button>
         </div>
       </div>
 
-      {/* Room Grid */}
-      {loading ? (
-        <div className="py-10 text-center text-[#0B1C3D]/40">Loading rooms...</div>
-      ) : rooms.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-[#D4AF37]/20 p-10 text-center">
-          <p className="text-[#0B1C3D]/40">No rooms configured yet</p>
-          {isSuperAdmin && <p className="text-[#0B1C3D]/30 text-xs mt-1">Click "Add Room" to get started</p>}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3" data-testid="room-grid">
-          {rooms.map(r => (
-            <div key={r.room_code} className={`rounded-2xl border-2 p-4 transition-all hover:shadow-md cursor-pointer ${r.status === "occupied" ? "border-red-200 bg-red-50/50" : "border-green-200 bg-green-50/50"}`}
-              onClick={() => setAssignRoom(r)} data-testid={`room-card-${r.room_code}`}>
-              <div className="flex items-center justify-between mb-2">
-                <p className="font-bold text-[#0B1C3D] text-lg">{r.room_code}</p>
-                <span className={`text-[9px] px-2 py-0.5 rounded-full font-semibold uppercase ${r.status === "occupied" ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"}`}>
-                  {r.status}
-                </span>
+      {/* View Toggle */}
+      <div className="flex gap-1 bg-gray-100 rounded-lg p-1" data-testid="room-view-toggle">
+        <button onClick={() => setViewMode("floor")} data-testid="view-floor"
+          className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${viewMode === "floor" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
+          <Layers size={14} /> Floor-wise
+        </button>
+        <button onClick={() => setViewMode("reference")} data-testid="view-reference"
+          className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${viewMode === "reference" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
+          <Users size={14} /> Reference Person
+        </button>
+        <button onClick={() => setViewMode("swamsevak")} data-testid="view-swamsevak"
+          className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${viewMode === "swamsevak" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
+          <UserCheck size={14} /> Swamsevak-wise
+        </button>
+      </div>
+
+      {/* Summary */}
+      <div className="flex gap-4 text-sm">
+        <span className="text-gray-600">Total: <strong>{rooms.length}</strong></span>
+        <span className="text-green-600">Available: <strong>{rooms.filter(r => r.status === "available").length}</strong></span>
+        <span className="text-red-600">Occupied: <strong>{rooms.filter(r => r.status === "occupied").length}</strong></span>
+      </div>
+
+      {loading ? <p className="text-gray-500 text-center py-4">Loading...</p> : (
+        <div className="space-y-6" data-testid="room-groups">
+          {Object.entries(grouped).map(([groupName, groupRooms]) => (
+            <div key={groupName}>
+              <h3 className="font-semibold text-[#0B1C3D] text-sm mb-2 flex items-center gap-2">
+                {viewMode === "reference" && <Users size={14} className="text-amber-600" />}
+                {viewMode === "swamsevak" && <UserCheck size={14} className="text-purple-600" />}
+                {viewMode === "floor" && <Layers size={14} className="text-blue-600" />}
+                {groupName}
+                <span className="text-xs text-gray-400">({groupRooms.length} rooms)</span>
+              </h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {groupRooms.map((rm) => {
+                  const occupants = roomOccupants[rm.room_code] || [];
+                  const isOccupied = rm.status === "occupied";
+                  return (
+                    <div key={rm.room_code}
+                      className={`rounded-xl p-3 border-2 transition ${isOccupied ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}
+                      data-testid={`room-${rm.room_code}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="font-bold text-sm text-[#0B1C3D]">{rm.room_code}</span>
+                        {isSuper && !isOccupied && (
+                          <button onClick={() => deleteRoom(rm.room_code)} className="text-red-400 hover:text-red-600" data-testid={`delete-room-${rm.room_code}`}>
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500">Cap: {rm.capacity} • Floor {rm.floor}</p>
+                      {occupants.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {occupants.map((o, i) => (
+                            <div key={i} className="text-xs">
+                              <p className="font-medium text-[#0B1C3D] truncate">{o.name}</p>
+                              {o.ref && <p className="text-amber-600 truncate">Ref: {o.ref}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <span className={`inline-block mt-2 text-xs px-2 py-0.5 rounded-full ${isOccupied ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                        {isOccupied ? "Occupied" : "Available"}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="space-y-1 text-xs text-[#0B1C3D]/60">
-                <p>Capacity: {r.capacity}</p>
-                <p>{r.ac_type}</p>
-                {r.notes && <p className="text-[#0B1C3D]/40 italic truncate">{r.notes}</p>}
-              </div>
-              {r.status === "occupied" && r.occupant_names?.length > 0 && (
-                <p className="mt-2 text-xs font-medium text-red-600 truncate">{r.occupant_names.join(", ")}</p>
-              )}
             </div>
           ))}
+          {Object.keys(grouped).length === 0 && <p className="text-gray-400 text-center py-8">No rooms found</p>}
         </div>
       )}
 
-      {/* Assign Room Popup */}
-      {assignRoom && <RoomAssignPopup room={assignRoom} onClose={() => setAssignRoom(null)} authHeaders={authHeaders}
-        onUnassign={() => setConfirmAction({ type: "unassign", code: assignRoom.room_code, message: `Unassign room ${assignRoom.room_code}?` })}
-        onDelete={isSuperAdmin ? () => setConfirmAction({ type: "delete", code: assignRoom.room_code, message: `Delete room ${assignRoom.room_code}?` }) : null}
-        onShift={() => { setShiftRoom(assignRoom); setAssignRoom(null); }}
-        onDone={() => { setAssignRoom(null); fetchRooms(); }} isSuperAdmin={isSuperAdmin} rooms={rooms} />}
-
-      {/* Shift Room Dialog */}
-      {shiftRoom && <ShiftRoomDialog room={shiftRoom} rooms={rooms} onClose={() => setShiftRoom(null)} authHeaders={authHeaders} onDone={() => { setShiftRoom(null); fetchRooms(); }} />}
-
       {/* Add Room Dialog */}
-      {showAddRoom && <AddRoomDialog onClose={() => setShowAddRoom(false)} authHeaders={authHeaders} onDone={() => { setShowAddRoom(false); fetchRooms(); }} />}
-      {showBulkAdd && <BulkAddRoomDialog onClose={() => setShowBulkAdd(false)} authHeaders={authHeaders} onDone={() => { setShowBulkAdd(false); fetchRooms(); }} />}
-
-      {/* Confirm Dialog */}
-      <Dialog open={!!confirmAction} onOpenChange={() => setConfirmAction(null)}>
+      <Dialog open={showAdd} onOpenChange={() => setShowAdd(false)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Are you sure?</DialogTitle></DialogHeader>
-          <p className="text-sm text-[#0B1C3D]/70">{confirmAction?.message}</p>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setConfirmAction(null)}>Cancel</Button>
-            <Button onClick={() => confirmAction?.type === "delete" ? handleDelete(confirmAction.code) : handleUnassign(confirmAction.code)} className="bg-red-500 text-white hover:bg-red-600">Confirm</Button>
-          </DialogFooter>
+          <DialogHeader><DialogTitle>Add New Room</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Room Code*" value={form.room_code}
+              onChange={(e) => setForm({ ...form, room_code: e.target.value })} data-testid="room-code-input" />
+            <input type="number" className="w-full border rounded px-3 py-2 text-sm" placeholder="Floor" value={form.floor}
+              onChange={(e) => setForm({ ...form, floor: parseInt(e.target.value) || 1 })} />
+            <input type="number" className="w-full border rounded px-3 py-2 text-sm" placeholder="Capacity" value={form.capacity}
+              onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value) || 1 })} />
+            <div className="flex gap-2">
+              <button onClick={createRoom} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm">Create</button>
+              <button onClick={() => setShowAdd(false)} className="flex-1 border py-2 rounded-lg text-sm">Cancel</button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function RoomAssignPopup({ room, onClose, authHeaders, onUnassign, onDelete, onShift, onDone, isSuperAdmin, rooms }) {
-  const [guests, setGuests] = useState([]);
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (room.status === "occupied") return;
-    setLoading(true);
-    axios.get(`${API}/admin/registrations`, { headers: authHeaders(), params: { status: "approved", per_page: 200 } })
-      .then(r => setGuests(r.data.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [room, authHeaders]);
-
-  const handleAssign = async (guest) => {
-    try {
-      await axios.put(`${API}/admin/rooms/${room.room_code}/assign`, { registration_id: guest.id }, { headers: authHeaders() });
-      const headName = (guest.attendees || []).find(a => a.id === guest.group_head_id)?.name || guest.attendees?.[0]?.name || guest.primary_mobile;
-      toast.success(`${headName} assigned to ${room.room_code}`);
-      onDone();
-    } catch (err) {
-      const detail = err.response?.data?.detail;
-      toast.error(typeof detail === "string" ? detail : "Assignment failed");
-    }
-  };
-
-  const filtered = guests.filter(g => {
-    const q = search.toLowerCase();
-    const headName = (g.attendees || []).find(a => a.id === g.group_head_id)?.name || g.attendees?.[0]?.name || "";
-    return headName.toLowerCase().includes(q) || g.primary_mobile?.includes(q);
-  });
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Room {room.room_code}</DialogTitle>
-        </DialogHeader>
-        <div className="text-xs text-[#0B1C3D]/60 space-y-1 mb-3">
-          <p>Capacity: {room.capacity} &middot; {room.ac_type}</p>
-          {room.notes && <p>Notes: {room.notes}</p>}
-          {room.floor && <p>Floor: {room.floor}</p>}
-        </div>
-
-        {room.status === "occupied" ? (
-          <div className="space-y-3">
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-              <p className="font-medium text-red-700 text-sm">Currently Occupied</p>
-              <p className="text-red-600 text-lg font-bold">{(room.occupant_names || []).join(", ") || "Occupied"}</p>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={onUnassign} className="flex-1 text-orange-600 border-orange-300">Unassign</Button>
-              <Button size="sm" variant="outline" onClick={onShift} className="flex-1 text-blue-600 border-blue-300">
-                <ArrowRight size={14} className="mr-1" /> Shift Room
-              </Button>
-            </div>
-            {onDelete && <Button size="sm" variant="outline" onClick={onDelete} className="w-full text-red-600 border-red-300"><Trash2 size={14} className="mr-1" /> Delete Room</Button>}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/30" />
-              <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search groups..." className="pl-8 h-8 text-sm" data-testid="room-guest-search" />
-            </div>
-            <div className="max-h-52 overflow-y-auto space-y-1">
-              {loading ? <p className="text-center py-4 text-[#0B1C3D]/40 text-xs">Loading groups...</p> :
-                filtered.length === 0 ? <p className="text-center py-4 text-[#0B1C3D]/40 text-xs">No groups found</p> :
-                filtered.map(g => {
-                  const headName = (g.attendees || []).find(a => a.id === g.group_head_id)?.name || g.attendees?.[0]?.name || g.primary_mobile;
-                  const hasRoom = g.room_assignments?.length > 0;
-                  return (
-                    <button key={g.id} onClick={() => handleAssign(g)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${hasRoom ? "opacity-60 bg-gray-50" : "hover:bg-[#D4AF37]/10"}`}
-                      data-testid={`assign-guest-${g.id}`}>
-                      <span className="font-medium text-[#0B1C3D]">{headName}</span>
-                      <span className="text-[#0B1C3D]/40 text-xs ml-2">{g.num_people} ppl | {g.primary_mobile}</span>
-                      {hasRoom && <span className="text-orange-500 text-xs ml-2">(Rooms: {g.room_assignments.join(", ")})</span>}
-                    </button>
-                  );
-                })}
-            </div>
-            <div className="flex gap-2">
-              {onDelete && <Button size="sm" variant="outline" onClick={onDelete} className="text-red-600 border-red-300 text-xs"><Trash2 size={12} className="mr-1" /> Delete</Button>}
-            </div>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ShiftRoomDialog({ room, rooms, onClose, authHeaders, onDone }) {
-  const [target, setTarget] = useState("");
-  const [saving, setSaving] = useState(false);
-  const availableRooms = rooms.filter(r => r.room_code !== room.room_code && r.status !== "occupied");
-
-  const handleShift = async () => {
-    if (!target) return toast.error("Select a target room");
-    setSaving(true);
-    try {
-      await axios.put(`${API}/admin/rooms/${room.room_code}/shift`, { new_room_code: target }, { headers: authHeaders() });
-      toast.success(`Shifted to room ${target}`);
-      onDone();
-    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Shift failed"); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Shift from Room {room.room_code}</DialogTitle></DialogHeader>
-        <p className="text-sm text-[#0B1C3D]/60">Moving: {(room.occupant_names || []).join(", ") || "Occupants"}</p>
-        <div>
-          <Label className="text-xs">Select Target Room (unoccupied only)</Label>
-          <Select value={target} onValueChange={setTarget}>
-            <SelectTrigger className="mt-1"><SelectValue placeholder="Select room..." /></SelectTrigger>
-            <SelectContent>
-              {availableRooms.map(r => <SelectItem key={r.room_code} value={r.room_code}>{r.room_code} (Cap: {r.capacity}, {r.ac_type})</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleShift} disabled={saving} className="bg-[#D4AF37] text-[#0B1C3D]">{saving ? "Shifting..." : "Shift"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AddRoomDialog({ onClose, authHeaders, onDone }) {
-  const [form, setForm] = useState({ room_code: "", floor: "", capacity: 2, ac_type: "AC", notes: "" });
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    if (!form.room_code.trim()) return toast.error("Room code required");
-    setSaving(true);
-    try {
-      await axios.post(`${API}/admin/rooms`, form, { headers: authHeaders() });
-      toast.success(`Room ${form.room_code} created`);
-      onDone();
-    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Create failed"); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Add Room</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div><Label className="text-xs">Room Code *</Label><Input value={form.room_code} onChange={e => setForm(f => ({ ...f, room_code: e.target.value }))} className="mt-1" /></div>
-          <div><Label className="text-xs">Floor</Label><Input value={form.floor} onChange={e => setForm(f => ({ ...f, floor: e.target.value }))} className="mt-1" /></div>
-          <div><Label className="text-xs">Capacity</Label><Input type="number" min={1} value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: parseInt(e.target.value) || 1 }))} className="mt-1" /></div>
-          <div><Label className="text-xs">AC Type</Label>
-            <Select value={form.ac_type} onValueChange={v => setForm(f => ({ ...f, ac_type: v }))}>
-              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="AC">AC</SelectItem><SelectItem value="Non-AC">Non-AC</SelectItem></SelectContent>
-            </Select>
-          </div>
-          <div><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="mt-1" /></div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving} className="bg-[#D4AF37] text-[#0B1C3D]">{saving ? "Creating..." : "Create Room"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function BulkAddRoomDialog({ onClose, authHeaders, onDone }) {
-  const [prefix, setPrefix] = useState("");
-  const [start, setStart] = useState(1);
-  const [end, setEnd] = useState(10);
-  const [capacity, setCapacity] = useState(2);
-  const [acType, setAcType] = useState("AC");
-  const [saving, setSaving] = useState(false);
-
-  const handleSave = async () => {
-    if (!prefix.trim()) return toast.error("Prefix required");
-    setSaving(true);
-    try {
-      const rooms = [];
-      for (let i = start; i <= end; i++) {
-        rooms.push({ room_code: `${prefix}${i}`, capacity, ac_type: acType, notes: "", floor: prefix });
-      }
-      await axios.post(`${API}/admin/rooms/bulk`, { rooms }, { headers: authHeaders() });
-      toast.success(`Rooms ${prefix}${start}-${prefix}${end} created`);
-      onDone();
-    } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Bulk create failed"); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Bulk Add Rooms</DialogTitle></DialogHeader>
-        <div className="space-y-3">
-          <div><Label className="text-xs">Prefix (e.g., R, A-)</Label><Input value={prefix} onChange={e => setPrefix(e.target.value)} className="mt-1" /></div>
-          <div className="grid grid-cols-2 gap-2">
-            <div><Label className="text-xs">Start #</Label><Input type="number" value={start} onChange={e => setStart(parseInt(e.target.value) || 1)} className="mt-1" /></div>
-            <div><Label className="text-xs">End #</Label><Input type="number" value={end} onChange={e => setEnd(parseInt(e.target.value) || 1)} className="mt-1" /></div>
-          </div>
-          <div><Label className="text-xs">Capacity</Label><Input type="number" min={1} value={capacity} onChange={e => setCapacity(parseInt(e.target.value) || 1)} className="mt-1" /></div>
-          <div><Label className="text-xs">AC Type</Label>
-            <Select value={acType} onValueChange={setAcType}>
-              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value="AC">AC</SelectItem><SelectItem value="Non-AC">Non-AC</SelectItem></SelectContent>
-            </Select>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving} className="bg-[#D4AF37] text-[#0B1C3D]">{saving ? "Creating..." : "Create Rooms"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

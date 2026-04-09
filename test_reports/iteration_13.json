@@ -1,0 +1,81 @@
+{
+  "summary": "V2.5 comprehensive testing completed. All 29 backend API tests pass. Frontend UI testing verified sidebar reorder/rename, dashboard restructure, permission enforcement, room 3-view toggles, attendance marker tabs, help centre my/all views, todo admin selector, pending approval tabs. Fixed missing /api/admin/guests/* endpoints in backend.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [],
+    "fixed": [
+      {"endpoint": "/api/admin/guests/pending, /api/admin/guests/expected, /api/admin/guests/arrived", "issue": "Endpoints were missing - frontend was calling these but backend didn't have them. Added alias endpoints to extra_router.", "status": "FIXED"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Registration form", "issues": ["OTP is dynamically generated (not hardcoded 4132 as documented) - Mock OTP shown on screen for testing"]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_v25_features.py",
+    "/app/test_reports/pytest/pytest_results_v25.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/server.py - Added /api/admin/guests/pending, /api/admin/guests/expected, /api/admin/guests/arrived endpoints",
+    "/app/backend/tests/test_v25_features.py - Created V2.5 test suite"
+  ],
+  "success_rate": {
+    "backend": "100% (29/29 tests passed)",
+    "frontend": "100% (all UI features verified)"
+  },
+  "test_credentials": {
+    "super_admin": "superashwini / supersebhiupper123",
+    "regular_admin": "arunpanchariya / arunlondon123",
+    "otp": "Dynamically generated - shown on screen as 'Mock OTP (Testing): XXXX'"
+  },
+  "seed_data_creation": "None - used existing seed data",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "V2.5 testing complete. All features verified: (1) Sidebar renamed and reordered correctly - Command Centre, Attendance Marker, Help Centre (yellow), To-Do List first. (2) Dashboard has merged stat blocks with drill-down modals working. (3) Pending Approval and Message Center hidden for regular admin. (4) Room Management has 3 view toggles (Floor/Reference/Swamsevak). (5) Attendance Marker has 4 tabs (Scan/Manual Search/Generate/QR List). (6) Help Centre has My/All tickets toggle. (7) To-Do has admin selector for super admin only. (8) Pending Approval has Disapproved tab. (9) Registration form has travel_mode and travel_details fields in Step 2. (10) All permission-based API restrictions working correctly.",
+  "features_verified": {
+    "sidebar": {
+      "renamed": ["Command Centre (was Dashboard)", "Attendance Marker (was QR Scanner)"],
+      "reordered": "Command Centre, Attendance Marker, Help Centre, To-Do List first",
+      "help_centre_highlighted": "Yellow/highlighted color"
+    },
+    "dashboard": {
+      "stat_blocks": ["Expected Guests", "Arrival Status (merged)", "Departed", "Rooms (merged)"],
+      "pending_alert": "Shown for super admin only",
+      "daily_schedule": "Clickable number chips with drill-down modals"
+    },
+    "permissions": {
+      "pending_approval": "Super admin only (nav hidden for regular admin)",
+      "message_center": "Super admin only (nav hidden for regular admin)",
+      "undo_arrival_departure": "Super admin only (403 for regular admin)",
+      "qr_management": "Super admin only (403 for regular admin)",
+      "sla_config_update": "Super admin only (403 for regular admin)"
+    },
+    "room_management": {
+      "view_toggles": ["Floor-wise", "Reference Person", "Swamsevak-wise"],
+      "occupant_names": "Shown on room cards when occupied"
+    },
+    "attendance_marker": {
+      "tabs": ["QR Scan", "Manual Search", "Generate (super admin)", "QR List (super admin)"],
+      "manual_search": "Searches expected guests by name"
+    },
+    "help_centre": {
+      "view_toggle": ["My Tickets", "All Tickets"]
+    },
+    "todo_module": {
+      "regular_admin": "Self-only tasks (no admin selector)",
+      "super_admin": "Admin selector dropdown to view per-admin tasks"
+    },
+    "pending_approval": {
+      "tabs": ["Pending", "Disapproved"]
+    },
+    "registration_form": {
+      "travel_fields": ["travel_mode (dropdown)", "travel_details (text input)"],
+      "location": "Step 2 - Attendance & Travel"
+    }
+  }
+}

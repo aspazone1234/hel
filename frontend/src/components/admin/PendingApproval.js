@@ -1,190 +1,262 @@
-import { useState, useEffect } from "react";
-import { Check, X, Eye, Search, ChevronLeft, ChevronRight, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useState, useEffect, useCallback } from "react";
+import { Check, X, Eye, Trash2, RefreshCw, Search } from "lucide-react";
 import axios from "axios";
+import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = process.env.REACT_APP_BACKEND_URL;
 
-function getGroupHead(reg) {
-  const head = (reg.attendees || []).find(a => a.id === reg.group_head_id);
-  return head?.name || reg.attendees?.[0]?.name || reg.primary_mobile || "Unknown";
-}
-
-export default function PendingApproval({ user, authHeaders }) {
+export default function PendingApproval({ user }) {
   const [regs, setRegs] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
+  const [rejected, setRejected] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [detailReg, setDetailReg] = useState(null);
+  const [search, setSearch] = useState("");
+  const [viewReg, setViewReg] = useState(null);
+  const [tab, setTab] = useState("pending");
+  const isSuper = user?.role === "superadmin";
 
-  const fetch = async (p = page, s = search) => {
+  const authHeaders = useCallback(() => ({
+    Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
+  }), []);
+
+  const fetchPending = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get(`${API}/admin/registrations`, {
-        headers: authHeaders(),
-        params: { bucket: "pending_approval", search: s || undefined, page: p, per_page: 20 }
+      const { data } = await axios.get(`${API}/api/admin/guests/pending`, {
+        headers: authHeaders(), params: { search, per_page: 100 }
       });
-      setRegs(data.data);
-      setTotal(data.total);
-    } catch (err) {
-      toast.error("Failed to load pending registrations");
-    } finally {
-      setLoading(false);
-    }
-  };
+      setRegs(data.data || []);
+    } catch {}
+    setLoading(false);
+  }, [authHeaders, search]);
 
-  useEffect(() => { fetch(1); }, []);
-
-  const handleSearch = () => { setPage(1); fetch(1, search); };
-  const handlePage = (p) => { setPage(p); fetch(p); };
-
-  const handleApprove = async (id) => {
+  const fetchRejected = useCallback(async () => {
     try {
-      await axios.put(`${API}/admin/registrations/${id}/approve`, {}, { headers: authHeaders() });
-      toast.success("Approved! Moved to Expected Guest List");
-      fetch();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Approval failed");
-    }
-  };
+      const { data } = await axios.get(`${API}/api/admin/registrations/rejected`, {
+        headers: authHeaders(), params: { search, per_page: 100 }
+      });
+      setRejected(data.data || []);
+    } catch {}
+  }, [authHeaders, search]);
 
-  const handleReject = async (id) => {
+  useEffect(() => {
+    fetchPending();
+    fetchRejected();
+  }, [fetchPending, fetchRejected]);
+
+  const approveReg = async (id) => {
     try {
-      await axios.put(`${API}/admin/registrations/${id}/reject`, {}, { headers: authHeaders() });
-      toast.success("Rejected");
-      fetch();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Rejection failed");
-    }
+      await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "approved", arrival_status: "not_arrived" }, { headers: authHeaders() });
+      toast.success("Approved and moved to Expected Guest List");
+      fetchPending();
+    } catch { toast.error("Failed to approve"); }
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / 20));
+  const rejectReg = async (id) => {
+    if (!window.confirm("Are you sure you want to disapprove this registration?")) return;
+    try {
+      await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "rejected" }, { headers: authHeaders() });
+      toast.success("Registration disapproved");
+      fetchPending();
+      fetchRejected();
+    } catch { toast.error("Failed"); }
+  };
+
+  const restoreReg = async (id) => {
+    try {
+      await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "pending" }, { headers: authHeaders() });
+      toast.success("Restored to pending");
+      fetchPending();
+      fetchRejected();
+    } catch { toast.error("Failed"); }
+  };
+
+  const deleteReg = async (id) => {
+    if (!window.confirm("Permanently delete this entry?")) return;
+    try {
+      await axios.delete(`${API}/api/admin/registrations/${id}/permanent`, { headers: authHeaders() });
+      toast.success("Deleted");
+      fetchRejected();
+    } catch { toast.error("Failed"); }
+  };
+
+  const getHeadName = (reg) => {
+    const head = (reg.attendees || []).find(a => a.id === reg.group_head_id);
+    return head?.name || reg.primary_mobile;
+  };
 
   return (
-    <div data-testid="pending-approval-view">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            Pending Form Approval
-          </h2>
-          <p className="text-[#0B1C3D]/50 text-sm mt-1">{total} pending registration(s)</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/30" />
-            <Input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSearch()}
-              placeholder="Search..." className="pl-9 bg-white border-[#D4AF37]/20 w-56" data-testid="pending-search" />
-          </div>
-          <Button onClick={handleSearch} size="sm" className="bg-[#D4AF37] text-[#0B1C3D]">Search</Button>
-        </div>
+    <div className="p-4 md:p-6 space-y-4" data-testid="pending-approval">
+      <h1 className="text-xl font-bold text-[#0B1C3D]">Pending Form Approval</h1>
+
+      {/* Tabs */}
+      <div className="flex gap-2">
+        <button onClick={() => setTab("pending")} data-testid="tab-pending"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${tab === "pending" ? "bg-[#0B1C3D] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
+          Pending ({regs.length})
+        </button>
+        <button onClick={() => setTab("disapproved")} data-testid="tab-disapproved"
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${tab === "disapproved" ? "bg-red-600 text-white" : "bg-red-50 text-red-600 hover:bg-red-100"}`}>
+          Disapproved ({rejected.length})
+        </button>
       </div>
 
-      {loading ? (
-        <div className="text-center py-20 text-[#0B1C3D]/40">Loading...</div>
-      ) : regs.length === 0 ? (
-        <div className="text-center py-20 text-[#0B1C3D]/40 bg-white rounded-xl border border-[#D4AF37]/10" data-testid="pending-empty">
-          No pending registrations
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {regs.map(reg => (
-            <div key={reg.id} className="bg-white rounded-xl border border-[#D4AF37]/10 p-4 flex flex-col sm:flex-row sm:items-center gap-3" data-testid={`pending-row-${reg.id}`}>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-semibold text-[#0B1C3D] text-sm">{getGroupHead(reg)}</span>
-                  <span className="text-[10px] bg-[#0B1C3D]/5 px-2 py-0.5 rounded-full text-[#0B1C3D]/50 flex items-center gap-1">
-                    <Users size={10} /> {reg.num_people} {reg.num_people > 1 ? "people" : "person"}
-                  </span>
-                </div>
-                <p className="text-[#0B1C3D]/50 text-xs truncate">{reg.primary_mobile} | {reg.address?.city || ""} | {reg.attendance_intent}</p>
-                <p className="text-[#0B1C3D]/40 text-[10px]">Submitted: {new Date(reg.created_at).toLocaleDateString()}</p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Button size="sm" variant="outline" onClick={() => setDetailReg(reg)} className="border-[#D4AF37]/30 text-[#0B1C3D]/70" data-testid={`view-${reg.id}`}>
-                  <Eye size={14} className="mr-1" /> View
-                </Button>
-                <Button size="sm" onClick={() => handleApprove(reg.id)} className="bg-green-600 hover:bg-green-700 text-white" data-testid={`approve-${reg.id}`}>
-                  <Check size={14} className="mr-1" /> Approve
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => handleReject(reg.id)} className="border-red-300 text-red-600 hover:bg-red-50" data-testid={`reject-${reg.id}`}>
-                  <X size={14} className="mr-1" /> Reject
-                </Button>
-              </div>
-            </div>
-          ))}
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+        <input data-testid="pending-search" className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm"
+          placeholder="Search by name or mobile..." value={search} onChange={(e) => setSearch(e.target.value)} />
+      </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 pt-4">
-              <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => handlePage(page - 1)}><ChevronLeft size={14} /></Button>
-              <span className="text-sm text-[#0B1C3D]/60">Page {page} of {totalPages}</span>
-              <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => handlePage(page + 1)}><ChevronRight size={14} /></Button>
-            </div>
-          )}
+      {tab === "pending" && (
+        <div className="space-y-2" data-testid="pending-list">
+          {loading ? <p className="text-gray-500 text-center py-4">Loading...</p> :
+            regs.length === 0 ? <p className="text-gray-400 text-center py-8">No pending approvals</p> :
+            regs.map((r) => (
+              <div key={r.id} className="bg-white rounded-xl p-4 border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-[#0B1C3D]">{getHeadName(r)}</p>
+                  <p className="text-xs text-gray-500">{r.num_people} people • {r.primary_mobile} • {r.attendance_intent}</p>
+                  <p className="text-xs text-gray-400">{new Date(r.created_at).toLocaleString()}</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => setViewReg(r)} data-testid={`view-pending-${r.id}`}
+                    className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-blue-100">
+                    <Eye size={14} /> View
+                  </button>
+                  <button onClick={() => approveReg(r.id)} data-testid={`approve-${r.id}`}
+                    className="bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-green-100">
+                    <Check size={14} /> Approve
+                  </button>
+                  <button onClick={() => rejectReg(r.id)} data-testid={`reject-${r.id}`}
+                    className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-red-100">
+                    <X size={14} /> Disapprove
+                  </button>
+                </div>
+              </div>
+            ))
+          }
         </div>
       )}
 
-      {/* Detail Dialog */}
-      <RegistrationDetailDialog reg={detailReg} open={!!detailReg} onClose={() => setDetailReg(null)} />
+      {tab === "disapproved" && (
+        <div className="space-y-2" data-testid="disapproved-list">
+          {rejected.length === 0 ? <p className="text-gray-400 text-center py-8">No disapproved entries</p> :
+            rejected.map((r) => (
+              <div key={r.id} className="bg-red-50/50 rounded-xl p-4 border border-red-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-[#0B1C3D]">{getHeadName(r)}</p>
+                  <p className="text-xs text-gray-500">{r.num_people} people • {r.primary_mobile}</p>
+                  <p className="text-xs text-red-400">Disapproved by: {r.last_updated_by || "Admin"}</p>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => setViewReg(r)} data-testid={`view-rejected-${r.id}`}
+                    className="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-blue-100">
+                    <Eye size={14} /> View
+                  </button>
+                  {isSuper && (
+                    <>
+                      <button onClick={() => restoreReg(r.id)} data-testid={`restore-${r.id}`}
+                        className="bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-amber-100">
+                        <RefreshCw size={14} /> Restore
+                      </button>
+                      <button onClick={() => deleteReg(r.id)} data-testid={`delete-rejected-${r.id}`}
+                        className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-red-100">
+                        <Trash2 size={14} /> Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {/* Full View Modal */}
+      <Dialog open={!!viewReg} onOpenChange={() => setViewReg(null)}>
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-[#0B1C3D]">Complete Registration Details</DialogTitle>
+          </DialogHeader>
+          {viewReg && <FullRegistrationView reg={viewReg} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function RegistrationDetailDialog({ reg, open, onClose }) {
-  if (!reg) return null;
+function FullRegistrationView({ reg }) {
+  const headName = (reg.attendees || []).find(a => a.id === reg.group_head_id)?.name || "—";
+  const addr = reg.address || {};
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto" data-testid="registration-detail-dialog">
-        <DialogHeader>
-          <DialogTitle className="text-[#0B1C3D]">Registration Details</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 text-sm">
-          <div className="grid grid-cols-2 gap-3">
-            <Detail label="Primary WhatsApp" value={reg.primary_mobile} />
-            <Detail label="Additional Phone" value={reg.additional_phone} />
-            <Detail label="Email" value={reg.email} />
-            <Detail label="Language" value={reg.preferred_language === "hi" ? "Hindi" : "English"} />
-            <Detail label="Total People" value={reg.num_people} />
-            <Detail label="Attendance" value={reg.attendance_intent} />
-            <Detail label="Arrival" value={reg.arrival_date} />
-            <Detail label="Departure" value={reg.departure_date} />
+    <div className="space-y-4 text-sm" data-testid="full-reg-view">
+      <Section title="Contact Information">
+        <Field label="Primary Mobile" value={reg.primary_mobile} />
+        <Field label="Additional Phone" value={reg.additional_phone} />
+        <Field label="Email" value={reg.email} />
+        <Field label="Preferred Language" value={reg.preferred_language === "hi" ? "Hindi" : "English"} />
+      </Section>
+      <Section title="Address">
+        <Field label="Address" value={addr.full_address} />
+        <Field label="City" value={addr.city} />
+        <Field label="State" value={addr.state} />
+        <Field label="Country" value={addr.country} />
+      </Section>
+      <Section title="Group Details">
+        <Field label="Number of People" value={reg.num_people} />
+        <Field label="Group Head" value={headName} />
+        <Field label="Family Special Request" value={reg.family_special_request} />
+      </Section>
+      <Section title="Attendees">
+        {(reg.attendees || []).map((a, i) => (
+          <div key={i} className="bg-gray-50 rounded-lg p-3 mb-2">
+            <p className="font-medium">{a.name} {a.id === reg.group_head_id && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">Head</span>}</p>
+            <p className="text-gray-500">Age: {a.age} {a.special_needs && `• Needs: ${a.special_needs}`}</p>
           </div>
-          {reg.address && (
-            <div>
-              <span className="text-[#0B1C3D]/50 text-xs">Address:</span>
-              <p className="text-[#0B1C3D] text-sm">{[reg.address.full_address, reg.address.city, reg.address.state, reg.address.country].filter(Boolean).join(", ")}</p>
-            </div>
-          )}
-          <div>
-            <span className="text-[#0B1C3D]/50 text-xs block mb-1">Attendees:</span>
-            {(reg.attendees || []).map((a, i) => (
-              <div key={i} className={`py-1.5 px-3 rounded-lg mb-1 ${a.id === reg.group_head_id ? "bg-[#D4AF37]/10 border border-[#D4AF37]/30" : "bg-[#F8F1E5]"}`}>
-                <span className="font-medium">{a.name || "Unnamed"}</span>
-                {a.age && <span className="text-[#0B1C3D]/50 ml-2">Age: {a.age}</span>}
-                {a.special_needs && <span className="text-orange-600 ml-2">| {a.special_needs}</span>}
-                {a.id === reg.group_head_id && <span className="text-[#D4AF37] text-[10px] ml-2 font-bold">[HEAD]</span>}
-              </div>
-            ))}
-          </div>
-          {reg.family_special_request && <Detail label="Family Special Request" value={reg.family_special_request} />}
-          {reg.message && <Detail label="Message" value={reg.message} />}
-          {reg.selected_days?.length > 0 && <Detail label="Selected Days" value={reg.selected_days.join(", ")} />}
-        </div>
-      </DialogContent>
-    </Dialog>
+        ))}
+      </Section>
+      <Section title="Attendance & Travel">
+        <Field label="Attendance Intent" value={reg.attendance_intent} />
+        <Field label="Selected Days" value={(reg.selected_days || []).join(", ")} />
+        <Field label="Expected Arrival Time" value={reg.expected_arrival_time} />
+        <Field label="Expected Departure Time" value={reg.expected_departure_time} />
+        <Field label="Travel Mode" value={reg.travel_mode} />
+        <Field label="Travel Details" value={reg.travel_details} />
+      </Section>
+      <Section title="Reference Details">
+        <Field label="Reference Person" value={reg.reference_person_name || reg.reference_person_id} />
+        <Field label="Relation with Reference Person" value={reg.relation_category} />
+        <Field label="Message / Special Request" value={reg.message} />
+      </Section>
+      <Section title="Status">
+        <Field label="Approval Status" value={reg.approval_status} />
+        <Field label="Arrival Status" value={reg.arrival_status} />
+        <Field label="Room Assignments" value={(reg.room_assignments || []).join(", ") || "None"} />
+        <Field label="Assigned Swamsevak" value={reg.assigned_swamsevak || "Not assigned"} />
+        <Field label="Submitted At" value={reg.created_at ? new Date(reg.created_at).toLocaleString() : ""} />
+      </Section>
+    </div>
   );
 }
 
-function Detail({ label, value }) {
-  if (!value && value !== 0) return null;
+function Section({ title, children }) {
   return (
     <div>
-      <span className="text-[#0B1C3D]/50 text-xs">{label}</span>
-      <p className="text-[#0B1C3D] font-medium text-sm">{value}</p>
+      <h3 className="font-semibold text-[#0B1C3D] text-sm mb-2 border-b pb-1">{title}</h3>
+      <div className="space-y-1">{children}</div>
     </div>
   );
 }
+
+function Field({ label, value }) {
+  if (!value && value !== 0) return null;
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-gray-500 shrink-0">{label}:</span>
+      <span className="text-[#0B1C3D] font-medium text-right">{value}</span>
+    </div>
+  );
+}
+
+export { FullRegistrationView };

@@ -51,6 +51,8 @@ const emptyForm = {
   relation_category: "",
   message: "",
   consent: false,
+  travel_mode: "",
+  travel_details: "",
 };
 
 export default function RegisterPage() {
@@ -567,6 +569,38 @@ export default function RegisterPage() {
                   </Select>
                 </div>
               </div>
+
+              {/* Travel Mode */}
+              <div>
+                <Label className="text-[#0B1C3D]/70 text-sm flex items-center gap-1">
+                  <MapPin size={14} className="text-[#D4AF37]" /> {lang === "hi" ? "यात्रा का माध्यम" : "Travel Mode"}
+                </Label>
+                <Select value={form.travel_mode} onValueChange={v => set("travel_mode", v)}>
+                  <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="travel-mode-select">
+                    <SelectValue placeholder={lang === "hi" ? "यात्रा का माध्यम चुनें" : "Select travel mode"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="own_car">Own Car / Vehicle</SelectItem>
+                    <SelectItem value="train">Train</SelectItem>
+                    <SelectItem value="flight">Flight</SelectItem>
+                    <SelectItem value="bus">Bus</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Travel Details */}
+              <div>
+                <Label className="text-[#0B1C3D]/70 text-sm">
+                  {lang === "hi" ? "यात्रा विवरण (वैकल्पिक)" : "Travel Details (optional)"}
+                </Label>
+                <Textarea
+                  className="mt-1.5 bg-white border-[#D4AF37]/20"
+                  placeholder={lang === "hi" ? "टिकट नंबर, फ्लाइट नंबर आदि" : "Ticket number, flight number, etc."}
+                  value={form.travel_details} onChange={(e) => set("travel_details", e.target.value)}
+                  data-testid="travel-details-input"
+                />
+              </div>
             </div>
           )}
 
@@ -640,7 +674,9 @@ export default function RegisterPage() {
                   <SummaryRow label={lang === "hi" ? "\u0909\u092A\u0938\u094D\u0925\u093F\u0924\u093F" : "Attendance"} value={form.attendance_intent} />
                   <SummaryRow label={lang === "hi" ? "\u091A\u092F\u0928\u093F\u0924 \u0926\u093F\u0928" : "Selected Days"} value={form.selected_days.sort().join(", ")} />
                   <SummaryRow label={lang === "hi" ? "\u0906\u0917\u092E\u0928 \u0938\u092E\u092F" : "Arrival Time"} value={form.expected_arrival_time} />
-                  <SummaryRow label={lang === "hi" ? "\u092A\u094D\u0930\u0938\u094D\u0925\u093E\u0928 \u0938\u092E\u092F" : "Departure Time"} value={form.expected_departure_time} />
+                  <SummaryRow label={lang === "hi" ? "प्रस्थान समय" : "Departure Time"} value={form.expected_departure_time} />
+                  {form.travel_mode && <SummaryRow label={lang === "hi" ? "यात्रा माध्यम" : "Travel Mode"} value={form.travel_mode} />}
+                  {form.travel_details && <SummaryRow label={lang === "hi" ? "यात्रा विवरण" : "Travel Details"} value={form.travel_details} />}
                 </div>
 
                 <div className="border-t border-[#D4AF37]/10 pt-3">
