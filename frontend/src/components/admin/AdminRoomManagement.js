@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Hotel, Plus, Trash2, Download, Users, Layers, UserCheck } from "lucide-react";
+import { Hotel, Plus, Trash2, Download, Users, Layers, UserCheck, Clock } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -13,6 +13,7 @@ export default function AdminRoomManagement({ user }) {
   const [showAdd, setShowAdd] = useState(false);
   const [viewMode, setViewMode] = useState("floor");
   const [form, setForm] = useState({ room_code: "", floor: 1, capacity: 4 });
+  const [vacancyForecast, setVacancyForecast] = useState([]);
   const isSuper = user?.role === "superadmin";
 
   const authHeaders = useCallback(() => ({
@@ -33,6 +34,13 @@ export default function AdminRoomManagement({ user }) {
   }, [authHeaders]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // Vacancy forecast
+  useEffect(() => {
+    axios.get(`${API}/api/admin/room-vacancy-forecast`, { headers: authHeaders() })
+      .then(r => setVacancyForecast(r.data?.upcoming_vacancies || []))
+      .catch(() => {});
+  }, [authHeaders]);
 
   const createRoom = async () => {
     try {
@@ -168,6 +176,23 @@ export default function AdminRoomManagement({ user }) {
         <span className="text-green-600">Available: <strong>{rooms.filter(r => r.status === "available").length}</strong></span>
         <span className="text-red-600">Occupied: <strong>{rooms.filter(r => r.status === "occupied").length}</strong></span>
       </div>
+
+      {/* Near-Future Vacancy Insights */}
+      {vacancyForecast.length > 0 && rooms.filter(r => r.status === "available").length === 0 && (
+        <div className="bg-amber-50 rounded-xl border border-amber-200 p-4" data-testid="vacancy-forecast">
+          <h3 className="font-semibold text-amber-800 text-sm flex items-center gap-2 mb-2">
+            <Clock size={14} /> Upcoming Vacancies (Next 3 Days)
+          </h3>
+          <div className="space-y-1">
+            {vacancyForecast.slice(0, 8).map((v, i) => (
+              <div key={i} className="flex justify-between items-center text-sm bg-white rounded-lg px-3 py-2">
+                <span className="text-[#0B1C3D] font-medium">{v.rooms?.join(", ")}</span>
+                <span className="text-xs text-gray-500">{v.head_name} departing {v.date}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? <p className="text-gray-500 text-center py-4">Loading...</p> : (
         <div className="space-y-6" data-testid="room-groups">

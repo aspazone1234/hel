@@ -125,6 +125,15 @@ function AdminShell({ user, onLogout }) {
           </button>
         </div>
         <nav className="flex-1 overflow-y-auto py-2" data-testid="admin-nav">
+          {/* Training / Guide Section */}
+          {!collapsed && (
+            <div className="mx-3 mb-2 p-2 bg-white/5 rounded-lg border border-white/10" data-testid="training-section">
+              <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Quick Guide</p>
+              <p className="text-white/60 text-[11px] leading-tight">
+                Scan QR or search by name in Attendance Marker. Use Help Centre for guest requests.
+              </p>
+            </div>
+          )}
           {navItems.map((item, i) => {
             if (item === "divider") return <div key={`div-${i}`} className="my-2 border-t border-white/10" />;
             if (item.superOnly && !isSuper) return null;

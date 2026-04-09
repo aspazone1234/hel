@@ -19,6 +19,10 @@ export default function ExpectedGuestList({ user }) {
   const [showRoomAssign, setShowRoomAssign] = useState(null);
   const [admins, setAdmins] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterRef, setFilterRef] = useState("");
+  const [filterRelation, setFilterRelation] = useState("");
+  const [refPersons, setRefPersons] = useState([]);
   const isSuper = user?.role === "superadmin";
 
   const authHeaders = useCallback(() => ({
@@ -53,6 +57,9 @@ export default function ExpectedGuestList({ user }) {
 
   useEffect(() => { fetchRegs(); }, [fetchRegs]);
   useEffect(() => { fetchAdmins(); fetchRooms(); }, [fetchAdmins, fetchRooms]);
+  useEffect(() => {
+    axios.get(`${API}/api/reference-persons/public`).then(r => setRefPersons(r.data)).catch(() => {});
+  }, []);
 
   const getHeadName = (r) => {
     const h = (r.attendees || []).find(a => a.id === r.group_head_id);
@@ -112,16 +119,46 @@ export default function ExpectedGuestList({ user }) {
         </div>
       </div>
 
-      <div className="relative">
-        <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-        <input data-testid="expected-search" className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm"
-          placeholder="Search by name or mobile..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+          <input data-testid="expected-search" className="w-full pl-9 pr-4 py-2 border rounded-lg text-sm"
+            placeholder="Search by name or mobile..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+        </div>
+        <button onClick={() => setShowFilters(!showFilters)} data-testid="toggle-expected-filters"
+          className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-200">
+          Filters {(filterRef || filterRelation) ? "●" : ""}
+        </button>
       </div>
+
+      {showFilters && (
+        <div className="flex flex-wrap gap-3 bg-gray-50 rounded-lg p-3" data-testid="expected-filters">
+          <div>
+            <label className="text-xs font-medium text-gray-600">Reference Person</label>
+            <select className="block border rounded px-2 py-1 text-sm mt-1" value={filterRef} onChange={(e) => setFilterRef(e.target.value)}>
+              <option value="">All</option>
+              {refPersons.map(rp => <option key={rp.id} value={rp.name}>{rp.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600">Relation</label>
+            <select className="block border rounded px-2 py-1 text-sm mt-1" value={filterRelation} onChange={(e) => setFilterRelation(e.target.value)}>
+              <option value="">All</option>
+              {["Friends", "In-laws Side", "Other Relatives", "Business Associates", "Other"].map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <button onClick={() => { setFilterRef(""); setFilterRelation(""); }} className="text-xs text-blue-600 self-end pb-1">Clear</button>
+        </div>
+      )}
 
       <div className="space-y-2" data-testid="expected-list">
         {loading ? <p className="text-center text-gray-500 py-4">Loading...</p> :
-          regs.length === 0 ? <p className="text-center text-gray-400 py-8">No expected guests found</p> :
-          regs.map((r) => (
+          (() => {
+            let filtered = regs;
+            if (filterRef) filtered = filtered.filter(r => r.reference_person_name === filterRef);
+            if (filterRelation) filtered = filtered.filter(r => r.relation_category === filterRelation);
+            return filtered.length === 0 ? <p className="text-center text-gray-400 py-8">No expected guests found</p> :
+            filtered.map((r) => (
             <div key={r.id} className="bg-white rounded-xl p-4 border hover:shadow-sm transition">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -166,7 +203,8 @@ export default function ExpectedGuestList({ user }) {
                 </div>
               </div>
             </div>
-          ))
+          ));
+          })()
         }
       </div>
 

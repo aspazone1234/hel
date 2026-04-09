@@ -87,6 +87,22 @@ export default function RegisterPage() {
   useEffect(() => {
     axios.get(`${API}/reference-persons/public`).then(r => setRefPersons(r.data)).catch(() => {});
     axios.get(`${API}/relation-categories/public`).then(r => setRelationCats(r.data)).catch(() => {});
+    // Check URL params for returning user from MyRegistrationPage edit
+    const urlParams = new URLSearchParams(window.location.search);
+    const mobileParam = urlParams.get("mobile");
+    if (mobileParam) {
+      setMobile(mobileParam);
+      // Auto-load their existing registration for editing
+      axios.get(`${API}/api/registration/by-mobile/${encodeURIComponent(mobileParam)}`)
+        .then(r => {
+          const reg = r.data;
+          setForm({ ...emptyForm, ...reg, address: reg.address || emptyForm.address, attendees: reg.attendees || emptyForm.attendees });
+          setExistingRegId(reg.id);
+          setIsEditMode(true);
+          setOtpPhase("verified");
+        })
+        .catch(() => {});
+    }
   }, []);
 
   const set = (key, val) => { setForm(f => ({ ...f, [key]: val })); setErrors(e => ({ ...e, [key]: undefined })); };
@@ -123,13 +139,16 @@ export default function RegisterPage() {
 
   // ─── OTP Flow ───
   const sendOtp = async () => {
-    if (!mobile || mobile.length < 10) {
-      toast.error(lang === "hi" ? "\u0915\u0943\u092A\u092F\u093E \u0935\u0948\u0927 \u092E\u094B\u092C\u093E\u0907\u0932 \u0928\u0902\u092C\u0930 \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Please enter a valid mobile number");
+    const cleanNum = mobile.replace(/[\s\-]/g, "").trim();
+    if (!cleanNum || cleanNum.length < 7 || !/^\d+$/.test(cleanNum)) {
+      toast.error(lang === "hi" ? "\u0915\u0943\u092A\u092F\u093E \u0935\u0948\u0927 \u092E\u094B\u092C\u093E\u0907\u0932 \u0928\u0902\u092C\u0930 \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Please enter a valid phone number");
       return;
     }
+    const fullMobile = countryCode + cleanNum;
     setOtpLoading(true);
     try {
-      const { data } = await axios.post(`${API}/otp/send`, { mobile: mobile.trim() });
+      const { data } = await axios.post(`${API}/otp/send`, { mobile: fullMobile });
+      setMobile(fullMobile);
       setMockOtp(data.mock_otp);
       setOtpPhase("otp_sent");
       toast.success(lang === "hi" ? "OTP \u092D\u0947\u091C\u093E \u0917\u092F\u093E" : "OTP sent successfully");
@@ -149,16 +168,9 @@ export default function RegisterPage() {
     try {
       const { data } = await axios.post(`${API}/otp/verify`, { mobile: mobile.trim(), otp: otp.trim() });
       if (data.has_existing_registration && data.existing_registration) {
-        const reg = data.existing_registration;
-        setForm({
-          ...emptyForm,
-          ...reg,
-          address: reg.address || emptyForm.address,
-          attendees: reg.attendees || emptyForm.attendees,
-        });
-        setExistingRegId(reg.id);
-        setIsEditMode(true);
-        toast.info(lang === "hi" ? "\u0906\u092A\u0915\u093E \u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u092E\u093F\u0932\u093E, \u0905\u092A\u0921\u0947\u091F \u0915\u0930\u0947\u0902" : "Existing registration found. You can update it.");
+        // Redirect returning user to their self-service page
+        navigate(`/my-registration?mobile=${encodeURIComponent(mobile)}`);
+        return;
       } else {
         setForm(f => ({ ...f, primary_mobile: mobile.trim() }));
       }
@@ -174,10 +186,18 @@ export default function RegisterPage() {
   const validate = () => {
     const e = {};
     if (step === 0) {
-      if (form.num_people < 1) e.num_people = true;
+      if (form.num_people < 1 || isNaN(form.num_people)) e.num_people = true;
       const hasEmptyName = form.attendees.some(a => !a.name.trim());
       if (hasEmptyName) e.attendees = true;
+      // Validate ages are numbers
+      const hasInvalidAge = form.attendees.some(a => a.age && (isNaN(a.age) || parseInt(a.age) < 0 || parseInt(a.age) > 120));
+      if (hasInvalidAge) e.attendee_age = true;
       if (!form.additional_phone.trim()) e.additional_phone = true;
+      // Phone validation: must be digits, min 7 chars
+      const phoneClean = form.additional_phone.replace(/[\s\-+()]/g, "");
+      if (phoneClean && (phoneClean.length < 7 || !/^\d+$/.test(phoneClean))) e.additional_phone_format = true;
+      // Email validation
+      if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = true;
       if (!form.address.full_address.trim()) e.full_address = true;
       if (!form.address.city.trim()) e.city = true;
       if (!form.address.state.trim()) e.state = true;
@@ -190,6 +210,15 @@ export default function RegisterPage() {
       if (!form.consent) e.consent = true;
     }
     setErrors(e);
+    if (Object.keys(e).length > 0) {
+      const msgs = [];
+      if (e.attendees) msgs.push(lang === "hi" ? "सभी सदस्यों का नाम भरें" : "Enter names for all attendees");
+      if (e.attendee_age) msgs.push(lang === "hi" ? "सही उम्र दर्ज करें" : "Enter valid age (0-120)");
+      if (e.additional_phone || e.additional_phone_format) msgs.push(lang === "hi" ? "सही फ़ोन नंबर दर्ज करें" : "Enter a valid phone number");
+      if (e.email) msgs.push(lang === "hi" ? "सही ईमेल पता दर्ज करें" : "Enter a valid email address");
+      if (e.selected_days) msgs.push(lang === "hi" ? "कम से कम एक दिन चुनें" : "Select at least one day");
+      if (msgs.length > 0) toast.error(msgs[0]);
+    }
     return Object.keys(e).length === 0;
   };
 
@@ -215,7 +244,7 @@ export default function RegisterPage() {
         await axios.post(`${API}/registrations`, payload);
         toast.success(lang === "hi" ? "\u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0938\u092B\u0932!" : "Registration submitted successfully!");
       }
-      navigate("/thank-you");
+      navigate(`/thank-you?id=${encodeURIComponent(mobile)}`);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Submission failed");
     } finally {
@@ -228,6 +257,42 @@ export default function RegisterPage() {
     const head = form.attendees.find(a => a.id === form.group_head_id || a.name === form.group_head_id);
     return head?.name || "";
   };
+
+  // ─── Country Codes ───
+  const COUNTRY_CODES = [
+    { code: "+91", label: "India (+91)", flag: "IN" },
+    { code: "+1", label: "USA/Canada (+1)", flag: "US" },
+    { code: "+44", label: "UK (+44)", flag: "GB" },
+    { code: "+971", label: "UAE (+971)", flag: "AE" },
+    { code: "+966", label: "Saudi Arabia (+966)", flag: "SA" },
+    { code: "+65", label: "Singapore (+65)", flag: "SG" },
+    { code: "+61", label: "Australia (+61)", flag: "AU" },
+    { code: "+49", label: "Germany (+49)", flag: "DE" },
+    { code: "+33", label: "France (+33)", flag: "FR" },
+    { code: "+81", label: "Japan (+81)", flag: "JP" },
+    { code: "+86", label: "China (+86)", flag: "CN" },
+    { code: "+27", label: "South Africa (+27)", flag: "ZA" },
+    { code: "+254", label: "Kenya (+254)", flag: "KE" },
+    { code: "+234", label: "Nigeria (+234)", flag: "NG" },
+    { code: "+55", label: "Brazil (+55)", flag: "BR" },
+    { code: "+62", label: "Indonesia (+62)", flag: "ID" },
+    { code: "+60", label: "Malaysia (+60)", flag: "MY" },
+    { code: "+63", label: "Philippines (+63)", flag: "PH" },
+    { code: "+977", label: "Nepal (+977)", flag: "NP" },
+    { code: "+94", label: "Sri Lanka (+94)", flag: "LK" },
+    { code: "+880", label: "Bangladesh (+880)", flag: "BD" },
+    { code: "+92", label: "Pakistan (+92)", flag: "PK" },
+    { code: "+974", label: "Qatar (+974)", flag: "QA" },
+    { code: "+968", label: "Oman (+968)", flag: "OM" },
+    { code: "+973", label: "Bahrain (+973)", flag: "BH" },
+    { code: "+965", label: "Kuwait (+965)", flag: "KW" },
+  ];
+  const [countryCode, setCountryCode] = useState("+91");
+  const [countrySearch, setCountrySearch] = useState("");
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const filteredCountries = COUNTRY_CODES.filter(c =>
+    c.label.toLowerCase().includes(countrySearch.toLowerCase()) || c.code.includes(countrySearch)
+  );
 
   // ─── OTP Screen ───
   if (otpPhase !== "verified") {
@@ -256,10 +321,39 @@ export default function RegisterPage() {
                 <div className="space-y-4">
                   <div>
                     <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "WhatsApp \u0928\u0902\u092C\u0930" : "WhatsApp Number"}</Label>
-                    <div className="relative mt-1.5">
-                      <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#D4AF37]" />
-                      <Input data-testid="otp-mobile-input" value={mobile} onChange={e => setMobile(e.target.value)}
-                        placeholder="+91 98765 43210" className="pl-10 bg-white border-[#D4AF37]/20" type="tel" />
+                    <div className="flex gap-2 mt-1.5">
+                      {/* Country Code Selector */}
+                      <div className="relative">
+                        <button type="button" onClick={() => setShowCountryDropdown(!showCountryDropdown)}
+                          className="flex items-center gap-1 px-3 py-2 border border-[#D4AF37]/20 rounded-lg bg-white text-sm font-medium text-[#0B1C3D] min-w-[90px]"
+                          data-testid="country-code-btn">
+                          {countryCode} <ChevronLeft size={12} className="rotate-[-90deg]" />
+                        </button>
+                        {showCountryDropdown && (
+                          <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50 max-h-60 overflow-hidden">
+                            <div className="p-2 border-b">
+                              <input className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Search country..."
+                                value={countrySearch} onChange={(e) => setCountrySearch(e.target.value)}
+                                data-testid="country-search-input" autoFocus />
+                            </div>
+                            <div className="overflow-y-auto max-h-44">
+                              {filteredCountries.map(c => (
+                                <button key={c.code} type="button"
+                                  onClick={() => { setCountryCode(c.code); setShowCountryDropdown(false); setCountrySearch(""); }}
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-[#D4AF37]/10 flex justify-between items-center">
+                                  <span>{c.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {/* Phone Number */}
+                      <div className="relative flex-1">
+                        <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#D4AF37]" />
+                        <Input data-testid="otp-mobile-input" value={mobile} onChange={e => setMobile(e.target.value)}
+                          placeholder="98765 43210" className="pl-10 bg-white border-[#D4AF37]/20" type="tel" />
+                      </div>
                     </div>
                   </div>
                   <Button onClick={sendOtp} disabled={otpLoading} className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90 py-3" data-testid="otp-send-btn">
@@ -312,9 +406,6 @@ export default function RegisterPage() {
           <div className="flex items-center gap-3">
             {isEditMode && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium" data-testid="edit-mode-badge">{lang === "hi" ? "\u0905\u092A\u0921\u0947\u091F \u092E\u094B\u0921" : "Update Mode"}</span>}
             <span className="text-[#0B1C3D]/40 text-xs">{mobile}</span>
-            <button onClick={toggleLang} className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0B1C3D]/5 hover:bg-[#0B1C3D]/10 text-[#0B1C3D]/70 text-xs" data-testid="register-lang-toggle">
-              <Globe size={12} /> {lang === "hi" ? "EN" : "\u0939\u093F\u0902"}
-            </button>
           </div>
         </div>
       </div>
@@ -338,6 +429,13 @@ export default function RegisterPage() {
             </div>
           ))}
         </div>
+
+        {/* Large Language Switch */}
+        <button onClick={toggleLang} data-testid="register-lang-toggle"
+          className="w-full mt-4 mb-2 flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-[#0B1C3D]/10 to-[#D4AF37]/15 border-2 border-[#D4AF37]/30 hover:border-[#D4AF37]/60 transition-all text-[#0B1C3D] font-semibold text-base">
+          <Globe size={18} className="text-[#D4AF37]" />
+          {lang === "hi" ? "Change language to English" : "\u092D\u093E\u0937\u093E \u0939\u093F\u0902\u0926\u0940 \u092E\u0947\u0902 \u092C\u0926\u0932\u0947\u0902"}
+        </button>
 
         <div className="bg-white rounded-2xl p-5 sm:p-7 border border-[#D4AF37]/15 shadow-sm">
           {/* ─── STEP 0: Contact & Group Setup ─── */}
@@ -387,16 +485,6 @@ export default function RegisterPage() {
 
               {errors.attendees && <p className="text-red-500 text-xs">{lang === "hi" ? "\u0938\u092D\u0940 \u0938\u0926\u0938\u094D\u092F\u094B\u0902 \u0915\u093E \u0928\u093E\u092E \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Please enter names for all attendees"}</p>}
 
-              {/* Highlighted Note */}
-              <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4" data-testid="num-people-warning">
-                <p className="text-amber-800 text-sm font-semibold flex items-start gap-2">
-                  <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-                  {lang === "hi"
-                    ? "\u092F\u0926\u093F \u0906\u092A\u0928\u0947 \u0917\u0932\u0924 \u0938\u0902\u0916\u094D\u092F\u093E \u091A\u0941\u0928\u0940 \u0939\u0948, \u0924\u094B \u092A\u093F\u091B\u0932\u093E \u092C\u091F\u0928 \u0926\u092C\u093E\u0915\u0930 \u0938\u0902\u0916\u094D\u092F\u093E \u0905\u092A\u0921\u0947\u091F \u0915\u0930\u0947\u0902\u0964"
-                    : "If you selected the wrong number of people, go back using the Previous button and update it."}
-                </p>
-              </div>
-
               {/* Family Special Request */}
               <div>
                 <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u092A\u0930\u093F\u0935\u093E\u0930/\u0938\u092E\u0942\u0939 \u0935\u093F\u0936\u0947\u0937 \u0905\u0928\u0941\u0930\u094B\u0927" : "Family/Group Special Request"}</Label>
@@ -433,7 +521,7 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0905\u0924\u093F\u0930\u093F\u0915\u094D\u0924 \u092B\u094B\u0928 / WhatsApp *" : "Additional Phone / WhatsApp *"}</Label>
+                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0905\u0924\u093F\u0930\u093F\u0915\u094D\u0924 \u092B\u094B\u0928 \u0928\u0902\u092C\u0930 *" : "Additional Phone Number *"}</Label>
                   <Input data-testid="additional-phone-input" value={form.additional_phone} onChange={e => set("additional_phone", e.target.value)}
                     className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.additional_phone ? "border-red-400" : ""}`} type="tel" />
                 </div>
@@ -445,7 +533,7 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u092D\u093E\u0937\u093E" : "Preferred Language"}</Label>
+                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0938\u0902\u0935\u093E\u0926 \u0915\u0947 \u0932\u093F\u090F \u092D\u093E\u0937\u093E" : "Preferred Language for Communication"}</Label>
                   <Select value={form.preferred_language} onValueChange={v => set("preferred_language", v)}>
                     <SelectTrigger className="mt-1 bg-white border-[#D4AF37]/20" data-testid="language-select">
                       <SelectValue />
@@ -534,9 +622,28 @@ export default function RegisterPage() {
                 </div>
                 {errors.selected_days && <p className="text-red-500 text-xs mt-1">{lang === "hi" ? "\u0915\u092E \u0938\u0947 \u0915\u092E \u090F\u0915 \u0926\u093F\u0928 \u091A\u0941\u0928\u0947\u0902" : "Please select at least one day"}</p>}
                 {form.selected_days.length > 0 && (
-                  <p className="text-[#0B1C3D]/50 text-xs mt-2">
-                    {lang === "hi" ? "\u0906\u0917\u092E\u0928:" : "Arrival:"} {form.selected_days.sort()[0]} | {lang === "hi" ? "\u092A\u094D\u0930\u0938\u094D\u0925\u093E\u0928:" : "Departure:"} {form.selected_days.sort()[form.selected_days.length - 1]}
-                  </p>
+                  <div className="mt-3 bg-gradient-to-r from-[#0B1C3D]/5 to-[#D4AF37]/10 rounded-xl p-4 border-2 border-[#D4AF37]/30 animate-pulse-slow" data-testid="stay-calculation">
+                    <div className="flex items-center justify-between">
+                      <div className="text-center flex-1">
+                        <p className="text-xs text-[#0B1C3D]/50 mb-1">{lang === "hi" ? "आगमन तिथि" : "Arrival Date"}</p>
+                        <p className="text-lg font-bold text-[#0B1C3D]">
+                          {new Date(form.selected_days.sort()[0] + "T00:00:00").toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", { day: "numeric", month: "short" })}
+                        </p>
+                      </div>
+                      <div className="text-center px-4">
+                        <div className="w-12 h-12 rounded-full bg-[#D4AF37] text-[#0B1C3D] flex items-center justify-center font-bold text-lg">
+                          {form.selected_days.length}
+                        </div>
+                        <p className="text-xs text-[#0B1C3D]/50 mt-1">{lang === "hi" ? "दिन" : "days"}</p>
+                      </div>
+                      <div className="text-center flex-1">
+                        <p className="text-xs text-[#0B1C3D]/50 mb-1">{lang === "hi" ? "प्रस्थान तिथि" : "Departure Date"}</p>
+                        <p className="text-lg font-bold text-[#0B1C3D]">
+                          {new Date(form.selected_days.sort()[form.selected_days.length - 1] + "T00:00:00").toLocaleDateString(lang === "hi" ? "hi-IN" : "en-IN", { day: "numeric", month: "short" })}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -626,7 +733,7 @@ export default function RegisterPage() {
 
               {/* Relation Category */}
               <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 / \u0909\u092A-\u0936\u094D\u0930\u0947\u0923\u0940" : "Relation / Subcategory"}</Label>
+                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0938\u0947 \u0938\u092E\u094D\u092C\u0928\u094D\u0927" : "Relation with Reference Person"}</Label>
                 <Select value={form.relation_category} onValueChange={v => set("relation_category", v)}>
                   <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="relation-category-select">
                     <SelectValue placeholder={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />
@@ -655,7 +762,7 @@ export default function RegisterPage() {
 
               <div className="space-y-3 text-sm">
                 <SummaryRow label={lang === "hi" ? "WhatsApp" : "WhatsApp"} value={form.primary_mobile} />
-                <SummaryRow label={lang === "hi" ? "\u0905\u0924\u093F\u0930\u093F\u0915\u094D\u0924 \u092B\u094B\u0928" : "Additional Phone"} value={form.additional_phone} />
+                <SummaryRow label={lang === "hi" ? "\u0905\u0924\u093F\u0930\u093F\u0915\u094D\u0924 \u092B\u094B\u0928" : "Additional Phone Number"} value={form.additional_phone} />
                 <SummaryRow label={lang === "hi" ? "\u0932\u094B\u0917\u094B\u0902 \u0915\u0940 \u0938\u0902\u0916\u094D\u092F\u093E" : "Number of People"} value={form.num_people} />
                 <SummaryRow label={lang === "hi" ? "\u0938\u092E\u0942\u0939 \u092A\u094D\u0930\u092E\u0941\u0916" : "Group Head"} value={getGroupHeadName() || form.group_head_id} />
 
@@ -686,7 +793,7 @@ export default function RegisterPage() {
                     <SummaryRow label={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D" : "Reference"}
                       value={refPersons.find(p => p.id === form.reference_person_id)?.name || form.reference_person_id} />
                   )}
-                  {form.relation_category && <SummaryRow label={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927" : "Relation"} value={form.relation_category} />}
+                  {form.relation_category && <SummaryRow label={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927" : "Relation with Reference Person"} value={form.relation_category} />}
                 </div>
               </div>
 

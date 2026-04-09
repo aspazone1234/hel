@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Users, Hotel, UserCheck, Plane, AlertTriangle, Clock, ChevronDown, ChevronUp, X, Bell } from "lucide-react";
+import { Users, Hotel, UserCheck, Plane, AlertTriangle, Clock, ChevronDown, ChevronUp, X, Bell, Star, ListTodo, Headphones } from "lucide-react";
 import axios from "axios";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 
@@ -12,6 +12,7 @@ export default function AdminDashboard({ user }) {
   const [drillData, setDrillData] = useState([]);
   const [drillLoading, setDrillLoading] = useState(false);
   const [scheduleExpanded, setScheduleExpanded] = useState(true);
+  const [myDay, setMyDay] = useState(null);
 
   const authHeaders = useCallback(() => ({
     Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
@@ -20,8 +21,12 @@ export default function AdminDashboard({ user }) {
   useEffect(() => {
     const fetchDashboard = async () => {
       try {
-        const { data: d } = await axios.get(`${API}/api/admin/dashboard`, { headers: authHeaders() });
-        setData(d);
+        const [dashRes, myDayRes] = await Promise.all([
+          axios.get(`${API}/api/admin/dashboard`, { headers: authHeaders() }),
+          axios.get(`${API}/api/admin/swamsevak-dashboard`, { headers: authHeaders() }).catch(() => ({ data: null })),
+        ]);
+        setData(dashRes.data);
+        setMyDay(myDayRes.data);
       } catch {}
       setLoading(false);
     };
@@ -56,6 +61,59 @@ export default function AdminDashboard({ user }) {
           <span className="text-amber-800 font-medium text-sm">
             {data.pending_count} pending form approval{data.pending_count > 1 ? "s" : ""} awaiting your review
           </span>
+        </div>
+      )}
+
+      {/* My Day - Consolidated Swamsevak View */}
+      {myDay && (
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 border border-indigo-100" data-testid="my-day-panel">
+          <h2 className="font-semibold text-[#0B1C3D] text-sm mb-3 flex items-center gap-2">
+            <Star size={16} className="text-[#D4AF37]" /> My Day — {user?.display_name || user?.name}
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-white rounded-lg p-3 text-center">
+              <p className="text-lg font-bold text-[#0B1C3D]">{myDay.assigned_guests}</p>
+              <p className="text-xs text-gray-500">Assigned Guests</p>
+            </div>
+            <div className="bg-white rounded-lg p-3 text-center">
+              <p className="text-lg font-bold text-amber-600">{myDay.pending_todos}</p>
+              <p className="text-xs text-gray-500 flex items-center justify-center gap-1"><ListTodo size={10} /> My Tasks</p>
+            </div>
+            <div className="bg-white rounded-lg p-3 text-center">
+              <p className="text-lg font-bold text-red-600">{myDay.active_tickets}</p>
+              <p className="text-xs text-gray-500 flex items-center justify-center gap-1"><Headphones size={10} /> Active Tickets</p>
+            </div>
+            <div className="bg-white rounded-lg p-3 text-center">
+              <p className="text-lg font-bold text-orange-600">{myDay.departures_today?.length || 0}</p>
+              <p className="text-xs text-gray-500">Departures Today</p>
+            </div>
+          </div>
+
+          {/* Departures Today Detail */}
+          {myDay.departures_today?.length > 0 && (
+            <div className="mt-3 space-y-1">
+              <p className="text-xs font-semibold text-orange-700 mb-1">Departures Today:</p>
+              {myDay.departures_today.map((d, i) => (
+                <div key={i} className="bg-white rounded-lg p-2 flex justify-between items-center text-sm">
+                  <span className="font-medium text-[#0B1C3D]">{d.head_name}</span>
+                  <span className="text-xs text-gray-500">{d.departure_time} {d.rooms?.length > 0 && `• Room ${d.rooms.join(", ")}`}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Special Needs */}
+          {myDay.special_needs?.length > 0 && (
+            <div className="mt-3 space-y-1">
+              <p className="text-xs font-semibold text-purple-700 mb-1 flex items-center gap-1"><AlertTriangle size={10} /> Special Needs:</p>
+              {myDay.special_needs.slice(0, 5).map((s, i) => (
+                <div key={i} className="bg-white rounded-lg p-2 text-sm">
+                  <span className="font-medium text-[#0B1C3D]">{s.head_name}: </span>
+                  <span className="text-gray-600">{s.needs.join("; ")}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

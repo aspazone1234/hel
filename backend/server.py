@@ -390,6 +390,18 @@ async def create_registration(reg: RegistrationCreateV2):
     }
     await db.registrations.insert_one(doc)
     doc.pop("_id", None)
+
+    # Mock WhatsApp confirmation after form submission
+    logger.info(f"[MOCK WHATSAPP] Sending registration confirmation to {reg.primary_mobile}")
+    whatsapp_conf = {
+        "type": "registration_confirmation",
+        "to": reg.primary_mobile,
+        "message": f"Thank you for registering for Shrimad Bhagavat Katha Mahotsav 2026! Your form has been received. You can update it until 19 May 2026. Final details will be sent on 21 May 2026.",
+        "status": "sent_mock",
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.message_deliveries.insert_one({**whatsapp_conf, "id": str(uuid.uuid4())})
+
     return doc
 
 @api_router.put("/registrations/{reg_id}/public")
@@ -2021,6 +2033,102 @@ async def get_arrived_guests(request: Request, search: str = "", page: int = 1, 
     return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
 
 app.include_router(extra_router)
+
+# ─── PHASE C/D/E ENDPOINTS ───
+phase_router = APIRouter(prefix="/api")
+
+@phase_router.get("/registration/by-mobile/{mobile}")
+async def get_registration_by_mobile(mobile: str):
+    """Public: Get registration by mobile number (for self-service page)"""
+    reg = await db.registrations.find_one(
+        {"primary_mobile": mobile, "approval_status": {"$nin": ["deleted"]}},
+        {"_id": 0}
+    )
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    # Enrich with reference person name
+    if reg.get("reference_person_id"):
+        rp = await db.reference_persons.find_one({"id": reg["reference_person_id"]}, {"_id": 0, "name": 1})
+        reg["reference_person_name"] = rp.get("name", "") if rp else ""
+    return reg
+
+@phase_router.get("/admin/swamsevak-dashboard")
+async def swamsevak_dashboard(request: Request):
+    """Consolidated operational view for a specific Swamsevak"""
+    user = await get_current_user(request)
+    name = user["name"]
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # My assigned guests
+    assigned = await db.registrations.count_documents({"assigned_swamsevak": name, "approval_status": "approved"})
+    # Departures today for my assigned
+    departures_today = await db.registrations.find(
+        {"assigned_swamsevak": name, "departure_date": now, "arrival_status": {"$in": ["arrived", "partially_arrived"]}},
+        {"_id": 0, "id": 1, "attendees": 1, "group_head_id": 1, "departure_date": 1, "expected_departure_time": 1, "room_assignments": 1}
+    ).to_list(50)
+    dep_list = []
+    for r in departures_today:
+        head = ""
+        for a in r.get("attendees", []):
+            if a.get("id") == r.get("group_head_id"):
+                head = a.get("name", "")
+        dep_list.append({"id": r["id"], "head_name": head, "departure_time": r.get("expected_departure_time", ""),
+                         "rooms": r.get("room_assignments", [])})
+    # Special needs for assigned guests
+    special = await db.registrations.find(
+        {"assigned_swamsevak": name, "approval_status": "approved",
+         "$or": [{"family_special_request": {"$ne": ""}}, {"attendees.special_needs": {"$ne": ""}}]},
+        {"_id": 0, "id": 1, "attendees": 1, "group_head_id": 1, "family_special_request": 1}
+    ).to_list(50)
+    special_list = []
+    for r in special:
+        head = ""
+        needs = []
+        for a in r.get("attendees", []):
+            if a.get("id") == r.get("group_head_id"):
+                head = a.get("name", "")
+            if a.get("special_needs"):
+                needs.append(f"{a['name']}: {a['special_needs']}")
+        if r.get("family_special_request"):
+            needs.append(f"Family: {r['family_special_request']}")
+        if needs:
+            special_list.append({"id": r["id"], "head_name": head, "needs": needs})
+    # My tickets
+    my_tickets = await db.tickets.count_documents({"assigned_to": name, "status": {"$in": ["open", "in_progress"]}})
+    # My todos
+    my_todos = await db.todos.count_documents({"$or": [{"assigned_to": name}, {"created_by": name}], "completed": False})
+
+    return {
+        "assigned_guests": assigned,
+        "departures_today": dep_list,
+        "special_needs": special_list,
+        "active_tickets": my_tickets,
+        "pending_todos": my_todos,
+    }
+
+@phase_router.get("/admin/room-vacancy-forecast")
+async def room_vacancy_forecast(request: Request):
+    """Show near-future room vacancies based on departures"""
+    await get_current_user(request)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Find upcoming departures in next 3 days
+    upcoming = []
+    for day_offset in range(0, 4):
+        from datetime import timedelta as td
+        target = (datetime.now(timezone.utc) + td(days=day_offset)).strftime("%Y-%m-%d")
+        deps = await db.registrations.find(
+            {"departure_date": target, "arrival_status": {"$in": ["arrived", "partially_arrived"]}, "room_assignments": {"$ne": []}},
+            {"_id": 0, "id": 1, "room_assignments": 1, "group_head_id": 1, "attendees": 1, "departure_date": 1}
+        ).to_list(100)
+        for d in deps:
+            head = ""
+            for a in d.get("attendees", []):
+                if a.get("id") == d.get("group_head_id"):
+                    head = a.get("name", "")
+            upcoming.append({"date": target, "rooms": d.get("room_assignments", []),
+                             "head_name": head, "reg_id": d["id"]})
+    return {"upcoming_vacancies": upcoming}
+
+app.include_router(phase_router)
 
 app.add_middleware(
     CORSMiddleware,

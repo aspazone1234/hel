@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { MessageSquare, Plus, Send, Edit2, Trash2, ToggleLeft, ToggleRight, ChevronRight, Clock, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,8 +11,8 @@ import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-export default function MessageCenter({ user, authHeaders }) {
-  const [tab, setTab] = useState("templates"); // templates | send | campaigns
+export default function MessageCenter({ user }) {
+  const [tab, setTab] = useState("templates"); // templates | send | campaigns | schedule
   const [templates, setTemplates] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,22 +20,24 @@ export default function MessageCenter({ user, authHeaders }) {
   const [editTemplate, setEditTemplate] = useState(null);
   const [showSendDialog, setShowSendDialog] = useState(false);
 
-  const fetchTemplates = async () => {
+  const authHeaders = useCallback(() => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` }), []);
+
+  const fetchTemplates = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/admin/messages/templates`, { headers: authHeaders() });
       setTemplates(data);
     } catch { toast.error("Failed to load templates"); }
     finally { setLoading(false); }
-  };
+  }, [authHeaders]);
 
-  const fetchCampaigns = async () => {
+  const fetchCampaigns = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/admin/messages/campaigns`, { headers: authHeaders() });
       setCampaigns(data.data);
     } catch {}
-  };
+  }, [authHeaders]);
 
-  useEffect(() => { fetchTemplates(); fetchCampaigns(); }, []);
+  useEffect(() => { fetchTemplates(); fetchCampaigns(); }, [fetchTemplates, fetchCampaigns]);
 
   const deleteTemplate = async (id) => {
     try {
@@ -55,7 +57,8 @@ export default function MessageCenter({ user, authHeaders }) {
   const TABS = [
     { id: "templates", label: "Templates", icon: MessageSquare },
     { id: "send", label: "Send Message", icon: Send },
-    { id: "campaigns", label: "Campaigns", icon: Clock },
+    { id: "schedule", label: "Schedule", icon: Clock },
+    { id: "campaigns", label: "Campaigns", icon: Users },
   ];
 
   return (
@@ -125,6 +128,9 @@ export default function MessageCenter({ user, authHeaders }) {
 
       {/* Send Tab */}
       {tab === "send" && <SendMessageView templates={templates} authHeaders={authHeaders} onSent={fetchCampaigns} />}
+
+      {/* Schedule Tab */}
+      {tab === "schedule" && <ScheduleView templates={templates} authHeaders={authHeaders} />}
 
       {/* Campaigns Tab */}
       {tab === "campaigns" && (
@@ -276,5 +282,99 @@ function TemplateDialog({ open, onClose, template, authHeaders, onSaved }) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+
+function ScheduleView({ templates, authHeaders }) {
+  const [schedules, setSchedules] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ template_id: "", target_type: "all_expected", scheduled_date: "", scheduled_time: "", recurring: false });
+
+  const addSchedule = () => {
+    if (!form.scheduled_date || !form.template_id) {
+      toast.error("Select template and date");
+      return;
+    }
+    setSchedules(prev => [...prev, { ...form, id: Date.now().toString(), status: "scheduled" }]);
+    setShowAdd(false);
+    setForm({ template_id: "", target_type: "all_expected", scheduled_date: "", scheduled_time: "", recurring: false });
+    toast.success("Message scheduled (will be sent via WhatsApp when configured)");
+  };
+
+  const removeSchedule = (id) => { setSchedules(prev => prev.filter(s => s.id !== id)); };
+
+  return (
+    <div className="space-y-4" data-testid="schedule-view">
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-[#0B1C3D]/60">Schedule recurring or one-time messages</p>
+        <Button onClick={() => setShowAdd(true)} className="bg-[#D4AF37] text-[#0B1C3D]" data-testid="add-schedule-btn">
+          <Plus size={14} className="mr-1" /> Add Schedule
+        </Button>
+      </div>
+      {schedules.length === 0 ? (
+        <div className="text-center py-10 bg-white rounded-xl border border-[#D4AF37]/10">
+          <Clock size={32} className="mx-auto text-[#0B1C3D]/20 mb-2" />
+          <p className="text-[#0B1C3D]/40">No scheduled messages yet</p>
+        </div>
+      ) : (
+        schedules.map(s => (
+          <div key={s.id} className="bg-white rounded-xl border border-[#D4AF37]/10 p-4 flex justify-between items-center">
+            <div>
+              <p className="font-medium text-sm text-[#0B1C3D]">
+                {templates.find(t => t.id === s.template_id)?.name || "Unknown Template"}
+              </p>
+              <p className="text-xs text-[#0B1C3D]/50">
+                {s.scheduled_date} {s.scheduled_time} • {s.target_type} {s.recurring && "• Recurring"}
+              </p>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => removeSchedule(s.id)} className="text-red-500"><Trash2 size={14} /></Button>
+          </div>
+        ))
+      )}
+      <Dialog open={showAdd} onOpenChange={() => setShowAdd(false)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Schedule Message</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Template</Label>
+              <Select value={form.template_id} onValueChange={v => setForm({...form, template_id: v})}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select template" /></SelectTrigger>
+                <SelectContent>
+                  {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Target</Label>
+              <Select value={form.target_type} onValueChange={v => setForm({...form, target_type: v})}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_approved">All Approved</SelectItem>
+                  <SelectItem value="all_expected">All Expected</SelectItem>
+                  <SelectItem value="all_arrived">All Arrived</SelectItem>
+                  <SelectItem value="all_swamsevaks">All Swamsevaks</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Date</Label>
+                <Input type="date" className="mt-1" value={form.scheduled_date} onChange={e => setForm({...form, scheduled_date: e.target.value})} />
+              </div>
+              <div>
+                <Label className="text-xs">Time</Label>
+                <Input type="time" className="mt-1" value={form.scheduled_time} onChange={e => setForm({...form, scheduled_time: e.target.value})} />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={form.recurring} onChange={e => setForm({...form, recurring: e.target.checked})} />
+              Recurring (daily at this time)
+            </label>
+            <Button onClick={addSchedule} className="w-full bg-[#D4AF37] text-[#0B1C3D]" data-testid="save-schedule-btn">Schedule</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

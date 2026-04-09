@@ -274,3 +274,7 @@ html { scroll-behavior: smooth; }
 ::-webkit-scrollbar-track { background: #F8F1E5; }
 ::-webkit-scrollbar-thumb { background: #D4AF37; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #B8960F; }
+
+@keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+.animate-pulse-slow { animation: pulse-slow 3s ease-in-out infinite; }
+
