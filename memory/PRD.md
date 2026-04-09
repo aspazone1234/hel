@@ -1,69 +1,93 @@
 # PRD - Shrimad Bhagavat Katha Mahotsav 2026
 
 ## Original Problem Statement
-Premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2026" in Pushkar with multi-role admin dashboard. Sacred temple aesthetic with Krishna's divine presence. Bilingual (Hindi + English), golden door entry, multi-step registration, admin approval panel. V2 overhaul added OTP-based registration, 3-bucket guest management, QR scanning, Help Centre, Message Center, Todo, and Custom Fields.
+Premium devotional event website for "Shrimad Bhagavat Katha Mahotsav 2026" in Pushkar with multi-role admin dashboard. V2 overhaul: OTP-based registration, 3-bucket guest management, QR scanning, Help Centre, Message Center, Todo, Custom Fields. V2.5: Sidebar rename/reorder, dashboard restructure, permission enforcement, room 3-view, departure flow, travel fields, disapproved entries, drill-down modals.
 
 ## Architecture
 - **Frontend**: React.js + Tailwind CSS + Shadcn UI (port 3000)
 - **Backend**: FastAPI + Motor (async MongoDB) (port 8001)
-- **Database**: MongoDB (registrations, rooms, audit_logs, custom_admins, help_tickets, message_templates, to_do_items, custom_fields, message_campaigns)
+- **Database**: MongoDB
 - **Auth**: JWT Bearer tokens, hardcoded admins + dynamic custom admins
-- **PDF**: fpdf2
-- **QR**: qrcode (Python), html5-qrcode (React)
 
 ## Terminology
 - **Swamsevak**: Admin/volunteer
 - **Shraddhalu**: Guest/attendee
-- **Panchariya AI**: Help desk chatbot (formerly Madhav AI)
+- **Panchariya AI**: Help desk chatbot
+- **Command Centre**: Dashboard (renamed)
+- **Attendance Marker**: QR scan module (renamed)
 
-## Completed Features
+## Completed Features (V2.5 — 09 Apr 2026)
 
-### Public Website (Phase 1)
-- 15-Point FINAL SPEC complete
-- Section order: Hero, Quote, Memory, About, Acharya, Schedule+Other, Episodes, Family, Registration, Venue, Footer
-- Family image carousel: 21-image slider, 3-sec auto-scroll, pause on hover
-- In Loving Memory: Hierarchical grid layout
-- Registration form: OTP-based (mocked OTP: 4132), attendee management
+### Phase A: Gap Fixes
+- Registration cutoff enforcement (date-based lock after 19 May 2026)
+- Room Management 3 views: Floor-wise, Reference Person, Swamsevak-wise (with occupant names)
+- Departure flow frontend: Confirmation dialog, date-check guard, super admin force, undo
+- Swamsevak Assignment UI on Expected Guest List
+- Help Centre: My Tickets / All Tickets views, assigned_to filtering, escalation alerts
+- Travel fields (travel_mode, travel_details) in registration form + summary + backend
+- SLA configuration API (GET/PUT /api/admin/sla-config)
+- Disapproved entries section in Pending Approval
+- Dashboard drill-down modals (clickable stat chips)
+- Undo arrival/departure endpoints (super admin only)
+- QR management view (list all QRs, disable)
 
-### Admin Portal - Swamsevak Portal (Phase 2-3)
-- **Login**: Username/password JWT auth, 5 hardcoded accounts
-- **Dashboard**: Stats, pending alerts, arrival summary, room summary, daily arrivals/departures
-- **3-Bucket System**: Pending Form Approval, Expected Guest List, Arrived Guest List
-- **Room Management**: Grid view, assignment, shift rooms
-- **Audit Log**: Full trail, Super Admin clear
-- **Admin Management**: Super Admin only CRUD for custom admins
+### Phase B: Sidebar, Dashboard & Permission Overhaul
+- Sidebar renamed: Command Centre, Attendance Marker
+- Sidebar reordered: CC → AM → Help Centre (highlighted) → To-Do → then rest
+- Command Centre: Merged stat blocks (rooms, arrival status), pending as alert, daily schedule chips
+- Pending Approval: Super admin only, full view modal, disapproved tab
+- Expected Guest List: Assign swamsevak, assign room, generate QR — all super admin only
+- Arrived Guest List: No manual add, QR display in view, arrival/departure filters, departure confirmation
+- Attendance Marker: 4 modes (Scan, Manual Search, Generate, QR List), manual attendance by name
+- Help Centre: My/All tickets toggle, escalation alert banner
+- Todo: Self-only for admins, super admin per-admin view
+- Full Registration View shows ALL fields including travel, reference, special requests
 
-### Phase 4-10 Modules (Completed 09 Apr 2026)
-- **QR Code System**: Scan mode (manual entry + camera), Generate mode (bulk/single), check-in flow with attendee selection
-- **Help Centre**: Ticket CRUD, stats dashboard, 11 categories, SLA timers, filter by status/priority, resolve with closing note, reassign
-- **Message Center** (Super Admin): Template CRUD (system/shraddhalu/swamsevak), Send message (MOCKED WhatsApp), Campaigns tracking
-- **Todo Module**: Task CRUD, priority levels (high/medium/low), assignee, due date, filter (pending/completed/all), toggle completion
-- **Custom Fields Manager** (Super Admin): Flexible fields (text/number/toggle/select/date), scope (registration/room/operational), visibility control
-- **Panchariya AI Chatbot**: Keyword-based auto-ticket creation, guided responses, bilingual support (EN/HI)
+## Key API Endpoints (V2.5 additions)
+- GET /api/admin/dashboard/drill-down — Family-level drill-down for any stat
+- GET /api/admin/registrations/rejected — Disapproved entries
+- PUT /api/admin/registrations/{id}/undo-arrival — Super admin only
+- PUT /api/admin/registrations/{id}/undo-departure — Super admin only
+- GET /api/admin/sla-config — SLA categories
+- PUT /api/admin/sla-config — Update SLA (super admin)
+- GET /api/admin/qr-management — List all QR codes (super admin)
+- GET /api/admin/registration-cutoff-status — Cutoff date info
 
-## API Endpoints
-- Auth: POST /api/auth/login, GET /api/auth/me
-- OTP: POST /api/auth/otp/send, POST /api/auth/otp/verify
-- Registrations: POST /api/registrations, GET /api/registrations/count
-- Admin Registrations: GET/PUT/POST /api/admin/registrations/*, DELETE /api/admin/registrations/{id}/permanent
-- Admin Guests: GET /api/admin/guests/pending, /expected, /arrived
-- Rooms: GET/POST/DELETE /api/admin/rooms/*, PUT /api/admin/rooms/{code}/assign|unassign|shift
-- Dashboard: GET /api/admin/dashboard
-- Audit: GET/DELETE /api/admin/audit-logs
-- Admins: GET/POST/PUT/DELETE /api/admin/admins
-- Export: GET /api/admin/export-csv, GET /api/admin/export-pdf
-- QR: POST /api/admin/qr/generate/{id}, POST /api/admin/qr/generate-bulk, POST /api/admin/qr/scan
-- Tickets: GET/POST /api/admin/tickets, GET /api/admin/tickets/stats, /categories, PUT resolve/assign
-- Todos: GET/POST/PUT/DELETE /api/admin/todos
-- Messages: GET/POST/PUT/DELETE /api/admin/messages/templates, POST /send, GET /campaigns
-- Custom Fields: GET/POST/DELETE /api/admin/custom-fields
-- Chatbot: POST /api/admin/chatbot/message
-
-## DB Collections
-registrations, rooms, audit_logs, custom_admins, help_tickets, message_templates, to_do_items, custom_fields, message_campaigns
+## Key Dates
+- Registration closes: 19 May 2026
+- Finalization window: 19-21 May 2026
+- Welcome communication: 21 May 2026
+- Post-release amendments: 21-28 May 2026
+- Event: 28 May - 3 June 2026
+- Stay selection: 27 May - 4 June 2026
 
 ## Remaining Tasks
-- P1: Panchariya AI Help Desk for Shraddhalu-side (sample FAQs, guided responses, fallback replies - config-driven)
-- P1: WhatsApp webhook simulation UI responsiveness
+
+### Phase C: Attendance Marker & Departure Logic (Next)
+- Departure reminder notification to assigned Swamsevak
+- System-generated to-dos (departure follow-ups, special needs)
+- Consolidated Swamsevak "My Day" operational view
+
+### Phase D: Customer Form & Frontend Polish
+- Field renames (Additional phone, Relation with reference person)
+- Language control repositioning (below timeline, large button)
+- Remove "wrong number of people" warning note
+- OTP phone input with country code selector
+- Form validation (email, mobile, numbers)
+- Arrival/departure calculation highlight
+- Thank You page redesign with animations
+- User self-service summary/update page (post-submission profile view)
+
+### Phase E: Advanced Operational Features
+- Zone as operational entity (grouping, zone head)
+- Proximity/nearby-person notification support
+- Pre-registration outreach campaign workflow
+- Message scheduling UI
+- Custom fields in filtering/reporting/exports
+- Room near-future vacancy insights
+- Terms-of-use/training section in sidebar
+- WhatsApp confirmation after form submission
+
+### Future
 - P2: Add to Calendar functionality
-- P2: Actual Twilio SMS / WhatsApp Business API integration (when credentials provided)
+- P2: Actual Twilio SMS / WhatsApp Business API integration
