@@ -80,7 +80,7 @@ export default function HelpCentre({ user, authHeaders }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Help Centre</h2>
-          <p className="text-[#0B1C3D]/50 text-sm mt-1">Madhav (AI Help Desk Katha 2026)</p>
+          <p className="text-[#0B1C3D]/50 text-sm mt-1">Panchariya AI - Shrimad Bhagavat 2026</p>
         </div>
         <Button onClick={() => setShowCreate(true)} className="bg-[#D4AF37] text-[#0B1C3D]" data-testid="create-ticket-btn">
           <Plus size={14} className="mr-1" /> New Ticket

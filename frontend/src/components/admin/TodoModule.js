@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { CheckCircle, Circle, Plus, Trash2, Calendar, AlertTriangle, Clock, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ export default function TodoModule({ user, authHeaders }) {
   const [loading, setLoading] = useState(true);
   const [admins, setAdmins] = useState([]);
 
-  const fetchTodos = async () => {
+  const fetchTodos = useCallback(async () => {
     setLoading(true);
     try {
       const params = { per_page: 100 };
@@ -30,16 +30,16 @@ export default function TodoModule({ user, authHeaders }) {
       setTotal(data.total);
     } catch { toast.error("Failed to load"); }
     finally { setLoading(false); }
-  };
+  }, [authHeaders, filter]);
 
-  useEffect(() => { fetchTodos(); loadAdmins(); }, []);
-
-  const loadAdmins = async () => {
+  const loadAdmins = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/admin/admins`, { headers: authHeaders() });
       setAdmins(data);
     } catch {}
-  };
+  }, [authHeaders]);
+
+  useEffect(() => { fetchTodos(); loadAdmins(); }, [fetchTodos, loadAdmins]);
 
   const toggleComplete = async (todo) => {
     try {

@@ -1792,7 +1792,7 @@ async def chatbot_message(request: Request):
                     "category": faq["category"], "category_label": cat["label"],
                     "priority": cat["priority"], "status": "open",
                     "source_type": "chatbot", "source_registration_id": "",
-                    "created_by": "Madhav Bot", "created_by_name": "Madhav (AI Help Desk)",
+                    "created_by": "Panchariya AI Bot", "created_by_name": "Panchariya AI - Shrimad Bhagavat 2026",
                     "assigned_to": "", "assigned_to_name": "", "resolution_time_minutes": cat["sla_minutes"],
                     "notes": f"Mobile: {mobile}", "closing_note": "", "resolved_at": "", "resolved_by": "",
                     "created_at": datetime.now(timezone.utc).isoformat(), "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -1800,7 +1800,7 @@ async def chatbot_message(request: Request):
                 return {"response": resp, "ticket_created": True, "category": faq["category"]}
             return {"response": resp, "ticket_created": False}
     # Default response
-    default_en = "I'm Madhav, your AI Help Desk for Katha 2026. I can help with: water, wheelchair, medical help, lost & found, food timings, room issues, transport, and schedule info. Please describe your need."
+    default_en = "I'm Panchariya AI, your Help Desk for Shrimad Bhagavat Katha 2026. I can help with: water, wheelchair, medical help, lost & found, food timings, room issues, transport, and schedule info. Please describe your need."
     default_hi = "\u092E\u0948\u0902 \u092E\u093E\u0927\u0935 \u0939\u0942\u0901, \u0915\u0925\u093E 2026 \u0915\u093E AI \u0939\u0947\u0932\u094D\u092A \u0921\u0947\u0938\u094D\u0915\u0964 \u092E\u0948\u0902 \u092E\u0926\u0926 \u0915\u0930 \u0938\u0915\u0924\u093E \u0939\u0942\u0901: \u092A\u093E\u0928\u0940, \u0935\u094D\u0939\u0940\u0932\u091A\u0947\u092F\u0930, \u091A\u093F\u0915\u093F\u0924\u094D\u0938\u093E, \u0916\u094B\u092F\u093E-\u092A\u093E\u092F\u093E, \u092D\u094B\u091C\u0928, \u0915\u092E\u0930\u093E, \u092F\u093E\u0924\u093E\u092F\u093E\u0924, \u0938\u092E\u092F\u0938\u0942\u091A\u0940\u0964 \u0905\u092A\u0928\u0940 \u0906\u0935\u0936\u094D\u092F\u0915\u0924\u093E \u092C\u0924\u093E\u090F\u0902\u0964"
     return {"response": default_hi if lang == "hi" else default_en, "ticket_created": False}
 
