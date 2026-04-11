@@ -18,6 +18,7 @@ export default function ArrivedGuestList({ user }) {
   const [showFilters, setShowFilters] = useState(false);
   const [filterArrival, setFilterArrival] = useState("");
   const [filterDeparture, setFilterDeparture] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const isSuper = user?.role === "superadmin";
 
   const authHeaders = useCallback(() => ({
@@ -28,7 +29,7 @@ export default function ArrivedGuestList({ user }) {
     setLoading(true);
     try {
       const { data } = await axios.get(`${API}/api/admin/guests/arrived`, {
-        headers: authHeaders(), params: { search, page, per_page: 20 }
+        headers: authHeaders(), params: { search, page, per_page: 20, status_filter: statusFilter }
       });
       let filtered = data.data || [];
       if (filterArrival) filtered = filtered.filter(r => r.arrival_date === filterArrival);
@@ -37,7 +38,7 @@ export default function ArrivedGuestList({ user }) {
       setTotal(data.total || 0);
     } catch {}
     setLoading(false);
-  }, [authHeaders, search, page, filterArrival, filterDeparture]);
+  }, [authHeaders, search, page, filterArrival, filterDeparture, statusFilter]);
 
   useEffect(() => { fetchRegs(); }, [fetchRegs]);
 
@@ -121,6 +122,20 @@ export default function ArrivedGuestList({ user }) {
           </button>
         </div>
       </div>
+
+      {/* Status filter tabs */}
+      <div className="flex gap-2" data-testid="arrived-status-filter">
+        <button onClick={() => { setStatusFilter("all"); setPage(1); }}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${statusFilter === "all" ? "bg-[#0B1C3D] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          data-testid="filter-all-arrived">All</button>
+        <button onClick={() => { setStatusFilter("arrived"); setPage(1); }}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${statusFilter === "arrived" ? "bg-green-600 text-white" : "bg-green-50 text-green-700 hover:bg-green-100"}`}
+          data-testid="filter-arrived-only">Arrived</button>
+        <button onClick={() => { setStatusFilter("departed"); setPage(1); }}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${statusFilter === "departed" ? "bg-amber-600 text-white" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
+          data-testid="filter-departed-only">Departed</button>
+      </div>
+
 
       {showFilters && (
         <div className="flex flex-wrap gap-3 bg-gray-50 rounded-lg p-3" data-testid="arrived-filters">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Eye, Plus, Search, QrCode, Hotel, UserPlus, Download, Edit, Trash2 } from "lucide-react";
+import { Eye, Plus, Search, QrCode, Hotel, UserPlus, Download, Edit, Trash2, Ban, Undo2 } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -22,6 +22,7 @@ export default function ExpectedGuestList({ user }) {
   const [showFilters, setShowFilters] = useState(false);
   const [filterRef, setFilterRef] = useState("");
   const [filterRelation, setFilterRelation] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [refPersons, setRefPersons] = useState([]);
   const isSuper = user?.role === "superadmin";
 
@@ -33,13 +34,13 @@ export default function ExpectedGuestList({ user }) {
     setLoading(true);
     try {
       const { data } = await axios.get(`${API}/api/admin/guests/expected`, {
-        headers: authHeaders(), params: { search, page, per_page: 20 }
+        headers: authHeaders(), params: { search, page, per_page: 20, status_filter: statusFilter }
       });
       setRegs(data.data || []);
       setTotal(data.total || 0);
     } catch {}
     setLoading(false);
-  }, [authHeaders, search, page]);
+  }, [authHeaders, search, page, statusFilter]);
 
   const fetchAdmins = useCallback(async () => {
     try {
@@ -101,6 +102,24 @@ export default function ExpectedGuestList({ user }) {
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
+  const markNotComing = async (regId) => {
+    if (!window.confirm("Mark this guest as 'Not Coming'? Their room and contact person will be released.")) return;
+    try {
+      await axios.post(`${API}/api/admin/registrations/${regId}/not-coming`, {}, { headers: authHeaders() });
+      toast.success("Marked as Not Coming");
+      fetchRegs();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const undoNotComing = async (regId) => {
+    if (!window.confirm("Restore this guest back to Expected list?")) return;
+    try {
+      await axios.post(`${API}/api/admin/registrations/${regId}/undo-not-coming`, {}, { headers: authHeaders() });
+      toast.success("Restored to Expected");
+      fetchRegs();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
   const exportCSV = async () => {
     try {
       const resp = await axios.get(`${API}/api/admin/export-csv`, { headers: authHeaders(), responseType: "blob" });
@@ -121,9 +140,13 @@ export default function ExpectedGuestList({ user }) {
             className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1">
             <Plus size={14} /> Add Manual
           </button>
-          <button onClick={exportCSV} data-testid="export-csv"
+          <button onClick={() => { window.open(`${API}/api/admin/export-csv?bucket=expected&token=${localStorage.getItem("admin_token")}`, "_blank"); }} data-testid="export-expected-csv"
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
-            <Download size={14} /> Export
+            <Download size={14} /> CSV
+          </button>
+          <button onClick={() => { window.open(`${API}/api/admin/export-pdf?bucket=expected&token=${localStorage.getItem("admin_token")}`, "_blank"); }} data-testid="export-expected-pdf"
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
+            <Download size={14} /> PDF
           </button>
         </div>
       </div>
@@ -139,6 +162,21 @@ export default function ExpectedGuestList({ user }) {
           Filters {(filterRef || filterRelation) ? "●" : ""}
         </button>
       </div>
+
+      {/* Status filter tabs */}
+      <div className="flex gap-2" data-testid="expected-status-filter">
+        <button onClick={() => { setStatusFilter("all"); setPage(1); }}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${statusFilter === "all" ? "bg-[#0B1C3D] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          data-testid="filter-all-expected">
+          All Expected
+        </button>
+        <button onClick={() => { setStatusFilter("not_coming"); setPage(1); }}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${statusFilter === "not_coming" ? "bg-red-600 text-white" : "bg-red-50 text-red-600 hover:bg-red-100"}`}
+          data-testid="filter-not-coming">
+          Not Coming
+        </button>
+      </div>
+
 
       {showFilters && (
         <div className="flex flex-wrap gap-3 bg-gray-50 rounded-lg p-3" data-testid="expected-filters">
@@ -171,7 +209,10 @@ export default function ExpectedGuestList({ user }) {
             <div key={r.id} className="bg-white rounded-xl p-4 border hover:shadow-sm transition">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-[#0B1C3D] truncate">{getHeadName(r)}</p>
+                  <p className="font-semibold text-[#0B1C3D] truncate">
+                    {getHeadName(r)}
+                    {r.arrival_status === "not_coming" && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-normal">Not Coming</span>}
+                  </p>
                   <p className="text-xs text-gray-500">{r.num_people} people • {r.primary_mobile}</p>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {r.assigned_swamsevak && (
@@ -223,6 +264,17 @@ export default function ExpectedGuestList({ user }) {
                         className="bg-red-50 text-red-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-red-100">
                         <Trash2 size={12} /> Delete
                       </button>
+                      {r.arrival_status === "not_coming" ? (
+                        <button onClick={() => undoNotComing(r.id)} data-testid={`undo-nc-${r.id}`}
+                          className="bg-green-50 text-green-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-green-100">
+                          <Undo2 size={12} /> Restore
+                        </button>
+                      ) : (
+                        <button onClick={() => markNotComing(r.id)} data-testid={`not-coming-${r.id}`}
+                          className="bg-orange-50 text-orange-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-orange-100">
+                          <Ban size={12} /> Not Coming
+                        </button>
+                      )}
                     </>
                   )}
                 </div>

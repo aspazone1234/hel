@@ -18,6 +18,7 @@ import io
 import uuid
 import math
 import random
+import pycountry
 
 ROOT_DIR = Path(__file__).parent
 mongo_url = os.environ['MONGO_URL']
@@ -123,6 +124,7 @@ class AddressInfo(BaseModel):
     city: str = ""
     state: str = ""
     country: str = ""
+    pin_code: str = ""
 
 class RegistrationCreateV2(BaseModel):
     primary_mobile: str
@@ -835,6 +837,81 @@ async def mark_arrival(reg_id: str, body: ArrivalUpdateBody, request: Request):
             head_name = att.get("name", "")
     await log_audit("mark_arrival", "registration", reg_id, head_name or reg.get("primary_mobile", ""), f"Arrival: {old_status} → {body.arrival_status}", user["name"])
     return {"message": "Arrival updated", "id": reg_id}
+
+# ─── Admin: Mark Not Coming ───
+@api_router.post("/admin/registrations/{reg_id}/not-coming")
+async def mark_not_coming(reg_id: str, request: Request):
+    user = await require_superadmin(request)
+    reg = await db.registrations.find_one({"id": reg_id})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    old_status = reg.get("arrival_status", "not_arrived")
+    updates = {
+        "arrival_status": "not_coming",
+        "last_updated_by": user["name"],
+        "last_updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # Release room
+    old_rooms = reg.get("room_assignments", [])
+    if old_rooms:
+        updates["room_assignments"] = []
+        for room_code in old_rooms:
+            room = await db.rooms.find_one({"room_code": room_code})
+            if room:
+                occ = [n for n in room.get("occupant_names", []) if n]
+                head_name_for_room = ""
+                for att in reg.get("attendees", []):
+                    if att.get("id") == reg.get("group_head_id"):
+                        head_name_for_room = att.get("name", "")
+                occ = [n for n in occ if n != head_name_for_room]
+                await db.rooms.update_one({"room_code": room_code}, {"$set": {"occupant_names": occ, "status": "available" if not occ else "occupied"}})
+    # Release sevak
+    if reg.get("assigned_swamsevak"):
+        updates["assigned_swamsevak"] = ""
+    await db.registrations.update_one({"id": reg_id}, {"$set": updates})
+    head_name = ""
+    for att in reg.get("attendees", []):
+        if att.get("id") == reg.get("group_head_id"):
+            head_name = att.get("name", "")
+    await log_audit("not_coming", "registration", reg_id, head_name or reg.get("primary_mobile", ""),
+                    f"Status: {old_status} → not_coming. Released rooms: {old_rooms}", user["name"])
+    return {"message": "Marked as Not Coming", "id": reg_id}
+
+@api_router.post("/admin/registrations/{reg_id}/undo-not-coming")
+async def undo_not_coming(reg_id: str, request: Request):
+    user = await require_superadmin(request)
+    reg = await db.registrations.find_one({"id": reg_id})
+    if not reg:
+        raise HTTPException(status_code=404, detail="Registration not found")
+    if reg.get("arrival_status") != "not_coming":
+        raise HTTPException(status_code=400, detail="Registration is not in 'Not Coming' status")
+    await db.registrations.update_one({"id": reg_id}, {"$set": {
+        "arrival_status": "not_arrived",
+        "last_updated_by": user["name"],
+        "last_updated_at": datetime.now(timezone.utc).isoformat(),
+    }})
+    head_name = ""
+    for att in reg.get("attendees", []):
+        if att.get("id") == reg.get("group_head_id"):
+            head_name = att.get("name", "")
+    await log_audit("undo_not_coming", "registration", reg_id, head_name or reg.get("primary_mobile", ""),
+                    "Restored from Not Coming to Expected", user["name"])
+    return {"message": "Restored to Expected", "id": reg_id}
+
+# ─── Public: Country/State Data ───
+@api_router.get("/geo/countries")
+async def get_countries():
+    countries = sorted([{"code": c.alpha_2, "name": c.name} for c in pycountry.countries], key=lambda x: x["name"])
+    return countries
+
+@api_router.get("/geo/states/{country_code}")
+async def get_states(country_code: str):
+    try:
+        subdivisions = pycountry.subdivisions.get(country_code=country_code.upper())
+        states = sorted([{"code": s.code, "name": s.name} for s in subdivisions], key=lambda x: x["name"])
+        return states
+    except Exception:
+        return []
 
 # ─── Admin: Manual Entry (to Expected or Arrived) ───
 @api_router.post("/admin/registrations/manual")
@@ -2112,10 +2189,13 @@ async def get_pending_guests(request: Request, search: str = "", page: int = 1, 
     return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
 
 @extra_router.get("/admin/guests/expected")
-async def get_expected_guests(request: Request, search: str = "", page: int = 1, per_page: int = 50):
+async def get_expected_guests(request: Request, search: str = "", page: int = 1, per_page: int = 50, status_filter: str = "all"):
     """Get expected guests (approved, not yet arrived)"""
     await get_current_user(request)
-    query = {"approval_status": "approved", "arrival_status": {"$in": ["not_arrived", "not_coming"]}}
+    if status_filter == "not_coming":
+        query = {"approval_status": "approved", "arrival_status": "not_coming"}
+    else:
+        query = {"approval_status": "approved", "arrival_status": {"$in": ["not_arrived", "not_coming"]}}
     if search:
         query["$or"] = [
             {"attendees.name": {"$regex": search, "$options": "i"}},
@@ -2132,10 +2212,15 @@ async def get_expected_guests(request: Request, search: str = "", page: int = 1,
     return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
 
 @extra_router.get("/admin/guests/arrived")
-async def get_arrived_guests(request: Request, search: str = "", page: int = 1, per_page: int = 50):
+async def get_arrived_guests(request: Request, search: str = "", page: int = 1, per_page: int = 50, status_filter: str = "all"):
     """Get arrived guests (arrived, partially_arrived, departed)"""
     await get_current_user(request)
-    query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived", "departed"]}}
+    if status_filter == "arrived":
+        query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived"]}}
+    elif status_filter == "departed":
+        query = {"approval_status": "approved", "arrival_status": "departed"}
+    else:
+        query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived", "departed"]}}
     if search:
         query["$or"] = [
             {"attendees.name": {"$regex": search, "$options": "i"}},

@@ -3,6 +3,7 @@ import { ScanLine, QrCode, Search, Shield, Ban, List, Check } from "lucide-react
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import jsQR from "jsqr";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 

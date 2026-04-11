@@ -140,6 +140,40 @@ export default function MyRegistrationPage() {
           </div>
         )}
 
+        {/* Two Prominent Notices */}
+        {!isConfirmed && (
+          <div className="space-y-3 mb-4" data-testid="portal-notices">
+            {/* Notice 1: Editable until 19 May */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-xl p-4 text-white shadow-lg shadow-blue-600/20">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center shrink-0">
+                  <Calendar size={18} className="text-white" />
+                </div>
+                <div>
+                  <p className="font-bold text-sm">{lang === "hi" ? "\u092B\u0949\u0930\u094D\u092E \u0914\u0930 \u092C\u0926\u0932\u093E\u0935 19 \u092E\u0908 2026 \u0924\u0915" : "Changes Open Until 19 May 2026"}</p>
+                  <p className="text-white/80 text-xs mt-1 leading-relaxed">{lang === "hi"
+                    ? "\u0906\u092A \u0905\u092A\u0928\u093E \u092B\u0949\u0930\u094D\u092E \u0914\u0930 \u0909\u092A\u0938\u094D\u0925\u093F\u0924\u093F \u0915\u093E \u0935\u093F\u0935\u0930\u0923 19 \u092E\u0908 2026 \u0924\u0915 \u0905\u092A\u0921\u0947\u091F \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902\u0964 \u0909\u0938\u0915\u0947 \u092C\u093E\u0926 \u0915\u094B\u0908 \u092C\u0926\u0932\u093E\u0935 \u0938\u0902\u092D\u0935 \u0928\u0939\u0940\u0902 \u0939\u094B\u0917\u093E\u0964"
+                    : "You can submit your form and update your attendance details until 19 May 2026. After this date, no further changes will be accepted."}</p>
+                </div>
+              </div>
+            </div>
+            {/* Notice 2: Final list on 21 May */}
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl p-4 text-white shadow-lg shadow-emerald-600/20">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center shrink-0">
+                  <Check size={18} className="text-white" />
+                </div>
+                <div>
+                  <p className="font-bold text-sm">{lang === "hi" ? "\u0905\u0902\u0924\u093F\u092E \u0938\u0942\u091A\u0940 21 \u092E\u0908 2026 \u0915\u094B" : "Final Guest List on 21 May 2026"}</p>
+                  <p className="text-white/80 text-xs mt-1 leading-relaxed">{lang === "hi"
+                    ? "\u0905\u0902\u0924\u093F\u092E \u0905\u0924\u093F\u0925\u093F \u0938\u0942\u091A\u0940 \u0914\u0930 \u0915\u092E\u0930\u0947 \u0915\u093E \u0935\u093F\u0935\u0930\u0923 21 \u092E\u0908 2026 \u0915\u094B \u0906\u092A\u0915\u0947 \u092A\u0902\u091C\u0940\u0915\u0943\u0924 WhatsApp \u0928\u0902\u092C\u0930 \u092A\u0930 \u092D\u0947\u091C\u093E \u091C\u093E\u090F\u0917\u093E\u0964"
+                    : "The final guest list and room allocation will be released on 21 May 2026. You will be notified on your registered WhatsApp number."}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-2xl border border-[#D4AF37]/20 shadow-xl overflow-hidden">
           {/* Header */}
           <div className="bg-gradient-to-r from-[#0B1C3D] to-[#1a3a6b] p-5 text-white">
@@ -479,30 +513,87 @@ function EditContactModal({ reg, lang, onSave, onClose }) {
 
 function EditAddressModal({ reg, lang, onSave, onClose }) {
   const addr = reg.address || {};
-  const [full, setFull] = useState(addr.full_address || "");
-  const [city, setCity] = useState(addr.city || "");
+  const [country, setCountry] = useState(addr.country || "India");
   const [state, setState] = useState(addr.state || "");
-  const [country, setCountry] = useState(addr.country || "");
+  const [city, setCity] = useState(addr.city || "");
+  const [pinCode, setPinCode] = useState(addr.pin_code || "");
+  const [full, setFull] = useState(addr.full_address || "");
   const [saving, setSaving] = useState(false);
+  const [countries, setCountries] = useState([]);
+  const [states, setStates] = useState([]);
+  const [countrySearch, setCountrySearch] = useState("");
+  const [stateSearch, setStateSearch] = useState("");
+
+  useEffect(() => {
+    axios.get(`${API}/api/geo/countries`).then(r => setCountries(r.data)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!country) { setStates([]); return; }
+    const c = countries.find(cc => cc.name === country);
+    if (c) {
+      axios.get(`${API}/api/geo/states/${c.code}`).then(r => setStates(r.data)).catch(() => setStates([]));
+    }
+  }, [country, countries]);
+
+  const filteredCountries = countries.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()));
+  const filteredStates = states.filter(s => s.name.toLowerCase().includes(stateSearch.toLowerCase()));
 
   const save = async () => {
-    if (!full.trim() || !city.trim() || !state.trim() || !country.trim()) { toast.error(lang === "hi" ? "\u0938\u092D\u0940 \u092A\u0924\u093E \u092B\u0940\u0932\u094D\u0921 \u092D\u0930\u0947\u0902" : "All address fields required"); return; }
+    if (!country.trim() || !state.trim() || !city.trim() || !full.trim()) { toast.error(lang === "hi" ? "\u0938\u092D\u0940 \u092A\u0924\u093E \u092B\u0940\u0932\u094D\u0921 \u092D\u0930\u0947\u0902" : "Country, State, City and Full Address required"); return; }
     setSaving(true);
-    await onSave({ address: { full_address: full, city, state, country } });
+    await onSave({ address: { country, state, city, pin_code: pinCode, full_address: full } });
     setSaving(false);
   };
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{lang === "hi" ? "\u092A\u0924\u093E \u0938\u0902\u092A\u093E\u0926\u093F\u0924 \u0915\u0930\u0947\u0902" : "Edit Address"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div><Label className="text-sm">{lang === "hi" ? "\u092A\u0942\u0930\u093E \u092A\u0924\u093E *" : "Full Address *"}</Label>
-            <Textarea value={full} onChange={e => setFull(e.target.value)} className="mt-1" rows={2} data-testid="edit-address-full" /></div>
-          <div className="grid grid-cols-3 gap-2">
-            <div><Label className="text-xs">{lang === "hi" ? "\u0936\u0939\u0930 *" : "City *"}</Label><Input value={city} onChange={e => setCity(e.target.value)} className="mt-1" data-testid="edit-city" /></div>
-            <div><Label className="text-xs">{lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F *" : "State *"}</Label><Input value={state} onChange={e => setState(e.target.value)} className="mt-1" data-testid="edit-state" /></div>
-            <div><Label className="text-xs">{lang === "hi" ? "\u0926\u0947\u0936 *" : "Country *"}</Label><Input value={country} onChange={e => setCountry(e.target.value)} className="mt-1" data-testid="edit-country" /></div>
+          <div>
+            <Label className="text-sm">{lang === "hi" ? "\u0926\u0947\u0936 *" : "Country *"}</Label>
+            <Input placeholder={lang === "hi" ? "\u0926\u0947\u0936 \u0916\u094B\u091C\u0947\u0902..." : "Search country..."} value={countrySearch} onChange={e => setCountrySearch(e.target.value)} className="mt-1 text-sm" data-testid="edit-country-search" />
+            {countrySearch && filteredCountries.length > 0 && (
+              <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg">
+                {filteredCountries.slice(0, 8).map(c => (
+                  <button key={c.code} onClick={() => { setCountry(c.name); setCountrySearch(""); setState(""); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{c.name}</button>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-0.5">{lang === "hi" ? "\u091A\u092F\u0928\u093F\u0924" : "Selected"}: <b>{country}</b></p>
+          </div>
+          <div>
+            <Label className="text-sm">{lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F *" : "State *"}</Label>
+            {states.length > 0 ? (
+              <>
+                <Input placeholder={lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F \u0916\u094B\u091C\u0947\u0902..." : "Search state..."} value={stateSearch} onChange={e => setStateSearch(e.target.value)} className="mt-1 text-sm" data-testid="edit-state-search" />
+                {stateSearch && filteredStates.length > 0 && (
+                  <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg">
+                    {filteredStates.slice(0, 8).map(s => (
+                      <button key={s.code} onClick={() => { setState(s.name); setStateSearch(""); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{s.name}</button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-xs text-gray-500 mt-0.5">{lang === "hi" ? "\u091A\u092F\u0928\u093F\u0924" : "Selected"}: <b>{state || "\u2014"}</b></p>
+              </>
+            ) : (
+              <Input value={state} onChange={e => setState(e.target.value)} className="mt-1 text-sm" data-testid="edit-state" placeholder={lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F" : "State"} />
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label className="text-sm">{lang === "hi" ? "\u0936\u0939\u0930 *" : "City *"}</Label>
+              <Input value={city} onChange={e => setCity(e.target.value)} className="mt-1 text-sm" data-testid="edit-city" />
+            </div>
+            <div>
+              <Label className="text-sm">{lang === "hi" ? "\u092A\u093F\u0928 \u0915\u094B\u0921" : "Pin Code"}</Label>
+              <Input value={pinCode} onChange={e => setPinCode(e.target.value)} className="mt-1 text-sm" data-testid="edit-pincode" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-sm">{lang === "hi" ? "\u092A\u0942\u0930\u093E \u092A\u0924\u093E *" : "Full Address *"}</Label>
+            <Textarea value={full} onChange={e => setFull(e.target.value)} className="mt-1 text-sm" rows={2} data-testid="edit-address-full" />
           </div>
           <Button onClick={save} disabled={saving} className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90" data-testid="save-address-btn">
             {saving ? "..." : (lang === "hi" ? "\u0938\u0939\u0947\u091C\u0947\u0902" : "Save")}

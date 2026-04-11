@@ -38,7 +38,7 @@ const emptyForm = {
   additional_phone: "",
   email: "",
   preferred_language: "hi",
-  address: { full_address: "", city: "", state: "", country: "" },
+  address: { full_address: "", city: "", state: "", country: "India", pin_code: "" },
   num_people: 1,
   attendees: [{ id: "", name: "", age: "", special_needs: "" }],
   group_head_id: "",
@@ -77,6 +77,11 @@ export default function RegisterPage() {
   // Reference data
   const [refPersons, setRefPersons] = useState([]);
   const [relationCats, setRelationCats] = useState([]);
+  // Geo data
+  const [countries, setCountries] = useState([]);
+  const [geoStates, setGeoStates] = useState([]);
+  const [addrCountrySearch, setAddrCountrySearch] = useState("");
+  const [addrStateSearch, setAddrStateSearch] = useState("");
 
   const STEPS = t.register.steps;
 
@@ -85,8 +90,17 @@ export default function RegisterPage() {
   }, [lang]);
 
   useEffect(() => {
+    if (!form.address.country) { setGeoStates([]); return; }
+    const c = countries.find(cc => cc.name === form.address.country);
+    if (c) { axios.get(`${API}/geo/states/${c.code}`).then(r => setGeoStates(r.data)).catch(() => setGeoStates([])); }
+    else { setGeoStates([]); }
+  }, [form.address.country, countries]);
+
+
+  useEffect(() => {
     axios.get(`${API}/reference-persons/public`).then(r => setRefPersons(r.data)).catch(() => {});
     axios.get(`${API}/relation-categories/public`).then(r => setRelationCats(r.data)).catch(() => {});
+    axios.get(`${API}/geo/countries`).then(r => setCountries(r.data)).catch(() => {});
     // Check URL params for returning user from MyRegistrationPage edit
     const urlParams = new URLSearchParams(window.location.search);
     const mobileParam = urlParams.get("mobile");
@@ -547,26 +561,56 @@ export default function RegisterPage() {
                   <MapPin size={14} className="text-[#D4AF37]" /> {lang === "hi" ? "\u092A\u0924\u093E *" : "Address *"}
                 </h3>
                 <div>
-                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u092A\u0942\u0930\u093E \u092A\u0924\u093E *" : "Full Address *"}</Label>
-                  <Textarea data-testid="address-full" value={form.address.full_address} onChange={e => setAddr("full_address", e.target.value)}
-                    className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.full_address ? "border-red-400" : ""}`} rows={2} />
+                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0926\u0947\u0936 *" : "Country *"}</Label>
+                  <Input placeholder={lang === "hi" ? "\u0926\u0947\u0936 \u0916\u094B\u091C\u0947\u0902..." : "Search country..."} value={addrCountrySearch} onChange={e => setAddrCountrySearch(e.target.value)}
+                    className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.country ? "border-red-400" : ""}`} data-testid="country-search" />
+                  {addrCountrySearch && countries.filter(c => c.name.toLowerCase().includes(addrCountrySearch.toLowerCase())).length > 0 && (
+                    <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg z-10 relative">
+                      {countries.filter(c => c.name.toLowerCase().includes(addrCountrySearch.toLowerCase())).slice(0, 8).map(c => (
+                        <button key={c.code} type="button" onClick={() => { setAddr("country", c.name); setAddrCountrySearch(""); setAddr("state", ""); }}
+                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{c.name}</button>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 mt-0.5">{form.address.country || "\u2014"}</p>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F *" : "State *"}</Label>
+                  {geoStates.length > 0 ? (
+                    <>
+                      <Input placeholder={lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F \u0916\u094B\u091C\u0947\u0902..." : "Search state..."} value={stateSearch} onChange={e => setStateSearch(e.target.value)}
+                        className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.state ? "border-red-400" : ""}`} data-testid="state-search" />
+                      {stateSearch && geoStates.filter(s => s.name.toLowerCase().includes(stateSearch.toLowerCase())).length > 0 && (
+                        <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg z-10 relative">
+                          {geoStates.filter(s => s.name.toLowerCase().includes(stateSearch.toLowerCase())).slice(0, 8).map(s => (
+                            <button key={s.code} type="button" onClick={() => { setAddr("state", s.name); setStateSearch(""); }}
+                              className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{s.name}</button>
+                          ))}
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-400 mt-0.5">{form.address.state || "\u2014"}</p>
+                    </>
+                  ) : (
+                    <Input data-testid="address-state" value={form.address.state} onChange={e => setAddr("state", e.target.value)}
+                      className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.state ? "border-red-400" : ""}`} />
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0936\u0939\u0930 *" : "City *"}</Label>
                     <Input data-testid="address-city" value={form.address.city} onChange={e => setAddr("city", e.target.value)}
                       className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.city ? "border-red-400" : ""}`} />
                   </div>
                   <div>
-                    <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F *" : "State *"}</Label>
-                    <Input data-testid="address-state" value={form.address.state} onChange={e => setAddr("state", e.target.value)}
-                      className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.state ? "border-red-400" : ""}`} />
+                    <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u092A\u093F\u0928 \u0915\u094B\u0921" : "Pin Code"}</Label>
+                    <Input data-testid="address-pincode" value={form.address.pin_code} onChange={e => setAddr("pin_code", e.target.value)}
+                      className="mt-1 bg-white border-[#D4AF37]/20 text-sm" />
                   </div>
-                  <div>
-                    <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0926\u0947\u0936 *" : "Country *"}</Label>
-                    <Input data-testid="address-country" value={form.address.country} onChange={e => setAddr("country", e.target.value)}
-                      className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.country ? "border-red-400" : ""}`} />
-                  </div>
+                </div>
+                <div>
+                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u092A\u0942\u0930\u093E \u092A\u0924\u093E *" : "Full Address *"}</Label>
+                  <Textarea data-testid="address-full" value={form.address.full_address} onChange={e => setAddr("full_address", e.target.value)}
+                    className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.full_address ? "border-red-400" : ""}`} rows={2} />
                 </div>
               </div>
             </div>
