@@ -289,7 +289,7 @@ function EditPendingDialog({ reg, onClose, onSaved, authHeaders }) {
   );
 }
 
-function FullRegistrationView({ reg }) {
+function FullRegistrationView({ reg, showAttendeeStatus = false }) {
   const headName = (reg.attendees || []).find(a => a.id === reg.group_head_id)?.name || "—";
   const addr = reg.address || {};
   return (
@@ -312,12 +312,28 @@ function FullRegistrationView({ reg }) {
         <Field label="Family Special Request" value={reg.family_special_request} />
       </Section>
       <Section title="Attendees">
-        {(reg.attendees || []).map((a, i) => (
-          <div key={i} className="bg-gray-50 rounded-lg p-3 mb-2">
-            <p className="font-medium">{a.name} {a.id === reg.group_head_id && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">Head</span>}</p>
-            <p className="text-gray-500">Age: {a.age} {a.special_needs && `• Needs: ${a.special_needs}`}</p>
-          </div>
-        ))}
+        {(reg.attendees || []).map((a, i) => {
+          const status = a.arrival_status || "not_arrived";
+          const statusStyles = {
+            arrived: "bg-green-100 text-green-700",
+            not_arrived: "bg-gray-100 text-gray-500",
+            departed: "bg-blue-100 text-blue-700",
+            not_coming: "bg-red-100 text-red-600",
+          };
+          return (
+            <div key={i} className="bg-gray-50 rounded-lg p-3 mb-2">
+              <div className="flex justify-between items-start">
+                <p className="font-medium">{a.name} {a.id === reg.group_head_id && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">Head</span>}</p>
+                {showAttendeeStatus && (
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusStyles[status] || "bg-gray-100 text-gray-500"}`}>
+                    {status === "arrived" ? "Present" : status === "not_arrived" ? "Absent" : status === "not_coming" ? "Not Coming" : status}
+                  </span>
+                )}
+              </div>
+              <p className="text-gray-500 text-xs">Age: {a.age} {a.special_needs && `• Needs: ${a.special_needs}`}</p>
+            </div>
+          );
+        })}
       </Section>
       <Section title="Attendance & Travel">
         <Field label="Attendance Intent" value={reg.attendance_intent} />

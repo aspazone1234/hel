@@ -259,18 +259,17 @@ export default function ExpectedGuestList({ user }) {
         </button>
       </div>
 
-      {/* Status filter tabs */}
+      {/* Status filter tabs — 3 separate filters */}
       <div className="flex gap-2" data-testid="expected-status-filter">
         <button onClick={() => { setStatusFilter("all"); setPage(1); }}
           className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${statusFilter === "all" ? "bg-[#0B1C3D] text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
-          data-testid="filter-all-expected">
-          All Expected
-        </button>
+          data-testid="filter-all-expected">All</button>
+        <button onClick={() => { setStatusFilter("expected"); setPage(1); }}
+          className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${statusFilter === "expected" ? "bg-blue-600 text-white" : "bg-blue-50 text-blue-700 hover:bg-blue-100"}`}
+          data-testid="filter-expected-only">Expected</button>
         <button onClick={() => { setStatusFilter("not_coming"); setPage(1); }}
           className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${statusFilter === "not_coming" ? "bg-red-600 text-white" : "bg-red-50 text-red-600 hover:bg-red-100"}`}
-          data-testid="filter-not-coming">
-          Not Coming
-        </button>
+          data-testid="filter-not-coming">Not Coming</button>
       </div>
 
 
@@ -394,11 +393,27 @@ export default function ExpectedGuestList({ user }) {
         </div>
       )}
 
-      {/* Full View */}
+      {/* Full View — QR first, then details */}
       <Dialog open={!!viewReg} onOpenChange={() => setViewReg(null)}>
         <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Complete Registration Details</DialogTitle></DialogHeader>
-          {viewReg && <FullRegistrationView reg={viewReg} />}
+          {viewReg && (
+            <>
+              {viewReg.qr_image_b64 && (
+                <div className="flex flex-col items-center mb-4" data-testid="qr-display-expected">
+                  <img src={`data:image/png;base64,${viewReg.qr_image_b64}`} alt="QR Code" className="w-48 h-48 border rounded-xl" />
+                  <p className="text-xs text-gray-500 mt-1">QR Code — {viewReg.primary_mobile}</p>
+                  <button onClick={() => {
+                    const link = document.createElement("a");
+                    link.href = `data:image/png;base64,${viewReg.qr_image_b64}`;
+                    link.download = `QR_${viewReg.primary_mobile}.png`;
+                    link.click();
+                  }} className="mt-1 text-xs text-teal-600 hover:underline">Download QR</button>
+                </div>
+              )}
+              <FullRegistrationView reg={viewReg} />
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

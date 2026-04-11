@@ -31,7 +31,12 @@ export default function TodoModule({ user }) {
       let items = data.data || [];
       // Regular admins see only their own
       if (!isSuper) {
-        items = items.filter(t => t.assigned_to === user?.name || t.created_by === user?.name);
+        const myName = user?.name;
+        const myUsername = user?.username;
+        items = items.filter(t =>
+          t.assigned_to === myName || t.assigned_to === myUsername ||
+          t.created_by === myName || t.created_by === myUsername
+        );
       }
       setTodos(items);
     } catch { toast.error("Failed to load"); }
@@ -98,8 +103,8 @@ export default function TodoModule({ user }) {
             onChange={(e) => setSelectedAdmin(e.target.value)} data-testid="select-admin-todos">
             <option value="">All Swamsevaks</option>
             {admins.map(a => (
-              <option key={a.username} value={a.display_name || a.username}>
-                {a.display_name || a.username}
+              <option key={a.username} value={a.name || a.username}>
+                {a.name || a.username}
               </option>
             ))}
           </select>

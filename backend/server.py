@@ -1168,14 +1168,14 @@ async def get_dashboard(request: Request):
     departed_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "departed"})
     departed_p = (await db.registrations.aggregate([{"$match": {"approval_status": "approved", "arrival_status": "departed"}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]).to_list(1) or [{"total": 0}])[0]["total"]
 
-    # Daily schedule
+    # Daily schedule — exclude not_coming from arrival/departure counts
     dates = ["2026-05-27", "2026-05-28", "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"]
     daily = []
     for d in dates:
-        arr_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_date": d})
-        arr_p = (await db.registrations.aggregate([{"$match": {"approval_status": "approved", "arrival_date": d}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]).to_list(1) or [{"total": 0}])[0]["total"]
-        dep_fam = await db.registrations.count_documents({"approval_status": "approved", "departure_date": d})
-        dep_p = (await db.registrations.aggregate([{"$match": {"approval_status": "approved", "departure_date": d}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]).to_list(1) or [{"total": 0}])[0]["total"]
+        arr_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_date": d, "arrival_status": {"$nin": ["not_coming"]}})
+        arr_p = (await db.registrations.aggregate([{"$match": {"approval_status": "approved", "arrival_date": d, "arrival_status": {"$nin": ["not_coming"]}}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]).to_list(1) or [{"total": 0}])[0]["total"]
+        dep_fam = await db.registrations.count_documents({"approval_status": "approved", "departure_date": d, "arrival_status": {"$nin": ["not_coming"]}})
+        dep_p = (await db.registrations.aggregate([{"$match": {"approval_status": "approved", "departure_date": d, "arrival_status": {"$nin": ["not_coming"]}}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]).to_list(1) or [{"total": 0}])[0]["total"]
         daily.append({"date": d, "arrivals_families": arr_fam, "arrivals_people": arr_p, "departures_families": dep_fam, "departures_people": dep_p})
 
     # Room stats
@@ -1259,14 +1259,41 @@ async def export_csv(request: Request, bucket: str = "expected", search: str = "
             query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived", "departed"]}}
         filename = "arrived_guests.csv"
     elif bucket == "rooms":
-        rooms = await db.rooms.find({}, {"_id": 0}).to_list(500)
+        rooms = await db.rooms.find({}, {"_id": 0}).sort("floor", 1).sort("room_code", 1).to_list(500)
+        # Build occupant data from registrations
+        room_reg_map = {}
+        all_reg = await db.registrations.find(
+            {"approval_status": "approved", "arrival_status": {"$nin": ["not_coming", "departed"]}, "room_assignments": {"$exists": True, "$ne": []}},
+            {"_id": 0, "room_assignments": 1, "attendees": 1, "group_head_id": 1, "num_people": 1, "assigned_swamsevak": 1, "primary_mobile": 1}
+        ).to_list(5000)
+        for r in all_reg:
+            head = next((a["name"] for a in r.get("attendees", []) if a.get("id") == r.get("group_head_id")), r.get("primary_mobile", ""))
+            for code in r.get("room_assignments", []):
+                if code not in room_reg_map:
+                    room_reg_map[code] = []
+                room_reg_map[code].append({"head": head, "people": r.get("num_people", 1), "swamsevak": r.get("assigned_swamsevak", "")})
+
         output = io.StringIO()
-        fields = ["room_code", "floor", "capacity", "ac_type", "status", "occupant_names"]
+        fields = ["floor", "room_code", "capacity", "ac_type", "status", "occupied_people", "family_head", "people_count", "contact_person", "notes"]
         writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
         writer.writeheader()
         for room in rooms:
-            row = {k: room.get(k, "") for k in fields}
-            row["occupant_names"] = ", ".join(room.get("occupant_names", []))
+            occupants = room_reg_map.get(room.get("room_code", ""), [])
+            total_people = sum(o["people"] for o in occupants)
+            heads = "; ".join(o["head"] for o in occupants) if occupants else ""
+            swamsevaks = "; ".join(set(o["swamsevak"] for o in occupants if o["swamsevak"])) if occupants else ""
+            row = {
+                "floor": room.get("floor", ""),
+                "room_code": room.get("room_code", ""),
+                "capacity": room.get("capacity", ""),
+                "ac_type": room.get("ac_type", ""),
+                "status": room.get("status", ""),
+                "occupied_people": total_people if occupants else 0,
+                "family_head": heads,
+                "people_count": len(occupants),
+                "contact_person": swamsevaks,
+                "notes": room.get("notes", ""),
+            }
             writer.writerow(row)
         output.seek(0)
         return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=rooms.csv"})
@@ -1306,24 +1333,61 @@ async def export_pdf(request: Request, report_type: str = "guestlist", bucket: s
     pdf.add_page("L")
     pdf.set_font("Helvetica", "B", 16)
     if report_type == "rooms":
-        pdf.cell(0, 10, "Room Allocation Report", new_x="LMARGIN", new_y="NEXT", align="C")
+        pdf.cell(0, 10, "Room Allocation Report — Katha 2026", new_x="LMARGIN", new_y="NEXT", align="C")
         pdf.set_font("Helvetica", "", 8)
         pdf.cell(0, 6, f"Generated: {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')}", new_x="LMARGIN", new_y="NEXT", align="C")
         pdf.ln(5)
-        rooms = await db.rooms.find({}, {"_id": 0}).sort("room_code", 1).to_list(500)
-        headers = ["Room Code", "Floor", "Capacity", "Type", "Status", "Occupants"]
-        col_w = [30, 25, 20, 25, 25, 130]
-        pdf.set_font("Helvetica", "B", 9)
-        for i, h in enumerate(headers):
-            pdf.cell(col_w[i], 8, h, border=1, align="C")
-        pdf.ln()
-        pdf.set_font("Helvetica", "", 8)
+
+        rooms = await db.rooms.find({}, {"_id": 0}).sort("floor", 1).to_list(500)
+        # Build occupant data
+        room_reg_map = {}
+        all_reg = await db.registrations.find(
+            {"approval_status": "approved", "arrival_status": {"$nin": ["not_coming", "departed"]}, "room_assignments": {"$exists": True, "$ne": []}},
+            {"_id": 0, "room_assignments": 1, "attendees": 1, "group_head_id": 1, "num_people": 1, "assigned_swamsevak": 1, "primary_mobile": 1}
+        ).to_list(5000)
+        for r in all_reg:
+            head = next((a["name"] for a in r.get("attendees", []) if a.get("id") == r.get("group_head_id")), r.get("primary_mobile", ""))
+            for code in r.get("room_assignments", []):
+                if code not in room_reg_map:
+                    room_reg_map[code] = []
+                room_reg_map[code].append({"head": head, "people": r.get("num_people", 1), "swamsevak": r.get("assigned_swamsevak", "")})
+
+        # Group by floor
+        floor_groups = {}
         for room in rooms:
-            names = ", ".join(room.get("occupant_names", [])) or "-"
-            vals = [room.get("room_code", ""), room.get("floor", ""), str(room.get("capacity", "")), room.get("ac_type", ""), room.get("status", ""), names[:50]]
-            for i, v in enumerate(vals):
-                pdf.cell(col_w[i], 7, str(v), border=1, align="C")
+            floor_key = f"Floor: {room.get('floor', 'Unknown')}" if room.get('floor') else "Floor: Unassigned"
+            if floor_key not in floor_groups:
+                floor_groups[floor_key] = []
+            floor_groups[floor_key].append(room)
+
+        for floor_name, floor_rooms in floor_groups.items():
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_fill_color(11, 28, 61)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 8, floor_name, new_x="LMARGIN", new_y="NEXT", fill=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(2)
+
+            headers = ["Room", "Type", "Beds", "Occup.", "Status", "Family Head", "People", "Contact Person"]
+            col_w = [25, 25, 20, 20, 28, 55, 22, 50]
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(230, 230, 230)
+            for i, h in enumerate(headers):
+                pdf.cell(col_w[i], 7, h, border=1, align="C", fill=True)
             pdf.ln()
+            pdf.set_font("Helvetica", "", 8)
+            for room in floor_rooms:
+                occupants = room_reg_map.get(room.get("room_code", ""), [])
+                total_occ_people = sum(o["people"] for o in occupants)
+                heads = "; ".join(o["head"] for o in occupants)[:30] if occupants else "-"
+                swamsevaks = "; ".join(set(o["swamsevak"] for o in occupants if o["swamsevak"]))[:25] if occupants else "-"
+                fams = str(len(occupants)) if occupants else "0"
+                status_label = "Occupied" if room.get("status") == "occupied" else "Available"
+                vals = [room.get("room_code", ""), room.get("ac_type", ""), str(room.get("capacity", "")), str(total_occ_people), status_label, heads, fams, swamsevaks]
+                for i, v in enumerate(vals):
+                    pdf.cell(col_w[i], 7, str(v), border=1, align="C")
+                pdf.ln()
+            pdf.ln(3)
     else:
         if bucket == "pending":
             query = {"approval_status": "pending"}
@@ -2104,8 +2168,10 @@ async def dashboard_drill_down(request: Request, field: str = "", value: str = "
     query = {"approval_status": "approved"}
     if field == "arrival_date":
         query["arrival_date"] = value
+        query["arrival_status"] = {"$nin": ["not_coming"]}
     elif field == "departure_date":
         query["departure_date"] = value
+        query["arrival_status"] = {"$nin": ["not_coming"]}
     elif field == "arrival_status":
         if value == "arrived":
             query["arrival_status"] = {"$in": ["arrived", "partially_arrived"]}
@@ -2243,6 +2309,8 @@ async def get_expected_guests(request: Request, search: str = "", page: int = 1,
     await get_current_user(request)
     if status_filter == "not_coming":
         query = {"approval_status": "approved", "arrival_status": "not_coming"}
+    elif status_filter == "expected":
+        query = {"approval_status": "approved", "arrival_status": "not_arrived"}
     else:
         query = {"approval_status": "approved", "arrival_status": {"$in": ["not_arrived", "not_coming"]}}
     if search:
@@ -2313,32 +2381,64 @@ async def swamsevak_dashboard(request: Request):
     special = await db.registrations.find(
         {**swamsevak_query, "approval_status": "approved",
          "$or": [{"family_special_request": {"$ne": ""}}, {"attendees.special_needs": {"$ne": ""}}]},
-        {"_id": 0, "id": 1, "attendees": 1, "group_head_id": 1, "family_special_request": 1}
+        {"_id": 0, "id": 1, "attendees": 1, "group_head_id": 1, "family_special_request": 1, "room_assignments": 1}
     ).to_list(50)
     special_list = []
     for r in special:
         head = ""
         needs = []
+        rooms_str = ", ".join(r.get("room_assignments", [])) or ""
         for a in r.get("attendees", []):
             if a.get("id") == r.get("group_head_id"):
                 head = a.get("name", "")
             if a.get("special_needs"):
-                needs.append(f"{a['name']}: {a['special_needs']}")
+                needs.append({"person": a["name"], "need": a["special_needs"], "is_family": False, "room": rooms_str, "family_head": ""})
         if r.get("family_special_request"):
-            needs.append(f"Family: {r['family_special_request']}")
+            needs.append({"person": head, "need": r["family_special_request"], "is_family": True, "room": rooms_str, "family_head": head})
+        # Set family_head on individual needs
+        for n in needs:
+            if not n["is_family"]:
+                n["family_head"] = head
         if needs:
-            special_list.append({"id": r["id"], "head_name": head, "needs": needs})
+            special_list.append({"id": r["id"], "head_name": head, "needs": needs, "rooms": r.get("room_assignments", [])})
     # My tickets (match by name or username)
     my_tickets = await db.tickets.count_documents({"$or": [{"assigned_to": name}, {"assigned_to": username}], "status": {"$in": ["open", "in_progress"]}})
     # My todos (match by name or username)
     my_todos = await db.todos.count_documents({"$or": [{"assigned_to": name}, {"assigned_to": username}, {"created_by": name}, {"created_by": username}], "completed": False})
 
+    # Assigned guests list for popup
+    assigned_guests_raw = await db.registrations.find(
+        {**swamsevak_query, "approval_status": "approved"},
+        {"_id": 0, "attendees": 1, "group_head_id": 1, "num_people": 1, "room_assignments": 1, "arrival_status": 1, "primary_mobile": 1, "id": 1}
+    ).to_list(200)
+    assigned_list = []
+    for r in assigned_guests_raw:
+        head = next((a["name"] for a in r.get("attendees", []) if a.get("id") == r.get("group_head_id")), r.get("primary_mobile", ""))
+        assigned_list.append({"id": r["id"], "head_name": head, "num_people": r.get("num_people", 1), "rooms": r.get("room_assignments", []), "arrival_status": r.get("arrival_status", "")})
+
+    # Todos list for popup
+    todos_raw = await db.todos.find(
+        {"$or": [{"assigned_to": name}, {"assigned_to": username}, {"created_by": name}, {"created_by": username}], "completed": False},
+        {"_id": 0, "id": 1, "title": 1, "priority": 1, "due_date": 1, "assigned_to": 1}
+    ).sort("created_at", -1).to_list(50)
+    todos_list = [{"id": t.get("id", ""), "title": t.get("title", ""), "priority": t.get("priority", ""), "due_date": t.get("due_date", "")} for t in todos_raw]
+
+    # Tickets list for popup
+    tickets_raw = await db.tickets.find(
+        {"$or": [{"assigned_to": name}, {"assigned_to": username}], "status": {"$in": ["open", "in_progress"]}},
+        {"_id": 0, "id": 1, "description": 1, "priority": 1, "category": 1, "guest_name": 1, "status": 1}
+    ).sort("created_at", -1).to_list(50)
+    tickets_list = [{"id": t.get("id", ""), "description": t.get("description", ""), "priority": t.get("priority", ""), "category": t.get("category", ""), "guest": t.get("guest_name", ""), "status": t.get("status", "")} for t in tickets_raw]
+
     return {
         "assigned_guests": assigned,
+        "assigned_guests_list": assigned_list,
         "departures_today": dep_list,
         "special_needs": special_list,
         "active_tickets": my_tickets,
+        "tickets_list": tickets_list,
         "pending_todos": my_todos,
+        "todos_list": todos_list,
     }
 
 @phase_router.get("/admin/room-vacancy-forecast")

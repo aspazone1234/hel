@@ -35,7 +35,12 @@ export default function HelpCentre({ user }) {
       const { data } = await axios.get(`${API}/api/admin/tickets`, { headers: authHeaders(), params });
       let items = data.data || data || [];
       if (view === "my") {
-        items = items.filter(t => t.assigned_to === user?.name || t.created_by === user?.name);
+        const myName = user?.name;
+        const myUsername = user?.username;
+        items = items.filter(t =>
+          t.assigned_to === myName || t.assigned_to === myUsername ||
+          t.created_by === myName || t.created_by === myUsername
+        );
       }
       setTickets(items);
     } catch {}
@@ -248,7 +253,7 @@ export default function HelpCentre({ user }) {
             <select className="w-full border rounded px-3 py-2 text-sm" value={createForm.assigned_to}
               onChange={(e) => setCreateForm({ ...createForm, assigned_to: e.target.value })}>
               <option value="">Assign to...</option>
-              {admins.map(a => <option key={a.username} value={a.display_name || a.username}>{a.display_name || a.username}</option>)}
+              {admins.map(a => <option key={a.username} value={a.name || a.username}>{a.name || a.username}</option>)}
             </select>
             <input type="number" className="w-full border rounded px-3 py-2 text-sm" placeholder="Resolution time (minutes)"
               value={createForm.resolution_time_minutes} onChange={(e) => setCreateForm({ ...createForm, resolution_time_minutes: parseInt(e.target.value) || 30 })} />
@@ -294,7 +299,7 @@ export default function HelpCentre({ user }) {
                   <select className="w-full border rounded px-2 py-1.5 text-sm" defaultValue={viewTicket.assigned_to || ""}
                     onChange={(e) => { assignTicket(viewTicket.id, e.target.value); setViewTicket({...viewTicket, assigned_to: e.target.value}); }}>
                     <option value="">Unassigned</option>
-                    {admins.map(a => <option key={a.username} value={a.display_name || a.username}>{a.display_name || a.username}</option>)}
+                    {admins.map(a => <option key={a.username} value={a.name || a.username}>{a.name || a.username}</option>)}
                   </select>
                 </div>
               )}

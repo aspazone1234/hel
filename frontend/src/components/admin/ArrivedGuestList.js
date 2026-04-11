@@ -307,7 +307,7 @@ export default function ArrivedGuestList({ user }) {
                   <img src={`data:image/png;base64,${viewReg.qr_image_b64}`} alt="QR Code" className="w-48 h-48 border rounded-xl" />
                 </div>
               )}
-              <FullRegistrationView reg={viewReg} />
+              <FullRegistrationView reg={viewReg} showAttendeeStatus={true} />
             </>
           )}
         </DialogContent>

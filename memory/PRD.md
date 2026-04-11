@@ -88,3 +88,4 @@ Comprehensive event operations platform for Shrimad Bhagavat Katha 2026, Pushkar
 - Push notifications for status changes
 - Advanced analytics dashboard
 - Activity Log date parsing fix (minor UI)
+- Old assigned_swamsevak data stored as username (not full name) — may need data migration to display properly in Contact badges

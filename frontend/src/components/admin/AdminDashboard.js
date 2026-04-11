@@ -13,6 +13,7 @@ export default function AdminDashboard({ user }) {
   const [drillLoading, setDrillLoading] = useState(false);
   const [scheduleExpanded, setScheduleExpanded] = useState(true);
   const [myDay, setMyDay] = useState(null);
+  const [myDayPopup, setMyDayPopup] = useState(null); // "guests" | "tasks" | "tickets"
 
   const authHeaders = useCallback(() => ({
     Authorization: `Bearer ${localStorage.getItem("admin_token")}`,
@@ -70,52 +71,111 @@ export default function AdminDashboard({ user }) {
           <h2 className="font-semibold text-[#0B1C3D] text-sm mb-3 flex items-center gap-2">
             <Star size={16} className="text-[#D4AF37]" /> My Day — {user?.display_name || user?.name}
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white rounded-lg p-3 text-center">
+          <div className="grid grid-cols-3 gap-3">
+            <button onClick={() => setMyDayPopup("guests")}
+              className="bg-white rounded-lg p-3 text-center hover:shadow-md transition-shadow cursor-pointer" data-testid="my-day-guests">
               <p className="text-lg font-bold text-[#0B1C3D]">{myDay.assigned_guests}</p>
               <p className="text-xs text-gray-500">Assigned Guests</p>
-            </div>
-            <div className="bg-white rounded-lg p-3 text-center">
+            </button>
+            <button onClick={() => setMyDayPopup("tasks")}
+              className="bg-white rounded-lg p-3 text-center hover:shadow-md transition-shadow cursor-pointer" data-testid="my-day-tasks">
               <p className="text-lg font-bold text-amber-600">{myDay.pending_todos}</p>
               <p className="text-xs text-gray-500 flex items-center justify-center gap-1"><ListTodo size={10} /> My Tasks</p>
-            </div>
-            <div className="bg-white rounded-lg p-3 text-center">
+            </button>
+            <button onClick={() => setMyDayPopup("tickets")}
+              className="bg-white rounded-lg p-3 text-center hover:shadow-md transition-shadow cursor-pointer" data-testid="my-day-tickets">
               <p className="text-lg font-bold text-red-600">{myDay.active_tickets}</p>
               <p className="text-xs text-gray-500 flex items-center justify-center gap-1"><Headphones size={10} /> Active Tickets</p>
-            </div>
-            <div className="bg-white rounded-lg p-3 text-center">
-              <p className="text-lg font-bold text-orange-600">{myDay.departures_today?.length || 0}</p>
-              <p className="text-xs text-gray-500">Departures Today</p>
-            </div>
+            </button>
           </div>
-
-          {/* Departures Today Detail */}
-          {myDay.departures_today?.length > 0 && (
-            <div className="mt-3 space-y-1">
-              <p className="text-xs font-semibold text-orange-700 mb-1">Departures Today:</p>
-              {myDay.departures_today.map((d, i) => (
-                <div key={i} className="bg-white rounded-lg p-2 flex justify-between items-center text-sm">
-                  <span className="font-medium text-[#0B1C3D]">{d.head_name}</span>
-                  <span className="text-xs text-gray-500">{d.departure_time} {d.rooms?.length > 0 && `• Room ${d.rooms.join(", ")}`}</span>
-                </div>
-              ))}
-            </div>
-          )}
 
           {/* Special Needs */}
           {myDay.special_needs?.length > 0 && (
             <div className="mt-3 space-y-1">
               <p className="text-xs font-semibold text-purple-700 mb-1 flex items-center gap-1"><AlertTriangle size={10} /> Special Needs:</p>
               {myDay.special_needs.slice(0, 5).map((s, i) => (
-                <div key={i} className="bg-white rounded-lg p-2 text-sm">
-                  <span className="font-medium text-[#0B1C3D]">{s.head_name}: </span>
-                  <span className="text-gray-600">{s.needs.join("; ")}</span>
+                <div key={i} className="bg-white rounded-lg p-2 space-y-1">
+                  {(s.needs || []).map((n, j) => (
+                    <div key={j} className="text-xs flex items-start gap-1.5">
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-xs font-medium mt-0.5 ${n.is_family ? "bg-amber-100 text-amber-700" : "bg-blue-50 text-blue-700"}`}>
+                        {n.is_family ? "Family" : "Person"}
+                      </span>
+                      <div>
+                        <span className="font-medium text-[#0B1C3D]">{n.person}</span>
+                        {n.family_head && !n.is_family && <span className="text-gray-400 ml-1">(Family: {n.family_head})</span>}
+                        {n.room && <span className="text-gray-400 ml-1">· Room {n.room}</span>}
+                        <p className="text-gray-600">{n.need}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
           )}
         </div>
       )}
+
+      {/* My Day Popup — Assigned Guests */}
+      <Dialog open={myDayPopup === "guests"} onOpenChange={() => setMyDayPopup(null)}>
+        <DialogContent className="max-w-md max-h-[75vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>My Assigned Guests ({myDay?.assigned_guests || 0})</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            {(myDay?.assigned_guests_list || []).length === 0 ? <p className="text-gray-400 text-center py-4">No guests assigned</p> :
+              (myDay?.assigned_guests_list || []).map((g, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
+                  <div>
+                    <p className="font-medium text-sm text-[#0B1C3D]">{g.head_name}</p>
+                    <p className="text-xs text-gray-500">{g.num_people} people {g.rooms?.length > 0 && `· Room ${g.rooms.join(", ")}`}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${g.arrival_status === "arrived" ? "bg-green-100 text-green-700" : g.arrival_status === "departed" ? "bg-gray-100 text-gray-600" : "bg-blue-100 text-blue-700"}`}>
+                    {g.arrival_status}
+                  </span>
+                </div>
+              ))
+            }
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* My Day Popup — Tasks */}
+      <Dialog open={myDayPopup === "tasks"} onOpenChange={() => setMyDayPopup(null)}>
+        <DialogContent className="max-w-md max-h-[75vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>My Pending Tasks ({myDay?.pending_todos || 0})</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            {(myDay?.todos_list || []).length === 0 ? <p className="text-gray-400 text-center py-4">No pending tasks</p> :
+              (myDay?.todos_list || []).map((t, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
+                  <p className="font-medium text-sm text-[#0B1C3D]">{t.title}</p>
+                  <div className="flex gap-1 items-center">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${t.priority === "high" ? "bg-red-100 text-red-700" : t.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{t.priority}</span>
+                    {t.due_date && <span className="text-xs text-gray-400">{t.due_date}</span>}
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* My Day Popup — Tickets */}
+      <Dialog open={myDayPopup === "tickets"} onOpenChange={() => setMyDayPopup(null)}>
+        <DialogContent className="max-w-md max-h-[75vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Active Tickets ({myDay?.active_tickets || 0})</DialogTitle></DialogHeader>
+          <div className="space-y-2">
+            {(myDay?.tickets_list || []).length === 0 ? <p className="text-gray-400 text-center py-4">No active tickets</p> :
+              (myDay?.tickets_list || []).map((t, i) => (
+                <div key={i} className="bg-gray-50 rounded-lg p-3">
+                  <div className="flex justify-between items-start">
+                    <p className="font-medium text-sm text-[#0B1C3D] flex-1">{t.description || t.category}</p>
+                    <span className={`ml-2 text-xs px-2 py-0.5 rounded-full shrink-0 ${t.priority === "high" ? "bg-red-100 text-red-700" : t.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{t.priority}</span>
+                  </div>
+                  {t.guest && <p className="text-xs text-gray-500 mt-0.5">Guest: {t.guest}</p>}
+                </div>
+              ))
+            }
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Main Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

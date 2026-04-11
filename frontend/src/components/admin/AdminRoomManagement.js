@@ -90,12 +90,9 @@ export default function AdminRoomManagement({ user }) {
     } catch (e) { toast.error(parseApiError(e)); }
   };
 
-  const exportPDF = async () => {
-    try {
-      const resp = await axios.get(`${API}/api/admin/export-pdf`, { headers: authHeaders(), responseType: "blob" });
-      const url = window.URL.createObjectURL(resp.data);
-      const a = document.createElement("a"); a.href = url; a.download = "rooms.pdf"; a.click();
-    } catch { toast.error("Export failed"); }
+  const exportPDF = () => {
+    const params = new URLSearchParams({ report_type: "rooms", token: localStorage.getItem("admin_token") });
+    window.open(`${API}/api/admin/export-pdf?${params}`, "_blank");
   };
 
   // Build occupant map from registrations
@@ -247,7 +244,7 @@ export default function AdminRoomManagement({ user }) {
                     <div key={rm.room_code}
                       className={`rounded-xl p-3 border-2 transition ${isOccupied ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}
                       data-testid={`room-${rm.room_code}`}>
-                      <div className="flex justify-between items-start mb-2">
+                      <div className="flex justify-between items-start mb-1">
                         <span className="font-bold text-sm text-[#0B1C3D]">{rm.room_code}</span>
                         {isSuper && !isOccupied && (
                           <button onClick={() => deleteRoom(rm.room_code)} className="text-red-400 hover:text-red-600" data-testid={`delete-room-${rm.room_code}`}>
@@ -255,20 +252,23 @@ export default function AdminRoomManagement({ user }) {
                           </button>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500">Beds: {rm.capacity} {rm.ac_type ? `• ${rm.ac_type}` : ""} {rm.floor ? `• Floor ${rm.floor}` : ""}</p>
-                      {rm.notes && <p className="text-xs text-gray-400 italic truncate mt-0.5">{rm.notes}</p>}
+                      <p className="text-xs text-gray-500">
+                        {rm.ac_type || "Non-AC"} · {occupants.reduce((s, o) => s + o.num, 0)}/{rm.capacity} beds
+                      </p>
+                      {rm.floor && <p className="text-xs text-gray-400">Floor {rm.floor}</p>}
+                      {rm.notes && <p className="text-xs text-gray-400 italic truncate">{rm.notes}</p>}
                       {occupants.length > 0 && (
-                        <div className="mt-2 space-y-1">
+                        <div className="mt-1.5 space-y-1">
                           {occupants.map((o, i) => (
                             <div key={i} className="text-xs">
-                              <p className="font-medium text-[#0B1C3D] truncate">{o.name}</p>
-                              {o.ref && <p className="text-amber-600 truncate">Ref: {o.ref}</p>}
+                              <p className="font-medium text-[#0B1C3D] truncate">{o.name} <span className="font-normal text-gray-500">({o.num}p)</span></p>
+                              {o.swamsevak && <p className="text-purple-600 truncate text-xs">Contact: {o.swamsevak}</p>}
                             </div>
                           ))}
                         </div>
                       )}
                       <span className={`inline-block mt-2 text-xs px-2 py-0.5 rounded-full ${isOccupied ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-                        {isOccupied ? "Occupied" : "Available"}
+                        {isOccupied ? `Occupied` : "Available"}
                       </span>
                     </div>
                   );
