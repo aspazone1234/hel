@@ -107,7 +107,10 @@ export default function QRScanner({ user }) {
     } catch { toast.error("Failed"); }
   };
 
-  // Camera scan
+  const scanLoopRef = useRef(null);
+  const lastScannedRef = useRef("");
+
+  // Camera scan with jsQR auto-detection
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -119,23 +122,53 @@ export default function QRScanner({ user }) {
     } catch { toast.error("Camera access denied"); }
   };
 
-  const stopCamera = () => {
+  const stopCamera = useCallback(() => {
+    if (scanLoopRef.current) {
+      cancelAnimationFrame(scanLoopRef.current);
+      scanLoopRef.current = null;
+    }
     if (videoRef.current?.srcObject) {
       videoRef.current.srcObject.getTracks().forEach(t => t.stop());
       videoRef.current.srcObject = null;
-      setCameraActive(false);
     }
-  };
+    setCameraActive(false);
+    lastScannedRef.current = "";
+  }, []);
 
-  const captureFrame = () => {
-    if (!videoRef.current || !canvasRef.current) return;
+  // Auto-scan loop using requestAnimationFrame + jsQR
+  useEffect(() => {
+    if (!cameraActive) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext("2d").drawImage(video, 0, 0);
-    toast.info("Frame captured - enter token manually for now");
-  };
+    if (!video || !canvas) return;
+    const ctx = canvas.getContext("2d");
+
+    const tick = () => {
+      if (!video.srcObject || video.readyState < 2) {
+        scanLoopRef.current = requestAnimationFrame(tick);
+        return;
+      }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "dontInvert" });
+      if (code?.data && code.data !== lastScannedRef.current) {
+        lastScannedRef.current = code.data;
+        handleScan(code.data);
+        // Pause scanning for 3s to avoid re-scanning same QR
+        setTimeout(() => { lastScannedRef.current = ""; }, 3000);
+      }
+      scanLoopRef.current = requestAnimationFrame(tick);
+    };
+    scanLoopRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (scanLoopRef.current) cancelAnimationFrame(scanLoopRef.current);
+    };
+  }, [cameraActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup on unmount
+  useEffect(() => { return () => stopCamera(); }, [stopCamera]);
 
   return (
     <div className="p-4 md:p-6 space-y-4" data-testid="attendance-marker">
@@ -178,8 +211,11 @@ export default function QRScanner({ user }) {
                 </button>
               )}
             </div>
-            <video ref={videoRef} className={`w-full max-w-md rounded-lg border-2 border-dashed border-gray-200 ${cameraActive ? "" : "hidden"}`} data-testid="camera-preview" />
+            <video ref={videoRef} className={`w-full max-w-md rounded-lg border-2 border-dashed border-gray-200 ${cameraActive ? "" : "hidden"}`} data-testid="camera-preview" playsInline muted />
             <canvas ref={canvasRef} className="hidden" />
+            {cameraActive && (
+              <p className="text-xs text-green-600 text-center animate-pulse">Scanning for QR code...</p>
+            )}
             {!cameraActive && (
               <div className="text-center py-8 text-gray-400 text-sm border-2 border-dashed rounded-lg">
                 Tap "Open Camera" to start scanning

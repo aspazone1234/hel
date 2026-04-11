@@ -1,11 +1,78 @@
 import { useState, useEffect, useCallback } from "react";
-import { Eye, Search, Plane, Undo2, Filter, Download, Trash2 } from "lucide-react";
+import { Eye, Search, Plane, Undo2, Filter, Download, Trash2, Edit } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { FullRegistrationView } from "./PendingApproval";
 
 const API = process.env.REACT_APP_BACKEND_URL;
+
+function EditArrivedDialog({ reg, onClose, onSaved, authHeaders }) {
+  const [form, setForm] = useState({
+    additional_phone: reg.additional_phone || "",
+    email: reg.email || "",
+    address: { full_address: reg.address?.full_address || "", city: reg.address?.city || "", state: reg.address?.state || "", country: reg.address?.country || "India", pin_code: reg.address?.pin_code || "" },
+    admin_notes: reg.admin_notes || "",
+    attendees: (reg.attendees || []).map(a => ({ ...a })),
+    travel_mode: reg.travel_mode || "",
+    travel_details: reg.travel_details || "",
+    family_special_request: reg.family_special_request || "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/admin/registrations/${reg.id}`, form, { headers: authHeaders() });
+      toast.success("Registration updated");
+      onSaved();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed to update"); }
+    setSaving(false);
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Edit Registration</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-medium text-gray-600">Additional Phone</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.additional_phone} onChange={e => setForm({...form, additional_phone: e.target.value})} /></div>
+            <div><label className="text-xs font-medium text-gray-600">Email</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
+          </div>
+          <div><label className="text-xs font-medium text-gray-600">Full Address</label>
+            <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.full_address} onChange={e => setForm({...form, address: {...form.address, full_address: e.target.value}})} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-medium text-gray-600">City</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.city} onChange={e => setForm({...form, address: {...form.address, city: e.target.value}})} /></div>
+            <div><label className="text-xs font-medium text-gray-600">State</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.state} onChange={e => setForm({...form, address: {...form.address, state: e.target.value}})} /></div>
+          </div>
+          <h4 className="font-semibold text-[#0B1C3D] pt-2">Attendees</h4>
+          {form.attendees.map((a, i) => (
+            <div key={a.id} className="bg-gray-50 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-semibold text-gray-500">Person {i + 1} {a.id === reg.group_head_id && "(Head)"}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <input className="border rounded px-2 py-1.5 text-sm" placeholder="Name" value={a.name} onChange={e => { const atts = [...form.attendees]; atts[i] = {...atts[i], name: e.target.value}; setForm({...form, attendees: atts}); }} />
+                <input className="border rounded px-2 py-1.5 text-sm" placeholder="Age" type="number" value={a.age} onChange={e => { const atts = [...form.attendees]; atts[i] = {...atts[i], age: e.target.value}; setForm({...form, attendees: atts}); }} />
+              </div>
+              <input className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Special needs" value={a.special_needs || ""} onChange={e => { const atts = [...form.attendees]; atts[i] = {...atts[i], special_needs: e.target.value}; setForm({...form, attendees: atts}); }} />
+            </div>
+          ))}
+          <div><label className="text-xs font-medium text-gray-600">Admin Notes</label>
+            <textarea className="w-full border rounded px-3 py-2 text-sm mt-1" rows={2} value={form.admin_notes} onChange={e => setForm({...form, admin_notes: e.target.value})} /></div>
+          <div className="flex gap-2 pt-2">
+            <button onClick={save} disabled={saving} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50" data-testid="save-edit-arrived-btn">
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+            <button onClick={onClose} className="flex-1 border py-2 rounded-lg text-sm">Cancel</button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export default function ArrivedGuestList({ user }) {
   const [regs, setRegs] = useState([]);
@@ -15,6 +82,7 @@ export default function ArrivedGuestList({ user }) {
   const [page, setPage] = useState(1);
   const [viewReg, setViewReg] = useState(null);
   const [departureTarget, setDepartureTarget] = useState(null);
+  const [editReg, setEditReg] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filterArrival, setFilterArrival] = useState("");
   const [filterDeparture, setFilterDeparture] = useState("");
@@ -108,11 +176,11 @@ export default function ArrivedGuestList({ user }) {
           <p className="text-sm text-gray-500">{total} total records</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <button onClick={() => { window.open(`${API}/api/admin/export-csv?bucket=arrived&token=${localStorage.getItem("admin_token")}`, "_blank"); }}
+          <button onClick={() => { const params = new URLSearchParams({ bucket: "arrived", token: localStorage.getItem("admin_token"), search, status_filter: statusFilter }); window.open(`${API}/api/admin/export-csv?${params}`, "_blank"); }}
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-arrived-csv">
             <Download size={14} /> CSV
           </button>
-          <button onClick={() => { window.open(`${API}/api/admin/export-pdf?bucket=arrived&token=${localStorage.getItem("admin_token")}`, "_blank"); }}
+          <button onClick={() => { const params = new URLSearchParams({ bucket: "arrived", token: localStorage.getItem("admin_token"), search, status_filter: statusFilter }); window.open(`${API}/api/admin/export-pdf?${params}`, "_blank"); }}
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-arrived-pdf">
             <Download size={14} /> PDF
           </button>
@@ -210,6 +278,12 @@ export default function ArrivedGuestList({ user }) {
                     </button>
                   )}
                   {isSuper && (
+                    <button onClick={() => setEditReg(r)} data-testid={`edit-arrived-${r.id}`}
+                      className="bg-indigo-50 text-indigo-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-indigo-100">
+                      <Edit size={12} /> Edit
+                    </button>
+                  )}
+                  {isSuper && (
                     <button onClick={() => deleteEntry(r.id)} data-testid={`delete-arrived-${r.id}`}
                       className="bg-red-50 text-red-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-red-100">
                       <Trash2 size={12} /> Delete
@@ -241,6 +315,11 @@ export default function ArrivedGuestList({ user }) {
 
       {/* Departure Confirmation */}
       <Dialog open={!!departureTarget} onOpenChange={() => setDepartureTarget(null)}>
+
+      {/* Edit Dialog */}
+      {editReg && <EditArrivedDialog reg={editReg} onClose={() => setEditReg(null)} onSaved={() => { setEditReg(null); fetchRegs(); }} authHeaders={authHeaders} />}
+
+
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Confirm Departure</DialogTitle></DialogHeader>
           {departureTarget && (

@@ -7,6 +7,101 @@ import { FullRegistrationView } from "./PendingApproval";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
+function EditRegistrationDialog({ reg, onClose, onSaved, authHeaders }) {
+  const [form, setForm] = useState({
+    additional_phone: reg.additional_phone || "",
+    email: reg.email || "",
+    address: { full_address: reg.address?.full_address || "", city: reg.address?.city || "", state: reg.address?.state || "", country: reg.address?.country || "India", pin_code: reg.address?.pin_code || "" },
+    admin_notes: reg.admin_notes || "",
+    attendees: (reg.attendees || []).map(a => ({ ...a })),
+    expected_arrival_time: reg.expected_arrival_time || "",
+    expected_departure_time: reg.expected_departure_time || "",
+    travel_mode: reg.travel_mode || "",
+    travel_details: reg.travel_details || "",
+    family_special_request: reg.family_special_request || "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const TIME_OPTIONS = ["Early Morning (5-8 AM)", "Morning (8-11 AM)", "Afternoon (11 AM-2 PM)", "Afternoon (2-5 PM)", "Evening (5-8 PM)", "Night (8-11 PM)", "Late Night (11 PM+)"];
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await axios.put(`${API}/api/admin/registrations/${reg.id}`, form, { headers: authHeaders() });
+      toast.success("Registration updated");
+      onSaved();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed to update"); }
+    setSaving(false);
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Edit Registration</DialogTitle></DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-medium text-gray-600">Additional Phone</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.additional_phone} onChange={e => setForm({...form, additional_phone: e.target.value})} /></div>
+            <div><label className="text-xs font-medium text-gray-600">Email</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
+          </div>
+          <div><label className="text-xs font-medium text-gray-600">Full Address</label>
+            <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.full_address} onChange={e => setForm({...form, address: {...form.address, full_address: e.target.value}})} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-medium text-gray-600">City</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.city} onChange={e => setForm({...form, address: {...form.address, city: e.target.value}})} /></div>
+            <div><label className="text-xs font-medium text-gray-600">State</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.state} onChange={e => setForm({...form, address: {...form.address, state: e.target.value}})} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-medium text-gray-600">Country</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.country} onChange={e => setForm({...form, address: {...form.address, country: e.target.value}})} /></div>
+            <div><label className="text-xs font-medium text-gray-600">Pin Code</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.pin_code} onChange={e => setForm({...form, address: {...form.address, pin_code: e.target.value}})} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-medium text-gray-600">Arrival Time</label>
+              <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.expected_arrival_time} onChange={e => setForm({...form, expected_arrival_time: e.target.value})}>
+                <option value="">Select...</option>{TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select></div>
+            <div><label className="text-xs font-medium text-gray-600">Departure Time</label>
+              <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.expected_departure_time} onChange={e => setForm({...form, expected_departure_time: e.target.value})}>
+                <option value="">Select...</option>{TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+              </select></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="text-xs font-medium text-gray-600">Travel Mode</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.travel_mode} onChange={e => setForm({...form, travel_mode: e.target.value})} /></div>
+            <div><label className="text-xs font-medium text-gray-600">Travel Details</label>
+              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.travel_details} onChange={e => setForm({...form, travel_details: e.target.value})} /></div>
+          </div>
+          <div><label className="text-xs font-medium text-gray-600">Family Special Request</label>
+            <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.family_special_request} onChange={e => setForm({...form, family_special_request: e.target.value})} /></div>
+          <h4 className="font-semibold text-[#0B1C3D] pt-2">Attendees</h4>
+          {form.attendees.map((a, i) => (
+            <div key={a.id} className="bg-gray-50 rounded-lg p-3 space-y-2">
+              <p className="text-xs font-semibold text-gray-500">Person {i + 1} {a.id === reg.group_head_id && "(Head)"}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <input className="border rounded px-2 py-1.5 text-sm" placeholder="Name" value={a.name} onChange={e => { const atts = [...form.attendees]; atts[i] = {...atts[i], name: e.target.value}; setForm({...form, attendees: atts}); }} />
+                <input className="border rounded px-2 py-1.5 text-sm" placeholder="Age" type="number" value={a.age} onChange={e => { const atts = [...form.attendees]; atts[i] = {...atts[i], age: e.target.value}; setForm({...form, attendees: atts}); }} />
+              </div>
+              <input className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Special needs" value={a.special_needs || ""} onChange={e => { const atts = [...form.attendees]; atts[i] = {...atts[i], special_needs: e.target.value}; setForm({...form, attendees: atts}); }} />
+            </div>
+          ))}
+          <div><label className="text-xs font-medium text-gray-600">Admin Notes</label>
+            <textarea className="w-full border rounded px-3 py-2 text-sm mt-1" rows={2} value={form.admin_notes} onChange={e => setForm({...form, admin_notes: e.target.value})} /></div>
+          <div className="flex gap-2 pt-2">
+            <button onClick={save} disabled={saving} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50" data-testid="save-edit-btn">
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+            <button onClick={onClose} className="flex-1 border py-2 rounded-lg text-sm">Cancel</button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function ExpectedGuestList({ user }) {
   const [regs, setRegs] = useState([]);
   const [total, setTotal] = useState(0);
@@ -17,6 +112,7 @@ export default function ExpectedGuestList({ user }) {
   const [showManual, setShowManual] = useState(false);
   const [showAssign, setShowAssign] = useState(null);
   const [showRoomAssign, setShowRoomAssign] = useState(null);
+  const [editReg, setEditReg] = useState(null);
   const [admins, setAdmins] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
@@ -140,11 +236,11 @@ export default function ExpectedGuestList({ user }) {
             className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1">
             <Plus size={14} /> Add Manual
           </button>
-          <button onClick={() => { window.open(`${API}/api/admin/export-csv?bucket=expected&token=${localStorage.getItem("admin_token")}`, "_blank"); }} data-testid="export-expected-csv"
+          <button onClick={() => { const params = new URLSearchParams({ bucket: "expected", token: localStorage.getItem("admin_token"), search, status_filter: statusFilter }); window.open(`${API}/api/admin/export-csv?${params}`, "_blank"); }} data-testid="export-expected-csv"
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
             <Download size={14} /> CSV
           </button>
-          <button onClick={() => { window.open(`${API}/api/admin/export-pdf?bucket=expected&token=${localStorage.getItem("admin_token")}`, "_blank"); }} data-testid="export-expected-pdf"
+          <button onClick={() => { const params = new URLSearchParams({ bucket: "expected", token: localStorage.getItem("admin_token"), search, status_filter: statusFilter }); window.open(`${API}/api/admin/export-pdf?${params}`, "_blank"); }} data-testid="export-expected-pdf"
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
             <Download size={14} /> PDF
           </button>
@@ -260,6 +356,10 @@ export default function ExpectedGuestList({ user }) {
                           <QrCode size={12} /> Generate QR
                         </button>
                       )}
+                      <button onClick={() => setEditReg(r)} data-testid={`edit-expected-${r.id}`}
+                        className="bg-indigo-50 text-indigo-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-indigo-100">
+                        <Edit size={12} /> Edit
+                      </button>
                       <button onClick={() => deleteEntry(r.id)} data-testid={`delete-expected-${r.id}`}
                         className="bg-red-50 text-red-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-red-100">
                         <Trash2 size={12} /> Delete
@@ -339,6 +439,9 @@ export default function ExpectedGuestList({ user }) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Dialog */}
+      {editReg && <EditRegistrationDialog reg={editReg} onClose={() => setEditReg(null)} onSaved={() => { setEditReg(null); fetchRegs(); }} authHeaders={authHeaders} />}
 
       {/* Manual Add Dialog */}
       {showManual && <ManualAddDialog onClose={() => { setShowManual(false); fetchRegs(); }} authHeaders={authHeaders} refPersons={refPersons} />}

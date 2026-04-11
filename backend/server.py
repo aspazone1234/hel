@@ -1225,13 +1225,18 @@ async def clear_audit_logs(request: Request):
 
 # ─── Exports ───
 @api_router.get("/admin/export-csv")
-async def export_csv(request: Request, bucket: str = "expected"):
+async def export_csv(request: Request, bucket: str = "expected", search: str = "", status_filter: str = "all"):
     await get_current_user(request)
     if bucket == "pending":
         query = {"approval_status": "pending"}
         filename = "pending_registrations.csv"
     elif bucket == "arrived":
-        query = {"approval_status": "approved", "arrival_status": "arrived"}
+        if status_filter == "arrived":
+            query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived"]}}
+        elif status_filter == "departed":
+            query = {"approval_status": "approved", "arrival_status": "departed"}
+        else:
+            query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived", "departed"]}}
         filename = "arrived_guests.csv"
     elif bucket == "rooms":
         rooms = await db.rooms.find({}, {"_id": 0}).to_list(500)
@@ -1246,8 +1251,16 @@ async def export_csv(request: Request, bucket: str = "expected"):
         output.seek(0)
         return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=rooms.csv"})
     else:
-        query = {"approval_status": "approved"}
+        if status_filter == "not_coming":
+            query = {"approval_status": "approved", "arrival_status": "not_coming"}
+        else:
+            query = {"approval_status": "approved", "arrival_status": {"$in": ["not_arrived", "not_coming"]}}
         filename = "expected_guests.csv"
+    if search:
+        query["$or"] = [
+            {"attendees.name": {"$regex": search, "$options": "i"}},
+            {"primary_mobile": {"$regex": search, "$options": "i"}},
+        ]
     regs = await db.registrations.find(query, {"_id": 0}).to_list(5000)
     output = io.StringIO()
     fields = ["id", "primary_mobile", "additional_phone", "email", "num_people", "arrival_date", "departure_date", "arrival_status", "attendance_intent", "assigned_swamsevak", "admin_notes", "created_at"]
@@ -1266,7 +1279,7 @@ async def export_csv(request: Request, bucket: str = "expected"):
     return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 @api_router.get("/admin/export-pdf")
-async def export_pdf(request: Request, report_type: str = "guestlist", bucket: str = "expected"):
+async def export_pdf(request: Request, report_type: str = "guestlist", bucket: str = "expected", search: str = "", status_filter: str = "all"):
     await get_current_user(request)
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -1292,19 +1305,31 @@ async def export_pdf(request: Request, report_type: str = "guestlist", bucket: s
                 pdf.cell(col_w[i], 7, str(v), border=1, align="C")
             pdf.ln()
     else:
-        # Determine query based on bucket
         if bucket == "pending":
             query = {"approval_status": "pending"}
             title = "Pending Registrations"
             fname_base = "pending_registrations"
         elif bucket == "arrived":
-            query = {"approval_status": "approved", "arrival_status": "arrived"}
+            if status_filter == "arrived":
+                query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived"]}}
+            elif status_filter == "departed":
+                query = {"approval_status": "approved", "arrival_status": "departed"}
+            else:
+                query = {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived", "departed"]}}
             title = "Arrived Guests"
             fname_base = "arrived_guests"
         else:
-            query = {"approval_status": "approved"}
+            if status_filter == "not_coming":
+                query = {"approval_status": "approved", "arrival_status": "not_coming"}
+            else:
+                query = {"approval_status": "approved", "arrival_status": {"$in": ["not_arrived", "not_coming"]}}
             title = "Expected Guest List"
             fname_base = "expected_guests"
+        if search:
+            query["$or"] = [
+                {"attendees.name": {"$regex": search, "$options": "i"}},
+                {"primary_mobile": {"$regex": search, "$options": "i"}},
+            ]
         pdf.cell(0, 10, f"{title} - Katha 2026", new_x="LMARGIN", new_y="NEXT", align="C")
         pdf.set_font("Helvetica", "", 8)
         pdf.cell(0, 6, f"Generated: {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')}", new_x="LMARGIN", new_y="NEXT", align="C")
