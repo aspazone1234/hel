@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 class KathaEventAPITester:
-    def __init__(self, base_url="https://shrimad-katha-event.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://guest-arrival-hub-3.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.session = requests.Session()
         self.session.headers.update({'Content-Type': 'application/json'})

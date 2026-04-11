@@ -6,13 +6,19 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../componen
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
+const EMPTY_FORM = { room_code: "", floor: "", capacity: 2, ac_type: "Non-AC", notes: "" };
+
 export default function AdminRoomManagement({ user }) {
   const [rooms, setRooms] = useState([]);
   const [regs, setRegs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [addMode, setAddMode] = useState("single"); // "single" | "bulk"
   const [viewMode, setViewMode] = useState("floor");
-  const [form, setForm] = useState({ room_code: "", floor: 1, capacity: 4 });
+  const [form, setForm] = useState(EMPTY_FORM);
+  // Bulk create: multiple room codes (one per line), shared settings
+  const [bulkCodes, setBulkCodes] = useState("");
+  const [bulkSettings, setBulkSettings] = useState({ floor: "", capacity: 2, ac_type: "Non-AC", notes: "" });
   const [vacancyForecast, setVacancyForecast] = useState([]);
   const isSuper = user?.role === "superadmin";
 
@@ -27,7 +33,7 @@ export default function AdminRoomManagement({ user }) {
         axios.get(`${API}/api/admin/rooms`, { headers: authHeaders() }),
         axios.get(`${API}/api/admin/guests/expected`, { headers: authHeaders(), params: { per_page: 500 } }),
       ]);
-      setRooms(roomRes.data.data || []);
+      setRooms(roomRes.data.data || roomRes.data || []);
       setRegs(regRes.data.data || []);
     } catch {}
     setLoading(false);
@@ -42,14 +48,37 @@ export default function AdminRoomManagement({ user }) {
       .catch(() => {});
   }, [authHeaders]);
 
+  const parseApiError = (e) => {
+    const detail = e.response?.data?.detail;
+    if (Array.isArray(detail)) return detail.map(d => d.msg).join(", ");
+    return detail || "Failed";
+  };
+
   const createRoom = async () => {
+    if (!form.room_code.trim()) { toast.error("Room number is required"); return; }
     try {
       await axios.post(`${API}/api/admin/rooms`, form, { headers: authHeaders() });
       toast.success("Room created");
       setShowAdd(false);
-      setForm({ room_code: "", floor: 1, capacity: 4 });
+      setForm(EMPTY_FORM);
       fetchData();
-    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+    } catch (e) { toast.error(parseApiError(e)); }
+  };
+
+  const createBulkRooms = async () => {
+    const codes = bulkCodes.split("\n").map(c => c.trim()).filter(Boolean);
+    if (codes.length === 0) { toast.error("Enter at least one room number"); return; }
+    const rooms = codes.map(code => ({ room_code: code, ...bulkSettings }));
+    try {
+      const res = await axios.post(`${API}/api/admin/rooms/bulk`, { rooms }, { headers: authHeaders() });
+      const { created, errors: errs } = res.data;
+      toast.success(`${created} room(s) created`);
+      if (errs?.length) toast.error(`Skipped: ${errs.join("; ")}`);
+      setShowAdd(false);
+      setBulkCodes("");
+      setBulkSettings({ floor: "", capacity: 2, ac_type: "Non-AC", notes: "" });
+      fetchData();
+    } catch (e) { toast.error(parseApiError(e)); }
   };
 
   const deleteRoom = async (code) => {
@@ -58,7 +87,7 @@ export default function AdminRoomManagement({ user }) {
       await axios.delete(`${API}/api/admin/rooms/${code}`, { headers: authHeaders() });
       toast.success("Room deleted");
       fetchData();
-    } catch { toast.error("Failed"); }
+    } catch (e) { toast.error(parseApiError(e)); }
   };
 
   const exportPDF = async () => {
@@ -226,7 +255,8 @@ export default function AdminRoomManagement({ user }) {
                           </button>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500">Cap: {rm.capacity} • Floor {rm.floor}</p>
+                      <p className="text-xs text-gray-500">Beds: {rm.capacity} {rm.ac_type ? `• ${rm.ac_type}` : ""} {rm.floor ? `• Floor ${rm.floor}` : ""}</p>
+                      {rm.notes && <p className="text-xs text-gray-400 italic truncate mt-0.5">{rm.notes}</p>}
                       {occupants.length > 0 && (
                         <div className="mt-2 space-y-1">
                           {occupants.map((o, i) => (
@@ -251,21 +281,114 @@ export default function AdminRoomManagement({ user }) {
       )}
 
       {/* Add Room Dialog */}
-      <Dialog open={showAdd} onOpenChange={() => setShowAdd(false)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Add New Room</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Room Code*" value={form.room_code}
-              onChange={(e) => setForm({ ...form, room_code: e.target.value })} data-testid="room-code-input" />
-            <input type="number" className="w-full border rounded px-3 py-2 text-sm" placeholder="Floor" value={form.floor}
-              onChange={(e) => setForm({ ...form, floor: parseInt(e.target.value) || 1 })} />
-            <input type="number" className="w-full border rounded px-3 py-2 text-sm" placeholder="Capacity" value={form.capacity}
-              onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value) || 1 })} />
-            <div className="flex gap-2">
-              <button onClick={createRoom} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm">Create</button>
-              <button onClick={() => setShowAdd(false)} className="flex-1 border py-2 rounded-lg text-sm">Cancel</button>
-            </div>
+      <Dialog open={showAdd} onOpenChange={(v) => { setShowAdd(v); if (!v) { setForm(EMPTY_FORM); setBulkCodes(""); setAddMode("single"); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Add Room(s)</DialogTitle></DialogHeader>
+
+          {/* Mode Toggle */}
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-1">
+            <button onClick={() => setAddMode("single")}
+              className={`flex-1 py-1.5 rounded-md text-sm transition ${addMode === "single" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-500"}`}
+              data-testid="add-room-single-tab">
+              Single Room
+            </button>
+            <button onClick={() => setAddMode("bulk")}
+              className={`flex-1 py-1.5 rounded-md text-sm transition ${addMode === "bulk" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-500"}`}
+              data-testid="add-room-bulk-tab">
+              Bulk Create
+            </button>
           </div>
+
+          {addMode === "single" ? (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Room Number *</label>
+                <input className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. 101, A-12, G-3"
+                  value={form.room_code} onChange={(e) => setForm({ ...form, room_code: e.target.value })}
+                  data-testid="room-code-input" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">AC / Non-AC</label>
+                <select className="w-full border rounded px-3 py-2 text-sm bg-white"
+                  value={form.ac_type} onChange={(e) => setForm({ ...form, ac_type: e.target.value })}
+                  data-testid="room-ac-select">
+                  <option value="AC">AC</option>
+                  <option value="Non-AC">Non-AC</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Number of Beds</label>
+                <input type="number" min={1} max={20} className="w-full border rounded px-3 py-2 text-sm"
+                  placeholder="2" value={form.capacity}
+                  onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value) || 1 })}
+                  data-testid="room-capacity-input" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Floor (optional)</label>
+                <input className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. Ground, 1, 2"
+                  value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })}
+                  data-testid="room-floor-input" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Other Notes</label>
+                <textarea className="w-full border rounded px-3 py-2 text-sm resize-none" rows={2}
+                  placeholder="e.g. Corner room, attached bathroom..."
+                  value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  data-testid="room-notes-input" />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={createRoom} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm font-medium" data-testid="create-room-btn">Create Room</button>
+                <button onClick={() => setShowAdd(false)} className="flex-1 border py-2 rounded-lg text-sm">Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Room Numbers (one per line) *</label>
+                <textarea className="w-full border rounded px-3 py-2 text-sm resize-none" rows={5}
+                  placeholder={"101\n102\n103\nA-1\nB-2"}
+                  value={bulkCodes} onChange={(e) => setBulkCodes(e.target.value)}
+                  data-testid="bulk-room-codes-input" />
+                <p className="text-xs text-gray-400 mt-0.5">{bulkCodes.split("\n").filter(c => c.trim()).length} room(s) listed</p>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">AC / Non-AC</label>
+                  <select className="w-full border rounded px-3 py-2 text-sm bg-white"
+                    value={bulkSettings.ac_type} onChange={(e) => setBulkSettings(s => ({ ...s, ac_type: e.target.value }))}
+                    data-testid="bulk-ac-select">
+                    <option value="AC">AC</option>
+                    <option value="Non-AC">Non-AC</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Beds per Room</label>
+                  <input type="number" min={1} max={20} className="w-full border rounded px-3 py-2 text-sm"
+                    value={bulkSettings.capacity}
+                    onChange={(e) => setBulkSettings(s => ({ ...s, capacity: parseInt(e.target.value) || 1 }))}
+                    data-testid="bulk-capacity-input" />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Floor (optional, same for all)</label>
+                <input className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. Ground, 1, 2"
+                  value={bulkSettings.floor} onChange={(e) => setBulkSettings(s => ({ ...s, floor: e.target.value }))}
+                  data-testid="bulk-floor-input" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Notes (same for all)</label>
+                <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Optional shared notes"
+                  value={bulkSettings.notes} onChange={(e) => setBulkSettings(s => ({ ...s, notes: e.target.value }))}
+                  data-testid="bulk-notes-input" />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button onClick={createBulkRooms} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm font-medium" data-testid="create-bulk-rooms-btn">
+                  Create {bulkCodes.split("\n").filter(c => c.trim()).length || ""} Room(s)
+                </button>
+                <button onClick={() => setShowAdd(false)} className="flex-1 border py-2 rounded-lg text-sm">Cancel</button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

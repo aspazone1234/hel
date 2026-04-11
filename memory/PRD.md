@@ -22,6 +22,7 @@ Comprehensive event operations platform for Shrimad Bhagavat Katha 2026, Pushkar
 - **Optional**: Email, Special Needs, Family/Group Special Request (in attendees modal), Travel mode/details
 - **Removed from UI**: Family/Group Special Request (from step 0, moved to attendees edit), Preferred Language
 - Post-submit: redirects to User Portal with success banner
+- **Fixed (Feb 2026)**: `stateSearch is not defined` crash after OTP verification → renamed to `addrStateSearch`
 
 ### User Single-Page Portal (/my-registration)
 - Collapsible sections: Attendees, Contact, Address, Stay & Travel, Reference, Allocation
@@ -43,6 +44,14 @@ Comprehensive event operations platform for Shrimad Bhagavat Katha 2026, Pushkar
 - **Manual Entry form**: exact field replica of public form (reference/relation dropdowns, mandatory age/times, time slot selectors)
 - **Audit log**: stores previous AND new values for every field change
 
+### Room Management
+- Floor-wise / Reference Person / Swamsevak-wise views
+- **Fixed (Feb 2026)**: Room creation error toast with FastAPI validation error arrays → now parses properly
+- **Fixed (Feb 2026)**: Room list display (raw list vs `.data` wrapper) fixed
+- **Updated (Feb 2026)**: Add Room dialog now shows labeled fields: Room Number, AC/Non-AC, Number of Beds, Floor (optional), Other Notes
+- **Added (Feb 2026)**: Bulk Create tab — enter multiple room numbers (one per line), set shared AC type, beds, floor, notes
+- Room cards now display: Beds, AC type, Floor, Notes, occupant info
+
 ### QR Code System
 - **Super Admin only** generation (in Expected list only)
 - **Conditional button**: "Generate QR" (no QR) / "Download QR" (QR exists)
@@ -58,7 +67,8 @@ Comprehensive event operations platform for Shrimad Bhagavat Katha 2026, Pushkar
 - Both scan and search modes use `mark-arrival` endpoint (enforces 3-condition block)
 
 ## Remaining Backlog
-### P0 - None remaining
+### P0 - QR Scanner Auto-Detection (jsQR)
+- Implement `requestAnimationFrame` loop in `QRScanner.js` using jsQR for hands-free scan
 
 ### P1
 - Real Twilio SMS / WhatsApp Business API integration

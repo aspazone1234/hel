@@ -578,12 +578,12 @@ export default function RegisterPage() {
                   <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F *" : "State *"}</Label>
                   {geoStates.length > 0 ? (
                     <>
-                      <Input placeholder={lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F \u0916\u094B\u091C\u0947\u0902..." : "Search state..."} value={stateSearch} onChange={e => setStateSearch(e.target.value)}
+                      <Input placeholder={lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F \u0916\u094B\u091C\u0947\u0902..." : "Search state..."} value={addrStateSearch} onChange={e => setAddrStateSearch(e.target.value)}
                         className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.state ? "border-red-400" : ""}`} data-testid="state-search" />
-                      {stateSearch && geoStates.filter(s => s.name.toLowerCase().includes(stateSearch.toLowerCase())).length > 0 && (
+                      {addrStateSearch && geoStates.filter(s => s.name.toLowerCase().includes(addrStateSearch.toLowerCase())).length > 0 && (
                         <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg z-10 relative">
-                          {geoStates.filter(s => s.name.toLowerCase().includes(stateSearch.toLowerCase())).slice(0, 8).map(s => (
-                            <button key={s.code} type="button" onClick={() => { setAddr("state", s.name); setStateSearch(""); }}
+                          {geoStates.filter(s => s.name.toLowerCase().includes(addrStateSearch.toLowerCase())).slice(0, 8).map(s => (
+                            <button key={s.code} type="button" onClick={() => { setAddr("state", s.name); setAddrStateSearch(""); }}
                               className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{s.name}</button>
                           ))}
                         </div>
