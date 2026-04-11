@@ -47,10 +47,21 @@ Comprehensive event operations platform for Shrimad Bhagavat Katha 2026, Pushkar
 ### Room Management
 - Floor-wise / Reference Person / Swamsevak-wise views
 - **Fixed (Feb 2026)**: Room creation error toast with FastAPI validation error arrays → now parses properly
-- **Fixed (Feb 2026)**: Room list display (raw list vs `.data` wrapper) fixed
+- **Fixed (Feb 2026)**: Room list display (raw list vs `.data` wrapper) fixed in both AdminRoomManagement and ExpectedGuestList
+- **Fixed (Feb 2026)**: Room assignment dialog now shows ALL rooms — available (green, clickable) and occupied (red, grayed out, shows occupant name)
 - **Updated (Feb 2026)**: Add Room dialog now shows labeled fields: Room Number, AC/Non-AC, Number of Beds, Floor (optional), Other Notes
 - **Added (Feb 2026)**: Bulk Create tab — enter multiple room numbers (one per line), set shared AC type, beds, floor, notes
 - Room cards now display: Beds, AC type, Floor, Notes, occupant info
+
+### Swamsevak / Contact Person Assignment
+- **Fixed (Feb 2026)**: Swamsevak assignment stored `username` instead of `name` → dashboard showed 0 assigned guests
+- **Fixed (Feb 2026)**: swamsevak-dashboard now queries by both name AND username (backward compat)
+- Todos and tickets in swamsevak dashboard now match by both name and username
+
+### Dashboard — Reference Person & Relation Stats
+- **Added (Feb 2026)**: "By Reference Person" section — clickable cards per reference person showing families/people count
+- **Added (Feb 2026)**: "By Relation" section — clickable cards per relation category showing families/people count
+- Both sections open drill-down popup listing guests when clicked
 
 ### QR Code System
 - **Super Admin only** generation (in Expected list only)

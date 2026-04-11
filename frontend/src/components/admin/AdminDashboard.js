@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Users, Hotel, UserCheck, Plane, AlertTriangle, Clock, ChevronDown, ChevronUp, X, Bell, Star, ListTodo, Headphones } from "lucide-react";
+import { Users, Hotel, UserCheck, Plane, AlertTriangle, Clock, ChevronDown, ChevronUp, X, Bell, Star, ListTodo, Headphones, BookOpen, Heart } from "lucide-react";
 import axios from "axios";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 
@@ -217,6 +217,52 @@ export default function AdminDashboard({ user }) {
           </div>
         )}
       </div>
+
+      {/* Reference Person Stats */}
+      {data.reference_person_stats?.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="reference-person-stats">
+          <div className="p-4 border-b flex items-center gap-2">
+            <BookOpen size={16} className="text-amber-600" />
+            <h2 className="font-semibold text-[#0B1C3D] text-base">By Reference Person</h2>
+            <span className="text-xs text-gray-400 ml-1">(click to see guests)</span>
+          </div>
+          <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {data.reference_person_stats.map((rp) => (
+              <button key={rp.name}
+                onClick={() => openDrillDown("reference_person", rp.name, `Guests — Ref: ${rp.name}`)}
+                className="text-left bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl p-3 transition"
+                data-testid={`ref-stat-${rp.name}`}>
+                <p className="font-semibold text-[#0B1C3D] text-sm truncate">{rp.name}</p>
+                <p className="text-amber-700 font-bold text-lg">{rp.families}</p>
+                <p className="text-xs text-amber-600">{rp.families} families · {rp.people} people</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Relation Category Stats */}
+      {data.relation_stats?.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="relation-stats">
+          <div className="p-4 border-b flex items-center gap-2">
+            <Heart size={16} className="text-rose-500" />
+            <h2 className="font-semibold text-[#0B1C3D] text-base">By Relation</h2>
+            <span className="text-xs text-gray-400 ml-1">(click to see guests)</span>
+          </div>
+          <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {data.relation_stats.map((rel) => (
+              <button key={rel.name}
+                onClick={() => openDrillDown("relation_category", rel.name, `Guests — Relation: ${rel.name}`)}
+                className="text-left bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl p-3 transition"
+                data-testid={`relation-stat-${rel.name}`}>
+                <p className="font-semibold text-[#0B1C3D] text-sm truncate">{rel.name}</p>
+                <p className="text-rose-700 font-bold text-lg">{rel.families}</p>
+                <p className="text-xs text-rose-600">{rel.families} families · {rel.people} people</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Drill-down Modal */}
       <Dialog open={!!drillModal} onOpenChange={() => setDrillModal(null)}>

@@ -148,7 +148,7 @@ export default function ExpectedGuestList({ user }) {
   const fetchRooms = useCallback(async () => {
     try {
       const { data } = await axios.get(`${API}/api/admin/rooms`, { headers: authHeaders() });
-      setRooms(data.data || []);
+      setRooms(Array.isArray(data) ? data : (data.data || []));
     } catch {}
   }, [authHeaders]);
 
@@ -409,8 +409,7 @@ export default function ExpectedGuestList({ user }) {
           <p className="text-sm text-gray-500 mb-3">Assign a first point of contact for: {showAssign && getHeadName(showAssign)}</p>
           <div className="space-y-2">
             {admins.map((a) => (
-              <button key={a.username} onClick={() => assignSwamsevak(showAssign.id, a.display_name || a.username)}
-                data-testid={`pick-swamsevak-${a.username}`}
+              <button key={a.username} onClick={() => assignSwamsevak(showAssign.id, a.name || a.username)}                data-testid={`pick-swamsevak-${a.username}`}
                 className="w-full text-left bg-gray-50 hover:bg-purple-50 p-3 rounded-lg text-sm transition flex justify-between items-center">
                 <span className="font-medium">{a.display_name || a.username}</span>
                 <span className="text-xs text-gray-400">{a.role}</span>
@@ -422,20 +421,39 @@ export default function ExpectedGuestList({ user }) {
 
       {/* Room Assignment Dialog */}
       <Dialog open={!!showRoomAssign} onOpenChange={() => setShowRoomAssign(null)}>
-        <DialogContent className="max-w-sm max-h-[60vh] overflow-y-auto">
+        <DialogContent className="max-w-sm max-h-[65vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Assign Room</DialogTitle></DialogHeader>
-          <p className="text-sm text-gray-500 mb-3">Available rooms for: {showRoomAssign && getHeadName(showRoomAssign)}</p>
-          <div className="space-y-2">
-            {rooms.filter(rm => rm.status === "available").map((rm) => (
-              <button key={rm.room_code} onClick={() => assignRoom(showRoomAssign.id, rm.room_code)}
-                className="w-full text-left bg-gray-50 hover:bg-amber-50 p-3 rounded-lg text-sm transition flex justify-between items-center">
-                <span className="font-medium">{rm.room_code}</span>
-                <span className="text-xs text-gray-400">Floor {rm.floor} • Cap: {rm.capacity}</span>
-              </button>
-            ))}
-            {rooms.filter(rm => rm.status === "available").length === 0 && (
-              <p className="text-gray-400 text-center py-4">No available rooms</p>
-            )}
+          <p className="text-sm text-gray-500 mb-3">Select a room for: <strong>{showRoomAssign && getHeadName(showRoomAssign)}</strong></p>
+          <div className="space-y-1.5">
+            {rooms.length === 0 && <p className="text-gray-400 text-center py-4">No rooms found. Create rooms first in Room Management.</p>}
+            {rooms.map((rm) => {
+              const isOccupied = rm.status === "occupied";
+              const occupants = rm.occupant_names || [];
+              return (
+                <button key={rm.room_code}
+                  onClick={() => !isOccupied && assignRoom(showRoomAssign.id, rm.room_code)}
+                  disabled={isOccupied}
+                  className={`w-full text-left p-3 rounded-lg text-sm transition flex justify-between items-start gap-2 ${
+                    isOccupied
+                      ? "bg-red-50 border border-red-200 opacity-60 cursor-not-allowed"
+                      : "bg-gray-50 hover:bg-amber-50 border border-transparent hover:border-amber-200 cursor-pointer"
+                  }`}
+                  data-testid={`pick-room-${rm.room_code}`}>
+                  <div className="min-w-0">
+                    <span className="font-medium text-[#0B1C3D]">{rm.room_code}</span>
+                    {isOccupied && occupants.length > 0 && (
+                      <p className="text-xs text-red-600 truncate mt-0.5">{occupants.join(", ")}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isOccupied ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                      {isOccupied ? "Occupied" : "Available"}
+                    </span>
+                    <p className="text-xs text-gray-400 mt-0.5">{rm.ac_type || ""} • {rm.capacity} beds</p>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </DialogContent>
       </Dialog>

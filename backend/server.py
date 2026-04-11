@@ -1189,6 +1189,24 @@ async def get_dashboard(request: Request):
     # Not arrived count
     not_arrived_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "not_arrived"})
 
+    # Reference person stats (from approved registrations)
+    ref_pipeline = [
+        {"$match": {"approval_status": "approved", "reference_person_name": {"$exists": True, "$ne": ""}}},
+        {"$group": {"_id": "$reference_person_name", "families": {"$sum": 1}, "people": {"$sum": "$num_people"}}},
+        {"$sort": {"families": -1}},
+    ]
+    ref_stats = await db.registrations.aggregate(ref_pipeline).to_list(100)
+    ref_stats = [{"name": r["_id"], "families": r["families"], "people": r["people"]} for r in ref_stats if r["_id"]]
+
+    # Relation category stats
+    relation_pipeline = [
+        {"$match": {"approval_status": "approved", "relation_category": {"$exists": True, "$ne": ""}}},
+        {"$group": {"_id": "$relation_category", "families": {"$sum": 1}, "people": {"$sum": "$num_people"}}},
+        {"$sort": {"families": -1}},
+    ]
+    relation_stats = await db.registrations.aggregate(relation_pipeline).to_list(100)
+    relation_stats = [{"name": r["_id"], "families": r["families"], "people": r["people"]} for r in relation_stats if r["_id"]]
+
     return {
         "pending_count": pending_count,
         "approved_count": approved_count,
@@ -1206,6 +1224,8 @@ async def get_dashboard(request: Request):
         "total_rooms": total_rooms,
         "occupied_rooms": occupied_rooms,
         "available_rooms": available_rooms,
+        "reference_person_stats": ref_stats,
+        "relation_stats": relation_stats,
     }
 
 # ─── Audit Logs ───
@@ -2093,6 +2113,10 @@ async def dashboard_drill_down(request: Request, field: str = "", value: str = "
             query["arrival_status"] = value
     elif field == "pending":
         query = {"approval_status": "pending"}
+    elif field == "reference_person":
+        query["reference_person_name"] = value
+    elif field == "relation_category":
+        query["relation_category"] = value
     regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
     results = []
     for r in regs:
@@ -2266,12 +2290,15 @@ async def swamsevak_dashboard(request: Request):
     """Consolidated operational view for a specific Swamsevak"""
     user = await get_current_user(request)
     name = user["name"]
+    username = user["username"]
+    # Match by full name OR username (backward compatibility for old assignments stored as username)
+    swamsevak_query = {"$or": [{"assigned_swamsevak": name}, {"assigned_swamsevak": username}]}
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     # My assigned guests
-    assigned = await db.registrations.count_documents({"assigned_swamsevak": name, "approval_status": "approved"})
+    assigned = await db.registrations.count_documents({**swamsevak_query, "approval_status": "approved"})
     # Departures today for my assigned
     departures_today = await db.registrations.find(
-        {"assigned_swamsevak": name, "departure_date": now, "arrival_status": {"$in": ["arrived", "partially_arrived"]}},
+        {**swamsevak_query, "departure_date": now, "arrival_status": {"$in": ["arrived", "partially_arrived"]}},
         {"_id": 0, "id": 1, "attendees": 1, "group_head_id": 1, "departure_date": 1, "expected_departure_time": 1, "room_assignments": 1}
     ).to_list(50)
     dep_list = []
@@ -2284,7 +2311,7 @@ async def swamsevak_dashboard(request: Request):
                          "rooms": r.get("room_assignments", [])})
     # Special needs for assigned guests
     special = await db.registrations.find(
-        {"assigned_swamsevak": name, "approval_status": "approved",
+        {**swamsevak_query, "approval_status": "approved",
          "$or": [{"family_special_request": {"$ne": ""}}, {"attendees.special_needs": {"$ne": ""}}]},
         {"_id": 0, "id": 1, "attendees": 1, "group_head_id": 1, "family_special_request": 1}
     ).to_list(50)
@@ -2301,10 +2328,10 @@ async def swamsevak_dashboard(request: Request):
             needs.append(f"Family: {r['family_special_request']}")
         if needs:
             special_list.append({"id": r["id"], "head_name": head, "needs": needs})
-    # My tickets
-    my_tickets = await db.tickets.count_documents({"assigned_to": name, "status": {"$in": ["open", "in_progress"]}})
-    # My todos
-    my_todos = await db.todos.count_documents({"$or": [{"assigned_to": name}, {"created_by": name}], "completed": False})
+    # My tickets (match by name or username)
+    my_tickets = await db.tickets.count_documents({"$or": [{"assigned_to": name}, {"assigned_to": username}], "status": {"$in": ["open", "in_progress"]}})
+    # My todos (match by name or username)
+    my_todos = await db.todos.count_documents({"$or": [{"assigned_to": name}, {"assigned_to": username}, {"created_by": name}, {"created_by": username}], "completed": False})
 
     return {
         "assigned_guests": assigned,
