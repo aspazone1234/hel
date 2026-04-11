@@ -97,8 +97,8 @@ const en = {
     subtitle: "Registration",
     title: "Register / Update Your Attendance",
     description: "To help us make appropriate arrangements for accommodation and facilities, we request you to kindly register your details in advance.",
-    note: "",
-    btn: "Fill Registration Form",
+    note: "Registrations and application changes are open until 19 May 2026.",
+    btn: "Register / Update",
   },
   family: {
     subtitle: "Organizing Family",
@@ -269,8 +269,8 @@ const hi = {
     subtitle: "\u092a\u0902\u091c\u0940\u0915\u0930\u0923",
     title: "\u0909\u092a\u0938\u094d\u0925\u093f\u0924\u093f \u0926\u0930\u094d\u091c / \u0905\u092a\u0921\u0947\u091f \u0915\u0930\u0947\u0902",
     description: "\u0906\u0935\u093e\u0938 \u090f\u0935\u0902 \u0938\u0941\u0935\u093f\u0927\u093e\u0913\u0902 \u0915\u0940 \u0909\u091a\u093f\u0924 \u0935\u094d\u092f\u0935\u0938\u094d\u0925\u093e \u0939\u0947\u0924\u0941 \u0915\u0943\u092a\u092f\u093e \u0905\u092a\u0928\u093e \u0935\u093f\u0935\u0930\u0923 \u092a\u0939\u0932\u0947 \u0938\u0947 \u0926\u0930\u094d\u091c \u0915\u0930\u0947\u0902\u0964",
-    note: "",
-    btn: "\u092a\u0902\u091c\u0940\u0915\u0930\u0923 \u092b\u0949\u0930\u094d\u092e \u092d\u0930\u0947\u0902",
+    note: "\u092a\u0902\u091c\u0940\u0915\u0930\u0923 \u0914\u0930 \u092c\u0926\u0932\u093e\u0935 19 \u092E\u0908 2026 \u0924\u0915 \u0916\u0941\u0932\u0947 \u0939\u0948\u0902\u0964",
+    btn: "\u092a\u0902\u091c\u0940\u0915\u0930\u0923 / \u0905\u092a\u0921\u0947\u091f \u0915\u0930\u0947\u0902",
   },
   family: {
     subtitle: "\u0906\u092f\u094b\u091c\u0915 \u092a\u0930\u093f\u0935\u093e\u0930",

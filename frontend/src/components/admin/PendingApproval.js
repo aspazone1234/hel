@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Check, X, Eye, Trash2, RefreshCw, Search } from "lucide-react";
+import { Check, X, Eye, Trash2, RefreshCw, Search, Download } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -48,7 +48,7 @@ export default function PendingApproval({ user }) {
     try {
       await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "approved", arrival_status: "not_arrived" }, { headers: authHeaders() });
       toast.success("Approved and moved to Expected Guest List");
-      fetchPending();
+      setRegs(prev => prev.filter(r => r.id !== id));
     } catch { toast.error("Failed to approve"); }
   };
 
@@ -57,8 +57,9 @@ export default function PendingApproval({ user }) {
     try {
       await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "rejected" }, { headers: authHeaders() });
       toast.success("Registration disapproved");
-      fetchPending();
-      fetchRejected();
+      const rejectedItem = regs.find(r => r.id === id);
+      setRegs(prev => prev.filter(r => r.id !== id));
+      if (rejectedItem) setRejected(prev => [{ ...rejectedItem, approval_status: "rejected" }, ...prev]);
     } catch { toast.error("Failed"); }
   };
 
@@ -66,8 +67,9 @@ export default function PendingApproval({ user }) {
     try {
       await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "pending" }, { headers: authHeaders() });
       toast.success("Restored to pending");
-      fetchPending();
-      fetchRejected();
+      const restoredItem = rejected.find(r => r.id === id);
+      setRejected(prev => prev.filter(r => r.id !== id));
+      if (restoredItem) setRegs(prev => [{ ...restoredItem, approval_status: "pending" }, ...prev]);
     } catch { toast.error("Failed"); }
   };
 
@@ -76,7 +78,7 @@ export default function PendingApproval({ user }) {
     try {
       await axios.delete(`${API}/api/admin/registrations/${id}/permanent`, { headers: authHeaders() });
       toast.success("Deleted");
-      fetchRejected();
+      setRejected(prev => prev.filter(r => r.id !== id));
     } catch { toast.error("Failed"); }
   };
 
@@ -87,7 +89,13 @@ export default function PendingApproval({ user }) {
 
   return (
     <div className="p-4 md:p-6 space-y-4" data-testid="pending-approval">
-      <h1 className="text-xl font-bold text-[#0B1C3D]">Pending Form Approval</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <h1 className="text-xl font-bold text-[#0B1C3D]">Pending Form Approval</h1>
+        <button onClick={() => { const token = localStorage.getItem("admin_token"); window.open(`${API}/api/admin/export-csv?bucket=pending&token=${token}`, "_blank"); }}
+          className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-pending-csv">
+          <Download size={14} /> Export CSV
+        </button>
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-2">

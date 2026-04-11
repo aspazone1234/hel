@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Eye, Search, Plane, Undo2, Filter } from "lucide-react";
+import { Eye, Search, Plane, Undo2, Filter, Download } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -97,10 +97,16 @@ export default function ArrivedGuestList({ user }) {
           <h1 className="text-xl font-bold text-[#0B1C3D]">Arrived Guest List</h1>
           <p className="text-sm text-gray-500">{total} total records</p>
         </div>
-        <button onClick={() => setShowFilters(!showFilters)} data-testid="toggle-filters"
-          className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
-          <Filter size={14} /> Filters
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => { window.open(`${API}/api/admin/export-csv?bucket=arrived&token=${localStorage.getItem("admin_token")}`, "_blank"); }}
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-arrived-csv">
+            <Download size={14} /> Export CSV
+          </button>
+          <button onClick={() => setShowFilters(!showFilters)} data-testid="toggle-filters"
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
+            <Filter size={14} /> Filters
+          </button>
+        </div>
       </div>
 
       {showFilters && (

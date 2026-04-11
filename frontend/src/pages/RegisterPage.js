@@ -93,7 +93,7 @@ export default function RegisterPage() {
     if (mobileParam) {
       setMobile(mobileParam);
       // Auto-load their existing registration for editing
-      axios.get(`${API}/api/registration/by-mobile/${encodeURIComponent(mobileParam)}`)
+      axios.get(`${API}/registration/by-mobile/${encodeURIComponent(mobileParam)}`)
         .then(r => {
           const reg = r.data;
           setForm({ ...emptyForm, ...reg, address: reg.address || emptyForm.address, attendees: reg.attendees || emptyForm.attendees });
@@ -189,6 +189,9 @@ export default function RegisterPage() {
       if (form.num_people < 1 || isNaN(form.num_people)) e.num_people = true;
       const hasEmptyName = form.attendees.some(a => !a.name.trim());
       if (hasEmptyName) e.attendees = true;
+      // Age is mandatory for all attendees
+      const hasMissingAge = form.attendees.some(a => !a.age || a.age.toString().trim() === "");
+      if (hasMissingAge) e.attendee_age_required = true;
       // Validate ages are numbers
       const hasInvalidAge = form.attendees.some(a => a.age && (isNaN(a.age) || parseInt(a.age) < 0 || parseInt(a.age) > 120));
       if (hasInvalidAge) e.attendee_age = true;
@@ -205,6 +208,12 @@ export default function RegisterPage() {
     }
     if (step === 1) {
       if (form.selected_days.length === 0) e.selected_days = true;
+      if (!form.expected_arrival_time) e.expected_arrival_time = true;
+      if (!form.expected_departure_time) e.expected_departure_time = true;
+    }
+    if (step === 2) {
+      if (!form.reference_person_id) e.reference_person = true;
+      if (!form.relation_category) e.relation_category = true;
     }
     if (step === 3) {
       if (!form.consent) e.consent = true;
@@ -212,11 +221,16 @@ export default function RegisterPage() {
     setErrors(e);
     if (Object.keys(e).length > 0) {
       const msgs = [];
-      if (e.attendees) msgs.push(lang === "hi" ? "सभी सदस्यों का नाम भरें" : "Enter names for all attendees");
-      if (e.attendee_age) msgs.push(lang === "hi" ? "सही उम्र दर्ज करें" : "Enter valid age (0-120)");
-      if (e.additional_phone || e.additional_phone_format) msgs.push(lang === "hi" ? "सही फ़ोन नंबर दर्ज करें" : "Enter a valid phone number");
-      if (e.email) msgs.push(lang === "hi" ? "सही ईमेल पता दर्ज करें" : "Enter a valid email address");
-      if (e.selected_days) msgs.push(lang === "hi" ? "कम से कम एक दिन चुनें" : "Select at least one day");
+      if (e.attendees) msgs.push(lang === "hi" ? "\u0938\u092D\u0940 \u0938\u0926\u0938\u094D\u092F\u094B\u0902 \u0915\u093E \u0928\u093E\u092E \u092D\u0930\u0947\u0902" : "Enter names for all attendees");
+      if (e.attendee_age_required) msgs.push(lang === "hi" ? "\u0938\u092D\u0940 \u0938\u0926\u0938\u094D\u092F\u094B\u0902 \u0915\u0940 \u0906\u092F\u0941 \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Age is required for all attendees");
+      if (e.attendee_age) msgs.push(lang === "hi" ? "\u0938\u0939\u0940 \u0909\u092E\u094D\u0930 \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Enter valid age (0-120)");
+      if (e.additional_phone || e.additional_phone_format) msgs.push(lang === "hi" ? "\u0938\u0939\u0940 \u092B\u093C\u094B\u0928 \u0928\u0902\u092C\u0930 \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Enter a valid phone number");
+      if (e.email) msgs.push(lang === "hi" ? "\u0938\u0939\u0940 \u0908\u092E\u0947\u0932 \u092A\u0924\u093E \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Enter a valid email address");
+      if (e.selected_days) msgs.push(lang === "hi" ? "\u0915\u092E \u0938\u0947 \u0915\u092E \u090F\u0915 \u0926\u093F\u0928 \u091A\u0941\u0928\u0947\u0902" : "Select at least one day");
+      if (e.expected_arrival_time) msgs.push(lang === "hi" ? "\u0906\u0917\u092E\u0928 \u0938\u092E\u092F \u091A\u0941\u0928\u0947\u0902" : "Expected arrival time is required");
+      if (e.expected_departure_time) msgs.push(lang === "hi" ? "\u092A\u094D\u0930\u0938\u094D\u0925\u093E\u0928 \u0938\u092E\u092F \u091A\u0941\u0928\u0947\u0902" : "Expected departure time is required");
+      if (e.reference_person) msgs.push(lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Reference person is required");
+      if (e.relation_category) msgs.push(lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 \u091A\u0941\u0928\u0947\u0902" : "Relation with reference person is required");
       if (msgs.length > 0) toast.error(msgs[0]);
     }
     return Object.keys(e).length === 0;
@@ -244,7 +258,8 @@ export default function RegisterPage() {
         await axios.post(`${API}/registrations`, payload);
         toast.success(lang === "hi" ? "\u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0938\u092B\u0932!" : "Registration submitted successfully!");
       }
-      navigate(`/thank-you?id=${encodeURIComponent(mobile)}`);
+      sessionStorage.setItem("just_submitted", mobile);
+      navigate(`/my-registration?mobile=${encodeURIComponent(mobile)}`);
     } catch (err) {
       toast.error(err.response?.data?.detail || "Submission failed");
     } finally {
@@ -469,7 +484,7 @@ export default function RegisterPage() {
                           className="mt-1 bg-white border-[#D4AF37]/20 text-sm" placeholder={lang === "hi" ? "\u0928\u093E\u092E" : "Name"} />
                       </div>
                       <div>
-                        <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0906\u092F\u0941" : "Age"}</Label>
+                        <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0906\u092F\u0941 *" : "Age *"}</Label>
                         <Input data-testid={`attendee-age-${i}`} value={att.age} onChange={e => setAttendee(i, "age", e.target.value)}
                           className="mt-1 bg-white border-[#D4AF37]/20 text-sm" placeholder={lang === "hi" ? "\u0906\u092F\u0941" : "Age"} />
                       </div>
@@ -484,13 +499,6 @@ export default function RegisterPage() {
               </div>
 
               {errors.attendees && <p className="text-red-500 text-xs">{lang === "hi" ? "\u0938\u092D\u0940 \u0938\u0926\u0938\u094D\u092F\u094B\u0902 \u0915\u093E \u0928\u093E\u092E \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Please enter names for all attendees"}</p>}
-
-              {/* Family Special Request */}
-              <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u092A\u0930\u093F\u0935\u093E\u0930/\u0938\u092E\u0942\u0939 \u0935\u093F\u0936\u0947\u0937 \u0905\u0928\u0941\u0930\u094B\u0927" : "Family/Group Special Request"}</Label>
-                <Textarea data-testid="family-special-request" value={form.family_special_request} onChange={e => set("family_special_request", e.target.value)}
-                  className="mt-1.5 bg-white border-[#D4AF37]/20 text-sm" rows={2} placeholder={lang === "hi" ? "\u0915\u094B\u0908 \u0935\u093F\u0936\u0947\u0937 \u0905\u0928\u0941\u0930\u094B\u0927" : "Any special request for the group"} />
-              </div>
 
               {/* Group Head Selection */}
               {form.attendees.length > 0 && form.attendees.some(a => a.name.trim()) && (
@@ -530,19 +538,6 @@ export default function RegisterPage() {
                   <Label className="text-[#0B1C3D]/60 text-xs">{t.register.email}</Label>
                   <Input data-testid="email-input" value={form.email} onChange={e => set("email", e.target.value)}
                     className="mt-1 bg-white border-[#D4AF37]/20 text-sm" type="email" />
-                </div>
-
-                <div>
-                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0938\u0902\u0935\u093E\u0926 \u0915\u0947 \u0932\u093F\u090F \u092D\u093E\u0937\u093E" : "Preferred Language for Communication"}</Label>
-                  <Select value={form.preferred_language} onValueChange={v => set("preferred_language", v)}>
-                    <SelectTrigger className="mt-1 bg-white border-[#D4AF37]/20" data-testid="language-select">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hi">{lang === "hi" ? "\u0939\u093F\u0902\u0926\u0940" : "Hindi"}</SelectItem>
-                      <SelectItem value="en">{lang === "hi" ? "\u0905\u0902\u0917\u094D\u0930\u0947\u091C\u0940" : "English"}</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
               </div>
 
@@ -651,7 +646,7 @@ export default function RegisterPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label className="text-[#0B1C3D]/70 text-sm flex items-center gap-1.5">
-                    <Clock size={14} className="text-[#D4AF37]" /> {lang === "hi" ? "\u0905\u092A\u0947\u0915\u094D\u0937\u093F\u0924 \u0906\u0917\u092E\u0928 \u0938\u092E\u092F" : "Expected Arrival Time"}
+                    <Clock size={14} className="text-[#D4AF37]" /> {lang === "hi" ? "\u0905\u092A\u0947\u0915\u094D\u0937\u093F\u0924 \u0906\u0917\u092E\u0928 \u0938\u092E\u092F *" : "Expected Arrival Time *"}
                   </Label>
                   <Select value={form.expected_arrival_time} onValueChange={v => set("expected_arrival_time", v)}>
                     <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="arrival-time-select">
@@ -664,7 +659,7 @@ export default function RegisterPage() {
                 </div>
                 <div>
                   <Label className="text-[#0B1C3D]/70 text-sm flex items-center gap-1.5">
-                    <Clock size={14} className="text-[#D4AF37]" /> {lang === "hi" ? "\u0905\u092A\u0947\u0915\u094D\u0937\u093F\u0924 \u092A\u094D\u0930\u0938\u094D\u0925\u093E\u0928 \u0938\u092E\u092F" : "Expected Departure Time"}
+                    <Clock size={14} className="text-[#D4AF37]" /> {lang === "hi" ? "\u0905\u092A\u0947\u0915\u094D\u0937\u093F\u0924 \u092A\u094D\u0930\u0938\u094D\u0925\u093E\u0928 \u0938\u092E\u092F *" : "Expected Departure Time *"}
                   </Label>
                   <Select value={form.expected_departure_time} onValueChange={v => set("expected_departure_time", v)}>
                     <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="departure-time-select">
@@ -720,7 +715,7 @@ export default function RegisterPage() {
 
               {/* Reference Person */}
               <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F" : "Reference Person"}</Label>
+                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F *" : "Reference Person *"}</Label>
                 <Select value={form.reference_person_id} onValueChange={v => set("reference_person_id", v)}>
                   <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="reference-person-select">
                     <SelectValue placeholder={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Select reference person"} />
@@ -733,7 +728,7 @@ export default function RegisterPage() {
 
               {/* Relation Category */}
               <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0938\u0947 \u0938\u092E\u094D\u092C\u0928\u094D\u0927" : "Relation with Reference Person"}</Label>
+                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0938\u0947 \u0938\u092E\u094D\u092C\u0928\u094D\u0927 *" : "Relation with Reference Person *"}</Label>
                 <Select value={form.relation_category} onValueChange={v => set("relation_category", v)}>
                   <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="relation-category-select">
                     <SelectValue placeholder={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />

@@ -235,11 +235,18 @@ export function RegistrationCTA() {
         <FadeIn>
           <p className="text-[#D4AF37] text-sm tracking-[0.3em] uppercase mb-3">{t.registrationCTA.subtitle}</p>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-[#F8F1E5] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>{t.registrationCTA.title}</h2>
-          <p className="text-[#F8F1E5]/60 text-base sm:text-lg leading-relaxed mb-8" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{t.registrationCTA.description}</p>
-          <Link to="/register" data-testid="cta-register-btn"
-            className="inline-block bg-[#D4AF37] text-[#0B1C3D] px-12 py-4.5 rounded-full font-bold text-lg hover:bg-[#E6C348] transition-all shadow-xl shadow-[#D4AF37]/40 hover:shadow-[#D4AF37]/60 border-2 border-[#D4AF37]">
-            {t.registrationCTA.btn}
-          </Link>
+          <p className="text-[#F8F1E5]/60 text-base sm:text-lg leading-relaxed mb-4" style={{ fontFamily: lang === "hi" ? "'Tiro Devanagari Hindi', sans-serif" : undefined }}>{t.registrationCTA.description}</p>
+          {t.registrationCTA.note && (
+            <p className="text-amber-300 text-sm font-semibold mb-6 bg-amber-500/10 inline-block px-4 py-2 rounded-full border border-amber-400/30" data-testid="registration-deadline-notice">
+              {t.registrationCTA.note}
+            </p>
+          )}
+          <div>
+            <Link to="/register" data-testid="cta-register-btn"
+              className="inline-block bg-[#D4AF37] text-[#0B1C3D] px-12 py-4.5 rounded-full font-bold text-lg hover:bg-[#E6C348] transition-all shadow-xl shadow-[#D4AF37]/40 hover:shadow-[#D4AF37]/60 border-2 border-[#D4AF37]">
+              {t.registrationCTA.btn}
+            </Link>
+          </div>
         </FadeIn>
       </div>
     </section>

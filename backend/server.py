@@ -57,9 +57,13 @@ def create_access_token(username: str, name: str, role: str = "swamsevak") -> st
 
 async def get_current_user(request: Request):
     auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]
+    elif request.query_params.get("token"):
+        token = request.query_params.get("token")
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    token = auth_header[7:]
     try:
         payload = jwt.decode(token, get_jwt_secret(), algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "access":
@@ -317,8 +321,8 @@ async def get_registration_count():
     total = await db.registrations.count_documents({"approval_status": {"$nin": ["deleted"]}})
     return {"total": total}
 
-@api_router.get("/registration/by-mobile")
-async def get_registration_by_mobile(mobile: str = ""):
+@api_router.get("/registration/by-mobile/{mobile}")
+async def get_registration_by_mobile(mobile: str):
     if not mobile:
         raise HTTPException(status_code=400, detail="Mobile number required")
     reg = await db.registrations.find_one(
@@ -326,8 +330,12 @@ async def get_registration_by_mobile(mobile: str = ""):
         {"_id": 0}
     )
     if not reg:
-        return {"found": False, "registration": None}
-    return {"found": True, "registration": reg}
+        raise HTTPException(status_code=404, detail="Registration not found")
+    # Resolve reference person name
+    if reg.get("reference_person_id"):
+        rp = await db.reference_persons.find_one({"id": reg["reference_person_id"]}, {"_id": 0, "name": 1})
+        reg["reference_person_name"] = rp.get("name", "") if rp else ""
+    return reg
 
 @api_router.post("/registrations")
 async def create_registration(reg: RegistrationCreateV2):
@@ -396,7 +404,7 @@ async def create_registration(reg: RegistrationCreateV2):
     whatsapp_conf = {
         "type": "registration_confirmation",
         "to": reg.primary_mobile,
-        "message": f"Thank you for registering for Shrimad Bhagavat Katha Mahotsav 2026! Your form has been received. You can update it until 19 May 2026. Final details will be sent on 21 May 2026.",
+        "message": "Thank you for registering for Shrimad Bhagavat Katha Mahotsav 2026! Your form has been received. You can update it until 19 May 2026. Final details will be sent on 21 May 2026.",
         "status": "sent_mock",
         "sent_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -452,6 +460,15 @@ async def update_registration_public(reg_id: str, body: RegistrationUpdateV2):
     if updates:
         await db.registrations.update_one({"id": reg_id}, {"$set": updates})
 
+    # Audit log for user self-edits
+    changed_fields = [k for k in updates.keys() if k not in ("last_updated_by", "last_updated_at")]
+    head_name = ""
+    for att in reg.get("attendees", []):
+        if att.get("id") == reg.get("group_head_id"):
+            head_name = att.get("name", "")
+    await log_audit("user_self_edit", "registration", reg_id, head_name or reg.get("primary_mobile", ""),
+                    f"User updated: {', '.join(changed_fields)}", f"Self ({reg.get('primary_mobile', '')})")
+
     return {"message": "Registration updated", "id": reg_id}
 
 # ─── Admin: Reference Persons CRUD ───
@@ -467,7 +484,7 @@ async def create_reference_person(body: ReferencePersonCreate, request: Request)
     doc = {"id": str(uuid.uuid4()), "name": body.name, "description": body.description, "created_at": datetime.now(timezone.utc).isoformat()}
     await db.reference_persons.insert_one(doc)
     doc.pop("_id", None)
-    await log_audit("create", "reference_person", doc["id"], body.name, f"Reference person created", user["name"])
+    await log_audit("create", "reference_person", doc["id"], body.name, "Reference person created", user["name"])
     return doc
 
 @api_router.put("/admin/reference-persons/{ref_id}")
@@ -477,7 +494,7 @@ async def update_reference_person(ref_id: str, body: ReferencePersonUpdate, requ
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
     await db.reference_persons.update_one({"id": ref_id}, {"$set": updates})
-    await log_audit("update", "reference_person", ref_id, updates.get("name", ""), f"Reference person updated", user["name"])
+    await log_audit("update", "reference_person", ref_id, updates.get("name", ""), "Reference person updated", user["name"])
     return {"message": "Updated"}
 
 @api_router.delete("/admin/reference-persons/{ref_id}")
@@ -486,7 +503,7 @@ async def delete_reference_person(ref_id: str, request: Request):
     result = await db.reference_persons.delete_one({"id": ref_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Not found")
-    await log_audit("delete", "reference_person", ref_id, "", f"Reference person deleted", user["name"])
+    await log_audit("delete", "reference_person", ref_id, "", "Reference person deleted", user["name"])
     return {"message": "Deleted"}
 
 # ─── Admin: Relation Categories CRUD ───
@@ -502,14 +519,14 @@ async def create_relation_category(body: RelationCategoryCreate, request: Reques
     doc = {"id": str(uuid.uuid4()), "name": body.name, "description": body.description, "created_at": datetime.now(timezone.utc).isoformat()}
     await db.relation_categories.insert_one(doc)
     doc.pop("_id", None)
-    await log_audit("create", "relation_category", doc["id"], body.name, f"Relation category created", user["name"])
+    await log_audit("create", "relation_category", doc["id"], body.name, "Relation category created", user["name"])
     return doc
 
 @api_router.delete("/admin/relation-categories/{cat_id}")
 async def delete_relation_category(cat_id: str, request: Request):
     user = await require_superadmin(request)
     await db.relation_categories.delete_one({"id": cat_id})
-    await log_audit("delete", "relation_category", cat_id, "", f"Relation category deleted", user["name"])
+    await log_audit("delete", "relation_category", cat_id, "", "Relation category deleted", user["name"])
     return {"message": "Deleted"}
 
 # ─── Admin: Registrations (3-Bucket System) ───
@@ -757,7 +774,19 @@ async def mark_arrival(reg_id: str, body: ArrivalUpdateBody, request: Request):
 
     valid_statuses = ["not_arrived", "partially_arrived", "arrived", "not_coming", "departed"]
     if body.arrival_status not in valid_statuses:
-        raise HTTPException(status_code=400, detail=f"Invalid arrival status")
+        raise HTTPException(status_code=400, detail="Invalid arrival status")
+
+    # 3-condition block for marking as arrived
+    if body.arrival_status in ("arrived", "partially_arrived"):
+        if not reg.get("assigned_swamsevak"):
+            raise HTTPException(status_code=400, detail="Cannot mark arrival: No contact person (Swamsevak) assigned. Please assign one first.")
+        if not reg.get("room_assignments") or len(reg.get("room_assignments", [])) == 0:
+            raise HTTPException(status_code=400, detail="Cannot mark arrival: No room assigned. Please assign a room first.")
+        if not reg.get("qr_active") or not reg.get("qr_token"):
+            raise HTTPException(status_code=400, detail="Cannot mark arrival: No QR code generated. Please generate a QR first.")
+        # No double marking
+        if reg.get("arrival_status") == "arrived" and body.arrival_status == "arrived":
+            raise HTTPException(status_code=400, detail="Already marked as arrived. Cannot double-mark.")
 
     updates = {
         "arrival_status": body.arrival_status,
@@ -901,7 +930,7 @@ async def bulk_create_rooms(body: RoomBulkCreate, request: Request):
         doc["created_by"] = user["name"]
         doc["created_at"] = datetime.now(timezone.utc).isoformat()
         await db.rooms.insert_one(doc)
-        await log_audit("room_create", "room", doc["id"], room.room_code, f"Bulk room created", user["name"])
+        await log_audit("room_create", "room", doc["id"], room.room_code, "Bulk room created", user["name"])
         created += 1
     return {"created": created, "errors": errors}
 
@@ -914,7 +943,7 @@ async def delete_room(room_code: str, request: Request):
     if room.get("occupant_ids"):
         raise HTTPException(status_code=400, detail="Cannot delete an occupied room")
     await db.rooms.delete_one({"room_code": room_code})
-    await log_audit("room_delete", "room", room.get("id", ""), room_code, f"Room deleted", user["name"])
+    await log_audit("room_delete", "room", room.get("id", ""), room_code, "Room deleted", user["name"])
     return {"message": f"Room {room_code} deleted"}
 
 @api_router.put("/admin/rooms/{room_code}/assign")
@@ -982,7 +1011,7 @@ async def unassign_room(room_code: str, request: Request, registration_id: str =
                 await db.registrations.update_one({"id": oid}, {"$set": {"room_assignments": reg_rooms}})
         await db.rooms.update_one({"room_code": room_code}, {"$set": {"occupant_ids": [], "occupant_names": [], "status": "available"}})
 
-    await log_audit("room_unassign", "room", room_code, room_code, f"Unassigned from room", user["name"])
+    await log_audit("room_unassign", "room", room_code, room_code, "Unassigned from room", user["name"])
     return {"message": f"Room {room_code} unassigned"}
 
 @api_router.put("/admin/rooms/{room_code}/shift")
@@ -1095,18 +1124,45 @@ async def clear_audit_logs(request: Request):
 
 # ─── Exports ───
 @api_router.get("/admin/export-csv")
-async def export_csv(request: Request):
+async def export_csv(request: Request, bucket: str = "expected"):
     await get_current_user(request)
-    regs = await db.registrations.find({"approval_status": "approved"}, {"_id": 0}).to_list(5000)
+    if bucket == "pending":
+        query = {"approval_status": "pending"}
+        filename = "pending_registrations.csv"
+    elif bucket == "arrived":
+        query = {"approval_status": "approved", "arrival_status": "arrived"}
+        filename = "arrived_guests.csv"
+    elif bucket == "rooms":
+        rooms = await db.rooms.find({}, {"_id": 0}).to_list(500)
+        output = io.StringIO()
+        fields = ["room_code", "floor", "capacity", "ac_type", "status", "occupant_names"]
+        writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
+        writer.writeheader()
+        for room in rooms:
+            row = {k: room.get(k, "") for k in fields}
+            row["occupant_names"] = ", ".join(room.get("occupant_names", []))
+            writer.writerow(row)
+        output.seek(0)
+        return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=rooms.csv"})
+    else:
+        query = {"approval_status": "approved"}
+        filename = "expected_guests.csv"
+    regs = await db.registrations.find(query, {"_id": 0}).to_list(5000)
     output = io.StringIO()
-    fields = ["id", "primary_mobile", "additional_phone", "email", "num_people", "arrival_date", "departure_date", "arrival_status", "attendance_intent", "admin_notes", "created_at"]
+    fields = ["id", "primary_mobile", "additional_phone", "email", "num_people", "arrival_date", "departure_date", "arrival_status", "attendance_intent", "assigned_swamsevak", "admin_notes", "created_at"]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
     for reg in regs:
+        head_name = ""
+        for att in reg.get("attendees", []):
+            if att.get("id") == reg.get("group_head_id"):
+                head_name = att.get("name", "")
         row = {k: reg.get(k, "") for k in fields}
+        row["group_head"] = head_name
+        row["rooms"] = ", ".join(reg.get("room_assignments", []))
         writer.writerow(row)
     output.seek(0)
-    return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=approved_guests.csv"})
+    return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 @api_router.get("/admin/export-pdf")
 async def export_pdf(request: Request, report_type: str = "guestlist"):
@@ -1228,13 +1284,18 @@ import base64
 
 @api_router.post("/admin/qr/generate/{reg_id}")
 async def generate_qr(reg_id: str, request: Request):
-    user = await get_current_user(request)
+    user = await require_superadmin(request)
     reg = await db.registrations.find_one({"id": reg_id}, {"_id": 0})
     if not reg:
         raise HTTPException(status_code=404, detail="Registration not found")
-    qr_token = str(uuid.uuid4())[:12].upper()
+    if reg.get("approval_status") != "approved":
+        raise HTTPException(status_code=400, detail="QR can only be generated for approved registrations in Expected list")
+    # QR is permanently bound to the mobile number. Use existing token if one was already generated.
+    existing_token = reg.get("qr_token")
+    qr_token = existing_token or str(uuid.uuid4())[:12].upper()
     version = (reg.get("qr_version", 0) or 0) + 1
-    qr_data = f"KATHA2026:{reg_id}:{qr_token}:v{version}"
+    # Dynamic data: encode mobile for permanent binding
+    qr_data = f"KATHA2026:{reg_id}:{qr_token}:v{version}:{reg.get('primary_mobile', '')}"
     qr_img = qrcode.make(qr_data)
     buf = io.BytesIO()
     qr_img.save(buf, format="PNG")
@@ -1253,7 +1314,7 @@ async def generate_qr(reg_id: str, request: Request):
 
 @api_router.post("/admin/qr/generate-bulk")
 async def generate_qr_bulk(request: Request):
-    user = await get_current_user(request)
+    user = await require_superadmin(request)
     regs = await db.registrations.find({"approval_status": "approved", "arrival_status": {"$ne": "not_coming"}}, {"_id": 0, "id": 1, "qr_active": 1}).to_list(5000)
     count = 0
     for r in regs:
@@ -1293,6 +1354,11 @@ async def scan_qr(request: Request):
         raise HTTPException(status_code=410, detail="This QR code has been invalidated. A newer version was issued.")
     if not reg.get("qr_active", False):
         raise HTTPException(status_code=410, detail="This QR code is no longer active.")
+    # Validate attendance conditions
+    if not reg.get("assigned_swamsevak"):
+        raise HTTPException(status_code=400, detail="Cannot process: No contact person assigned for this registration.")
+    if not reg.get("room_assignments") or len(reg.get("room_assignments", [])) == 0:
+        raise HTTPException(status_code=400, detail="Cannot process: No room assigned for this registration.")
     ref_name = ""
     if reg.get("reference_person_id"):
         rp = await db.reference_persons.find_one({"id": reg["reference_person_id"]}, {"_id": 0, "name": 1})
@@ -1304,7 +1370,7 @@ async def scan_qr(request: Request):
 async def invalidate_qr(reg_id: str, request: Request):
     user = await require_superadmin(request)
     await db.registrations.update_one({"id": reg_id}, {"$set": {"qr_active": False, "last_updated_by": user["name"]}})
-    await log_audit("qr_invalidate", "registration", reg_id, "", f"QR invalidated", user["name"])
+    await log_audit("qr_invalidate", "registration", reg_id, "", "QR invalidated", user["name"])
     return {"message": "QR invalidated"}
 
 # ─── HELP CENTRE / TICKETING ───
@@ -1547,7 +1613,7 @@ async def delete_todo(todo_id: str, request: Request):
         if todo and todo.get("created_by") != user["username"]:
             raise HTTPException(status_code=403, detail="Only Super Admin or creator can delete")
     await db.todos.delete_one({"id": todo_id})
-    await log_audit("todo_delete", "todo", todo_id, "", f"To-do deleted", user["name"])
+    await log_audit("todo_delete", "todo", todo_id, "", "To-do deleted", user["name"])
     return {"message": "Deleted"}
 
 # ─── MESSAGE CENTER ───
@@ -1604,7 +1670,7 @@ async def create_message_template(body: MessageTemplateCreate, request: Request)
     }
     await db.message_templates.insert_one(doc)
     doc.pop("_id", None)
-    await log_audit("template_create", "message_template", doc["id"], body.name, f"Message template created", user["name"])
+    await log_audit("template_create", "message_template", doc["id"], body.name, "Message template created", user["name"])
     return doc
 
 @api_router.put("/admin/messages/templates/{tmpl_id}")
@@ -1613,14 +1679,14 @@ async def update_message_template(tmpl_id: str, body: MessageTemplateUpdate, req
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.message_templates.update_one({"id": tmpl_id}, {"$set": updates})
-    await log_audit("template_update", "message_template", tmpl_id, "", f"Template updated", user["name"])
+    await log_audit("template_update", "message_template", tmpl_id, "", "Template updated", user["name"])
     return {"message": "Updated"}
 
 @api_router.delete("/admin/messages/templates/{tmpl_id}")
 async def delete_message_template(tmpl_id: str, request: Request):
     user = await require_superadmin(request)
     await db.message_templates.delete_one({"id": tmpl_id})
-    await log_audit("template_delete", "message_template", tmpl_id, "", f"Template deleted", user["name"])
+    await log_audit("template_delete", "message_template", tmpl_id, "", "Template deleted", user["name"])
     return {"message": "Deleted"}
 
 @api_router.post("/admin/messages/send")
@@ -1715,14 +1781,14 @@ async def update_custom_field(field_id: str, request: Request):
     body = await request.json()
     updates = {k: v for k, v in body.items() if k not in ("id", "created_at", "created_by")}
     await db.custom_fields.update_one({"id": field_id}, {"$set": updates})
-    await log_audit("custom_field_update", "custom_field", field_id, "", f"Custom field updated", user["name"])
+    await log_audit("custom_field_update", "custom_field", field_id, "", "Custom field updated", user["name"])
     return {"message": "Updated"}
 
 @api_router.delete("/admin/custom-fields/{field_id}")
 async def delete_custom_field(field_id: str, request: Request):
     user = await require_superadmin(request)
     await db.custom_fields.delete_one({"id": field_id})
-    await log_audit("custom_field_delete", "custom_field", field_id, "", f"Custom field deleted", user["name"])
+    await log_audit("custom_field_delete", "custom_field", field_id, "", "Custom field deleted", user["name"])
     return {"message": "Deleted"}
 
 @api_router.put("/admin/registrations/{reg_id}/custom-fields")
@@ -1776,7 +1842,7 @@ async def confirm_departure(reg_id: str, request: Request):
     for a in reg.get("attendees", []):
         if a.get("id") == reg.get("group_head_id"):
             head_name = a.get("name", "")
-    await log_audit("departure_confirm", "registration", reg_id, head_name or reg.get("primary_mobile", ""), f"Departure confirmed, rooms freed", user["name"])
+    await log_audit("departure_confirm", "registration", reg_id, head_name or reg.get("primary_mobile", ""), "Departure confirmed, rooms freed", user["name"])
     return {"message": "Departure confirmed, rooms freed"}
 
 # ─── SWAMSEVAK ASSIGNMENT ───
@@ -2036,21 +2102,6 @@ app.include_router(extra_router)
 
 # ─── PHASE C/D/E ENDPOINTS ───
 phase_router = APIRouter(prefix="/api")
-
-@phase_router.get("/registration/by-mobile/{mobile}")
-async def get_registration_by_mobile(mobile: str):
-    """Public: Get registration by mobile number (for self-service page)"""
-    reg = await db.registrations.find_one(
-        {"primary_mobile": mobile, "approval_status": {"$nin": ["deleted"]}},
-        {"_id": 0}
-    )
-    if not reg:
-        raise HTTPException(status_code=404, detail="Registration not found")
-    # Enrich with reference person name
-    if reg.get("reference_person_id"):
-        rp = await db.reference_persons.find_one({"id": reg["reference_person_id"]}, {"_id": 0, "name": 1})
-        reg["reference_person_name"] = rp.get("name", "") if rp else ""
-    return reg
 
 @phase_router.get("/admin/swamsevak-dashboard")
 async def swamsevak_dashboard(request: Request):
