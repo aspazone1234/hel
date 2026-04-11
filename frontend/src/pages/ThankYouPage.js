@@ -43,8 +43,25 @@ export default function ThankYouPage() {
             </h2>
 
             <div className="space-y-3">
-              {/* Step 1: Edit until May 19 */}
-              <div className="flex gap-3 items-start bg-gradient-to-r from-blue-50 to-blue-50/30 rounded-xl p-4 border border-blue-100 animate-slideUp" style={{ animationDelay: "0.1s" }}>
+              {/* Step 1: Final confirmation May 21 - MOST PROMINENT */}
+              <div className="flex gap-3 items-start bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-5 border-2 border-green-300 shadow-md animate-slideUp" style={{ animationDelay: "0.1s" }}>
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-emerald-600 text-white flex items-center justify-center shrink-0 shadow-lg">
+                  <Bell size={20} />
+                </div>
+                <div>
+                  <p className="font-bold text-green-800 text-base">
+                    {lang === "hi" ? "21 मई को अंतिम पुष्टि" : "Final Confirmation on May 21"}
+                  </p>
+                  <p className="text-sm text-green-700 mt-1 font-medium">
+                    {lang === "hi"
+                      ? "21 मई 2026 को WhatsApp पर कमरे का विवरण, QR कोड और सभी अंतिम जानकारी भेजी जाएगी।"
+                      : "Your room details will be sent on 21 May 2026 via your registered WhatsApp number."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 2: Edit until May 19 */}
+              <div className="flex gap-3 items-start bg-gradient-to-r from-blue-50 to-blue-50/30 rounded-xl p-4 border border-blue-100 animate-slideUp" style={{ animationDelay: "0.2s" }}>
                 <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center shrink-0">
                   <Edit size={16} />
                 </div>
@@ -60,8 +77,8 @@ export default function ThankYouPage() {
                 </div>
               </div>
 
-              {/* Step 2: Locked on May 19 */}
-              <div className="flex gap-3 items-start bg-gradient-to-r from-amber-50 to-amber-50/30 rounded-xl p-4 border border-amber-100 animate-slideUp" style={{ animationDelay: "0.2s" }}>
+              {/* Step 3: Locked on May 19 */}
+              <div className="flex gap-3 items-start bg-gradient-to-r from-amber-50 to-amber-50/30 rounded-xl p-4 border border-amber-100 animate-slideUp" style={{ animationDelay: "0.3s" }}>
                 <div className="w-10 h-10 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0">
                   <Calendar size={16} />
                 </div>
@@ -73,23 +90,6 @@ export default function ThankYouPage() {
                     {lang === "hi"
                       ? "19 मई 2026 के बाद फॉर्म में कोई भी बदलाव या अपडेट बंद हो जाएगा।"
                       : "Form submissions and updates will be locked after May 19, 2026. No self-service changes after this date."}
-                  </p>
-                </div>
-              </div>
-
-              {/* Step 3: Final confirmation May 21 */}
-              <div className="flex gap-3 items-start bg-gradient-to-r from-green-50 to-green-50/30 rounded-xl p-4 border border-green-100 animate-slideUp" style={{ animationDelay: "0.3s" }}>
-                <div className="w-10 h-10 rounded-full bg-green-500 text-white flex items-center justify-center shrink-0">
-                  <Bell size={16} />
-                </div>
-                <div>
-                  <p className="font-semibold text-[#0B1C3D] text-sm">
-                    {lang === "hi" ? "21 मई को पुष्टि" : "Final Confirmation on May 21"}
-                  </p>
-                  <p className="text-xs text-[#0B1C3D]/60 mt-0.5">
-                    {lang === "hi"
-                      ? "21 मई 2026 को WhatsApp पर कमरे का विवरण, QR कोड और सभी अंतिम जानकारी भेजी जाएगी।"
-                      : "On May 21, 2026, you'll receive room details, QR code, and all final information via WhatsApp."}
                   </p>
                 </div>
               </div>

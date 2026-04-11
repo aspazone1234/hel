@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Eye, Plus, Search, QrCode, Hotel, UserPlus, Download } from "lucide-react";
+import { Eye, Plus, Search, QrCode, Hotel, UserPlus, Download, Edit, Trash2 } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -89,6 +89,15 @@ export default function ExpectedGuestList({ user }) {
       await axios.post(`${API}/api/admin/qr/generate/${regId}`, {}, { headers: authHeaders() });
       toast.success("QR generated");
       fetchRegs();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const deleteEntry = async (regId) => {
+    if (!window.confirm("Permanently delete this entry? This action cannot be undone.")) return;
+    try {
+      await axios.delete(`${API}/api/admin/registrations/${regId}/permanent`, { headers: authHeaders() });
+      toast.success("Entry deleted");
+      setRegs(prev => prev.filter(r => r.id !== regId));
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
@@ -194,9 +203,25 @@ export default function ExpectedGuestList({ user }) {
                         className="bg-amber-50 text-amber-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-amber-100">
                         <Hotel size={12} /> Room
                       </button>
-                      <button onClick={() => generateQR(r.id)} data-testid={`generate-qr-${r.id}`}
-                        className="bg-green-50 text-green-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-green-100">
-                        <QrCode size={12} /> QR
+                      {r.qr_token ? (
+                        <button onClick={() => {
+                          const link = document.createElement("a");
+                          link.href = `data:image/png;base64,${r.qr_image_b64}`;
+                          link.download = `QR_${r.primary_mobile}.png`;
+                          link.click();
+                        }} data-testid={`download-qr-${r.id}`}
+                          className="bg-teal-50 text-teal-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-teal-100">
+                          <Download size={12} /> Download QR
+                        </button>
+                      ) : (
+                        <button onClick={() => generateQR(r.id)} data-testid={`generate-qr-${r.id}`}
+                          className="bg-green-50 text-green-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-green-100">
+                          <QrCode size={12} /> Generate QR
+                        </button>
+                      )}
+                      <button onClick={() => deleteEntry(r.id)} data-testid={`delete-expected-${r.id}`}
+                        className="bg-red-50 text-red-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-red-100">
+                        <Trash2 size={12} /> Delete
                       </button>
                     </>
                   )}

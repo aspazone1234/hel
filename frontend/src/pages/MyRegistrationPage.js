@@ -371,6 +371,7 @@ function EditAttendeesModal({ reg, lang, onSave, onClose }) {
   const [attendees, setAttendees] = useState(reg.attendees || []);
   const [numPeople, setNumPeople] = useState(reg.num_people || 1);
   const [groupHead, setGroupHead] = useState(reg.group_head_id || "");
+  const [familyRequest, setFamilyRequest] = useState(reg.family_special_request || "");
   const [saving, setSaving] = useState(false);
 
   const handleNumChange = (val) => {
@@ -394,7 +395,7 @@ function EditAttendeesModal({ reg, lang, onSave, onClose }) {
     if (attendees.some(a => !a.name.trim())) { toast.error(lang === "hi" ? "\u0938\u092D\u0940 \u0928\u093E\u092E \u092D\u0930\u0947\u0902" : "All names required"); return; }
     if (attendees.some(a => !a.age)) { toast.error(lang === "hi" ? "\u0938\u092D\u0940 \u0909\u092E\u094D\u0930 \u092D\u0930\u0947\u0902" : "All ages required"); return; }
     setSaving(true);
-    await onSave({ attendees, num_people: numPeople, group_head_id: groupHead });
+    await onSave({ attendees, num_people: numPeople, group_head_id: groupHead, family_special_request: familyRequest });
     setSaving(false);
   };
 
@@ -423,6 +424,11 @@ function EditAttendeesModal({ reg, lang, onSave, onClose }) {
               <SelectTrigger className="mt-1"><SelectValue placeholder={lang === "hi" ? "\u092A\u094D\u0930\u092E\u0941\u0916 \u091A\u0941\u0928\u0947\u0902" : "Select head"} /></SelectTrigger>
               <SelectContent>{attendees.filter(a => a.name.trim()).map((a, i) => <SelectItem key={i} value={a.id || a.name}>{a.name}</SelectItem>)}</SelectContent>
             </Select>
+          </div>
+          <div>
+            <Label className="text-sm">{lang === "hi" ? "\u092A\u0930\u093F\u0935\u093E\u0930/\u0938\u092E\u0942\u0939 \u0935\u093F\u0936\u0947\u0937 \u0905\u0928\u0941\u0930\u094B\u0927" : "Family/Group Special Request"}</Label>
+            <Textarea value={familyRequest} onChange={e => setFamilyRequest(e.target.value)} className="mt-1 text-sm" rows={2}
+              placeholder={lang === "hi" ? "\u0915\u094B\u0908 \u0935\u093F\u0936\u0947\u0937 \u0905\u0928\u0941\u0930\u094B\u0927" : "Any special request for the group"} data-testid="edit-family-request" />
           </div>
           <Button onClick={save} disabled={saving} className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90" data-testid="save-attendees-btn">
             {saving ? "..." : (lang === "hi" ? "\u0938\u0939\u0947\u091C\u0947\u0902" : "Save")}

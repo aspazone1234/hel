@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { ScanLine, QrCode, Search, Shield, Ban, List } from "lucide-react";
+import { ScanLine, QrCode, Search, Shield, Ban, List, Check } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -17,6 +17,8 @@ export default function QRScanner({ user }) {
   const [selectedReg, setSelectedReg] = useState(null);
   const [qrList, setQrList] = useState([]);
   const [qrListLoading, setQrListLoading] = useState(false);
+  const [alreadyArrivedInfo, setAlreadyArrivedInfo] = useState(null);
+  const [cameraActive, setCameraActive] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const isSuper = user?.role === "superadmin";
@@ -31,8 +33,16 @@ export default function QRScanner({ user }) {
     setScanning(true);
     try {
       const { data } = await axios.post(`${API}/api/admin/qr/scan`, { qr_token: token.trim() }, { headers: authHeaders() });
-      setScanResult(data);
-      toast.success("QR scanned successfully");
+      if (data.already_arrived) {
+        // Show already-arrived popup with details instead of proceeding to checkin
+        const reg = data.registration;
+        const head = (reg.attendees || []).find(a => a.id === reg.group_head_id);
+        setAlreadyArrivedInfo(reg);
+        toast.info(`${head?.name || reg.primary_mobile} - Attendance already marked`);
+      } else {
+        setScanResult(data.registration);
+        toast.success("QR scanned successfully");
+      }
     } catch (e) {
       toast.error(e.response?.data?.detail || "Invalid QR");
       setScanResult(null);
@@ -56,19 +66,15 @@ export default function QRScanner({ user }) {
   // Mark attendance from search
   const markAttendance = async (reg, attendeeIds) => {
     try {
-      await axios.put(`${API}/api/admin/registrations/${reg.id}`, {
-        arrival_status: attendeeIds.length === reg.attendees?.length ? "arrived" : "partially_arrived"
+      const arrStatus = attendeeIds.length === reg.attendees?.length ? "arrived" : "partially_arrived";
+      await axios.post(`${API}/api/admin/registrations/${reg.id}/mark-arrival`, {
+        arrival_status: arrStatus, arrived_attendee_ids: attendeeIds
       }, { headers: authHeaders() });
-      // Update individual attendees
-      const updatedAttendees = (reg.attendees || []).map(a => ({
-        ...a, arrival_status: attendeeIds.includes(a.id) ? "arrived" : a.arrival_status
-      }));
-      await axios.put(`${API}/api/admin/registrations/${reg.id}`, { attendees: updatedAttendees }, { headers: authHeaders() });
       toast.success("Attendance marked");
       setSelectedReg(null);
       setSearchResults([]);
       setSearchQuery("");
-    } catch { toast.error("Failed"); }
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed to mark attendance"); }
   };
 
   // Bulk QR generation (super admin only)
@@ -107,8 +113,17 @@ export default function QRScanner({ user }) {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.play();
+        setCameraActive(true);
       }
     } catch { toast.error("Camera access denied"); }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current?.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+      videoRef.current.srcObject = null;
+      setCameraActive(false);
+    }
   };
 
   const captureFrame = () => {
@@ -148,8 +163,32 @@ export default function QRScanner({ user }) {
       {/* QR Scan Mode */}
       {mode === "scan" && (
         <div className="space-y-4" data-testid="scan-mode">
+          {/* Live Camera Preview - PRIMARY */}
           <div className="bg-white rounded-xl p-4 border space-y-3">
-            <p className="text-sm text-gray-600">Scan a QR code or enter the token manually:</p>
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-[#0B1C3D]">Live Camera</p>
+              {!cameraActive ? (
+                <button onClick={startCamera} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm" data-testid="start-camera-btn">
+                  Open Camera
+                </button>
+              ) : (
+                <button onClick={stopCamera} className="bg-gray-600 text-white px-3 py-1.5 rounded-lg text-sm" data-testid="stop-camera-btn">
+                  Stop Camera
+                </button>
+              )}
+            </div>
+            <video ref={videoRef} className={`w-full max-w-md rounded-lg border-2 border-dashed border-gray-200 ${cameraActive ? "" : "hidden"}`} data-testid="camera-preview" />
+            <canvas ref={canvasRef} className="hidden" />
+            {!cameraActive && (
+              <div className="text-center py-8 text-gray-400 text-sm border-2 border-dashed rounded-lg">
+                Tap "Open Camera" to start scanning
+              </div>
+            )}
+          </div>
+
+          {/* Manual Token Entry - SECONDARY */}
+          <div className="bg-gray-50 rounded-xl p-4 border space-y-2">
+            <p className="text-xs text-gray-500 font-medium">Or enter QR token manually:</p>
             <div className="flex gap-2">
               <input className="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="Enter QR token..."
                 value={scanInput} onChange={(e) => setScanInput(e.target.value)} data-testid="qr-token-input"
@@ -159,13 +198,49 @@ export default function QRScanner({ user }) {
                 {scanning ? "..." : "Scan"}
               </button>
             </div>
-            <button onClick={startCamera} className="text-sm text-blue-600 hover:underline">Open Camera</button>
-            <video ref={videoRef} className="w-full max-w-sm rounded-lg hidden" />
-            <canvas ref={canvasRef} className="hidden" />
           </div>
 
-          {/* Scan Result */}
+          {/* Scan Result - Checkin Flow */}
           {scanResult && <AttendanceCheckin reg={scanResult} authHeaders={authHeaders} onDone={() => { setScanResult(null); setScanInput(""); }} />}
+
+          {/* Already Arrived Popup */}
+          {alreadyArrivedInfo && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-5 space-y-3" data-testid="already-arrived-popup">
+              <div className="flex items-center gap-2 text-amber-800 font-bold">
+                <Check size={18} className="text-amber-600" />
+                Attendance Already Marked
+              </div>
+              <div className="bg-white rounded-lg p-4 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Name</span>
+                  <span className="font-medium">{(alreadyArrivedInfo.attendees || []).find(a => a.id === alreadyArrivedInfo.group_head_id)?.name || alreadyArrivedInfo.primary_mobile}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Mobile</span>
+                  <span className="font-medium">{alreadyArrivedInfo.primary_mobile}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">People</span>
+                  <span className="font-medium">{alreadyArrivedInfo.num_people}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Room</span>
+                  <span className="font-medium">{(alreadyArrivedInfo.room_assignments || []).join(", ") || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Contact</span>
+                  <span className="font-medium">{alreadyArrivedInfo.assigned_swamsevak || "—"}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Status</span>
+                  <span className="font-bold text-green-700">ARRIVED</span>
+                </div>
+              </div>
+              <button onClick={() => { setAlreadyArrivedInfo(null); setScanInput(""); }} className="w-full bg-amber-600 text-white py-2 rounded-lg text-sm font-medium" data-testid="dismiss-arrived-popup">
+                Dismiss
+              </button>
+            </div>
+          )}
         </div>
       )}
 

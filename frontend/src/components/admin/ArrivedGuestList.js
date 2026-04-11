@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Eye, Search, Plane, Undo2, Filter, Download } from "lucide-react";
+import { Eye, Search, Plane, Undo2, Filter, Download, Trash2 } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -88,6 +88,15 @@ export default function ArrivedGuestList({ user }) {
     } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
+  const deleteEntry = async (regId) => {
+    if (!window.confirm("Permanently delete this entry? This action cannot be undone.")) return;
+    try {
+      await axios.delete(`${API}/api/admin/registrations/${regId}/permanent`, { headers: authHeaders() });
+      toast.success("Entry deleted");
+      setRegs(prev => prev.filter(r => r.id !== regId));
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
   const DAYS = ["2026-05-27","2026-05-28","2026-05-29","2026-05-30","2026-05-31","2026-06-01","2026-06-02","2026-06-03","2026-06-04"];
 
   return (
@@ -100,7 +109,11 @@ export default function ArrivedGuestList({ user }) {
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => { window.open(`${API}/api/admin/export-csv?bucket=arrived&token=${localStorage.getItem("admin_token")}`, "_blank"); }}
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-arrived-csv">
-            <Download size={14} /> Export CSV
+            <Download size={14} /> CSV
+          </button>
+          <button onClick={() => { window.open(`${API}/api/admin/export-pdf?bucket=arrived&token=${localStorage.getItem("admin_token")}`, "_blank"); }}
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-arrived-pdf">
+            <Download size={14} /> PDF
           </button>
           <button onClick={() => setShowFilters(!showFilters)} data-testid="toggle-filters"
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
@@ -179,6 +192,12 @@ export default function ArrivedGuestList({ user }) {
                     <button onClick={() => undoDeparture(r.id)} data-testid={`undo-departure-${r.id}`}
                       className="bg-amber-50 text-amber-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-amber-100">
                       <Undo2 size={12} /> Undo Depart
+                    </button>
+                  )}
+                  {isSuper && (
+                    <button onClick={() => deleteEntry(r.id)} data-testid={`delete-arrived-${r.id}`}
+                      className="bg-red-50 text-red-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-red-100">
+                      <Trash2 size={12} /> Delete
                     </button>
                   )}
                 </div>

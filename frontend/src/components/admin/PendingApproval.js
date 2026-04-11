@@ -46,31 +46,31 @@ export default function PendingApproval({ user }) {
 
   const approveReg = async (id) => {
     try {
-      await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "approved", arrival_status: "not_arrived" }, { headers: authHeaders() });
+      await axios.put(`${API}/api/admin/registrations/${id}/approve`, {}, { headers: authHeaders() });
       toast.success("Approved and moved to Expected Guest List");
       setRegs(prev => prev.filter(r => r.id !== id));
-    } catch { toast.error("Failed to approve"); }
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed to approve"); }
   };
 
   const rejectReg = async (id) => {
     if (!window.confirm("Are you sure you want to disapprove this registration?")) return;
     try {
-      await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "rejected" }, { headers: authHeaders() });
+      await axios.put(`${API}/api/admin/registrations/${id}/reject`, {}, { headers: authHeaders() });
       toast.success("Registration disapproved");
       const rejectedItem = regs.find(r => r.id === id);
       setRegs(prev => prev.filter(r => r.id !== id));
       if (rejectedItem) setRejected(prev => [{ ...rejectedItem, approval_status: "rejected" }, ...prev]);
-    } catch { toast.error("Failed"); }
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed"); }
   };
 
   const restoreReg = async (id) => {
     try {
-      await axios.put(`${API}/api/admin/registrations/${id}`, { approval_status: "pending" }, { headers: authHeaders() });
+      await axios.put(`${API}/api/admin/registrations/${id}/status`, { status: "pending" }, { headers: authHeaders() });
       toast.success("Restored to pending");
       const restoredItem = rejected.find(r => r.id === id);
       setRejected(prev => prev.filter(r => r.id !== id));
       if (restoredItem) setRegs(prev => [{ ...restoredItem, approval_status: "pending" }, ...prev]);
-    } catch { toast.error("Failed"); }
+    } catch (err) { toast.error(err.response?.data?.detail || "Failed"); }
   };
 
   const deleteReg = async (id) => {
@@ -91,10 +91,16 @@ export default function PendingApproval({ user }) {
     <div className="p-4 md:p-6 space-y-4" data-testid="pending-approval">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-xl font-bold text-[#0B1C3D]">Pending Form Approval</h1>
-        <button onClick={() => { const token = localStorage.getItem("admin_token"); window.open(`${API}/api/admin/export-csv?bucket=pending&token=${token}`, "_blank"); }}
-          className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-pending-csv">
-          <Download size={14} /> Export CSV
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => { const token = localStorage.getItem("admin_token"); window.open(`${API}/api/admin/export-csv?bucket=pending&token=${token}`, "_blank"); }}
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-pending-csv">
+            <Download size={14} /> CSV
+          </button>
+          <button onClick={() => { const token = localStorage.getItem("admin_token"); window.open(`${API}/api/admin/export-pdf?bucket=pending&token=${token}`, "_blank"); }}
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-pending-pdf">
+            <Download size={14} /> PDF
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -140,6 +146,12 @@ export default function PendingApproval({ user }) {
                     className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-red-100">
                     <X size={14} /> Disapprove
                   </button>
+                  {isSuper && (
+                    <button onClick={() => deleteReg(r.id)} data-testid={`delete-pending-${r.id}`}
+                      className="bg-red-100 text-red-800 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-red-200">
+                      <Trash2 size={14} /> Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))

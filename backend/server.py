@@ -460,14 +460,23 @@ async def update_registration_public(reg_id: str, body: RegistrationUpdateV2):
     if updates:
         await db.registrations.update_one({"id": reg_id}, {"$set": updates})
 
-    # Audit log for user self-edits
+    # Audit log for user self-edits with previous/new values
     changed_fields = [k for k in updates.keys() if k not in ("last_updated_by", "last_updated_at")]
+    changes_detail = []
+    for field in changed_fields:
+        old_val = reg.get(field, "")
+        new_val = updates.get(field, "")
+        # Truncate long values for readability
+        old_str = str(old_val)[:100] if old_val else "(empty)"
+        new_str = str(new_val)[:100] if new_val else "(empty)"
+        changes_detail.append(f"{field}: '{old_str}' → '{new_str}'")
     head_name = ""
     for att in reg.get("attendees", []):
         if att.get("id") == reg.get("group_head_id"):
             head_name = att.get("name", "")
+    detail_str = "; ".join(changes_detail) if changes_detail else "No changes"
     await log_audit("user_self_edit", "registration", reg_id, head_name or reg.get("primary_mobile", ""),
-                    f"User updated: {', '.join(changed_fields)}", f"Self ({reg.get('primary_mobile', '')})")
+                    f"User updated: {detail_str}", f"Self ({reg.get('primary_mobile', '')})")
 
     return {"message": "Registration updated", "id": reg_id}
 
@@ -593,6 +602,21 @@ async def check_duplicate(request: Request, mobile: str = ""):
         {"_id": 0, "id": 1, "primary_mobile": 1, "attendees": 1, "created_at": 1, "entry_type": 1}
     ).to_list(20)
     return {"duplicates": dupes, "exists": len(dupes) > 0}
+
+@api_router.get("/admin/registrations/rejected")
+async def get_rejected_registrations_main(request: Request, page: int = 1, per_page: int = 20, search: str = ""):
+    """Get rejected registrations - must be before {reg_id} route"""
+    await get_current_user(request)
+    query = {"approval_status": "rejected"}
+    if search:
+        query["$or"] = [
+            {"attendees.name": {"$regex": search, "$options": "i"}},
+            {"primary_mobile": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.registrations.count_documents(query)
+    skip = (page - 1) * per_page
+    regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
 
 @api_router.get("/admin/registrations/{reg_id}")
 async def get_registration_detail(reg_id: str, request: Request):
@@ -1165,7 +1189,7 @@ async def export_csv(request: Request, bucket: str = "expected"):
     return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 @api_router.get("/admin/export-pdf")
-async def export_pdf(request: Request, report_type: str = "guestlist"):
+async def export_pdf(request: Request, report_type: str = "guestlist", bucket: str = "expected"):
     await get_current_user(request)
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -1191,11 +1215,24 @@ async def export_pdf(request: Request, report_type: str = "guestlist"):
                 pdf.cell(col_w[i], 7, str(v), border=1, align="C")
             pdf.ln()
     else:
-        pdf.cell(0, 10, "Guest List - Shrimad Bhagavat Katha 2026", new_x="LMARGIN", new_y="NEXT", align="C")
+        # Determine query based on bucket
+        if bucket == "pending":
+            query = {"approval_status": "pending"}
+            title = "Pending Registrations"
+            fname_base = "pending_registrations"
+        elif bucket == "arrived":
+            query = {"approval_status": "approved", "arrival_status": "arrived"}
+            title = "Arrived Guests"
+            fname_base = "arrived_guests"
+        else:
+            query = {"approval_status": "approved"}
+            title = "Expected Guest List"
+            fname_base = "expected_guests"
+        pdf.cell(0, 10, f"{title} - Katha 2026", new_x="LMARGIN", new_y="NEXT", align="C")
         pdf.set_font("Helvetica", "", 8)
         pdf.cell(0, 6, f"Generated: {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')}", new_x="LMARGIN", new_y="NEXT", align="C")
         pdf.ln(5)
-        regs = await db.registrations.find({"approval_status": "approved"}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+        regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
         headers = ["#", "Group Head", "People", "Arrival", "Departure", "Rooms", "Status", "Mobile"]
         col_w = [12, 60, 20, 32, 32, 40, 30, 40]
         pdf.set_font("Helvetica", "B", 9)
@@ -1216,7 +1253,10 @@ async def export_pdf(request: Request, report_type: str = "guestlist"):
     buf = io.BytesIO()
     pdf.output(buf)
     buf.seek(0)
-    fname = "room_allocation.pdf" if report_type == "rooms" else "guest_list.pdf"
+    if report_type == "rooms":
+        fname = "room_allocation.pdf"
+    else:
+        fname = f"{fname_base}.pdf"
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename={fname}"})
 
 # ─── Super Admin: Admin/Swamsevak Management ───
@@ -1339,15 +1379,21 @@ async def generate_qr_bulk(request: Request):
 async def scan_qr(request: Request):
     await get_current_user(request)
     body = await request.json()
-    qr_raw = body.get("qr_data", "").strip()
+    qr_raw = body.get("qr_data", "").strip() or body.get("qr_token", "").strip()
     if not qr_raw:
         raise HTTPException(status_code=400, detail="No QR data provided")
-    parts = qr_raw.split(":")
-    if len(parts) < 3 or parts[0] != "KATHA2026":
-        raise HTTPException(status_code=400, detail="Invalid QR code format")
-    reg_id = parts[1]
-    qr_token = parts[2]
-    reg = await db.registrations.find_one({"id": reg_id}, {"_id": 0})
+    # Support both full QR string and plain token
+    if qr_raw.startswith("KATHA2026:"):
+        parts = qr_raw.split(":")
+        if len(parts) < 3:
+            raise HTTPException(status_code=400, detail="Invalid QR code format")
+        reg_id = parts[1]
+        qr_token = parts[2]
+        reg = await db.registrations.find_one({"id": reg_id}, {"_id": 0})
+    else:
+        # Plain token lookup
+        qr_token = qr_raw
+        reg = await db.registrations.find_one({"qr_token": qr_token}, {"_id": 0})
     if not reg:
         raise HTTPException(status_code=404, detail="Registration not found")
     if reg.get("qr_token") != qr_token:
@@ -1359,12 +1405,14 @@ async def scan_qr(request: Request):
         raise HTTPException(status_code=400, detail="Cannot process: No contact person assigned for this registration.")
     if not reg.get("room_assignments") or len(reg.get("room_assignments", [])) == 0:
         raise HTTPException(status_code=400, detail="Cannot process: No room assigned for this registration.")
+    # Check if already arrived
+    already_arrived = reg.get("arrival_status") == "arrived"
     ref_name = ""
     if reg.get("reference_person_id"):
         rp = await db.reference_persons.find_one({"id": reg["reference_person_id"]}, {"_id": 0, "name": 1})
         ref_name = rp.get("name", "") if rp else ""
     reg["reference_person_name"] = ref_name
-    return {"registration": reg}
+    return {"registration": reg, "already_arrived": already_arrived}
 
 @api_router.put("/admin/qr/invalidate/{reg_id}")
 async def invalidate_qr(reg_id: str, request: Request):

@@ -5,7 +5,7 @@ const LanguageContext = createContext();
 const en = {
   langLabel: "English",
   langLabelShort: "EN",
-  nav: { about: "About", schedule: "Schedule", venue: "Venue", contact: "Contact", register: "Register Now", family: "Family" },
+  nav: { about: "About", schedule: "Schedule", venue: "Venue", contact: "Contact", register: "Register / Update", family: "Family" },
   hero: {
     enterText: "Click to Enter",
     enterSubtext: "Open the Sacred Doors",
@@ -177,7 +177,7 @@ const en = {
 const hi = {
   langLabel: "\u0939\u093f\u0902\u0926\u0940",
   langLabelShort: "\u0939\u093f\u0902",
-  nav: { about: "\u092a\u0930\u093f\u091a\u092f", schedule: "\u0915\u0925\u093e-\u0938\u092e\u092f", venue: "\u0938\u094d\u0925\u093e\u0928", contact: "\u0938\u0902\u092a\u0930\u094d\u0915", register: "\u092a\u0902\u091c\u0940\u0915\u0930\u0923 \u0915\u0930\u0947\u0902", family: "\u092a\u0930\u093f\u0935\u093e\u0930" },
+  nav: { about: "\u092a\u0930\u093f\u091a\u092f", schedule: "\u0915\u0925\u093e-\u0938\u092e\u092f", venue: "\u0938\u094d\u0925\u093e\u0928", contact: "\u0938\u0902\u092a\u0930\u094d\u0915", register: "\u092a\u0902\u091c\u0940\u0915\u0930\u0923 / \u0905\u092a\u0921\u0947\u091f", family: "\u092a\u0930\u093f\u0935\u093e\u0930" },
   hero: {
     enterText: "\u092a\u094d\u0930\u0935\u0947\u0936 \u0915\u0930\u0947\u0902",
     enterSubtext: "\u092a\u0935\u093f\u0924\u094d\u0930 \u0926\u094d\u0935\u093e\u0930 \u0916\u094b\u0932\u0947\u0902",
