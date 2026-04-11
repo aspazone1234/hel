@@ -151,6 +151,11 @@ export default function AdminRoomManagement({ user }) {
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
             <Download size={14} /> PDF
           </button>
+          <button onClick={() => { window.open(`${API}/api/admin/export-csv?bucket=rooms&token=${localStorage.getItem("admin_token")}`, "_blank"); }}
+            data-testid="export-rooms-csv"
+            className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200">
+            <Download size={14} /> CSV
+          </button>
         </div>
       </div>
 

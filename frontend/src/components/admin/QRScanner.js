@@ -268,15 +268,14 @@ function AttendanceCheckin({ reg, authHeaders, onDone }) {
     setSubmitting(true);
     try {
       const arrStatus = checkedIds.length === allIds.length ? "arrived" : "partially_arrived";
-      const updatedAttendees = (reg.attendees || []).map(a => ({
-        ...a, arrival_status: checkedIds.includes(a.id) ? "arrived" : (a.arrival_status || "not_arrived")
-      }));
-      await axios.put(`${API}/api/admin/registrations/${reg.id}`, {
-        arrival_status: arrStatus, attendees: updatedAttendees
+      await axios.post(`${API}/api/admin/registrations/${reg.id}/mark-arrival`, {
+        arrival_status: arrStatus, arrived_attendee_ids: checkedIds
       }, { headers: authHeaders() });
       toast.success("Attendance marked");
       onDone();
-    } catch { toast.error("Failed"); }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to mark attendance");
+    }
     setSubmitting(false);
   };
 

@@ -194,9 +194,9 @@ export default function ArrivedGuestList({ user }) {
           <DialogHeader><DialogTitle>Complete Details</DialogTitle></DialogHeader>
           {viewReg && (
             <>
-              {viewReg.qr_data && (
+              {viewReg.qr_image_b64 && (
                 <div className="flex justify-center mb-4" data-testid="qr-display">
-                  <img src={`data:image/png;base64,${viewReg.qr_data}`} alt="QR Code" className="w-48 h-48 border rounded-xl" />
+                  <img src={`data:image/png;base64,${viewReg.qr_image_b64}`} alt="QR Code" className="w-48 h-48 border rounded-xl" />
                 </div>
               )}
               <FullRegistrationView reg={viewReg} />

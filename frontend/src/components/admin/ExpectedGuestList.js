@@ -264,22 +264,27 @@ export default function ExpectedGuestList({ user }) {
       </Dialog>
 
       {/* Manual Add Dialog */}
-      {showManual && <ManualAddDialog onClose={() => { setShowManual(false); fetchRegs(); }} authHeaders={authHeaders} />}
+      {showManual && <ManualAddDialog onClose={() => { setShowManual(false); fetchRegs(); }} authHeaders={authHeaders} refPersons={refPersons} />}
     </div>
   );
 }
 
-function ManualAddDialog({ onClose, authHeaders }) {
+function ManualAddDialog({ onClose, authHeaders, refPersons }) {
   const [form, setForm] = useState({
-    primary_mobile: "", additional_phone: "", email: "", preferred_language: "hi",
+    primary_mobile: "", additional_phone: "", email: "",
     address: { full_address: "", city: "", state: "", country: "India" },
     num_people: 1, attendees: [{ id: "a1", name: "", age: "", special_needs: "" }],
-    group_head_id: "a1", family_special_request: "", attendance_intent: "Yes",
+    group_head_id: "a1", attendance_intent: "Yes",
     selected_days: [], expected_arrival_time: "", expected_departure_time: "",
     reference_person_id: "", relation_category: "", message: "", admin_notes: "",
     target_bucket: "expected", travel_mode: "", travel_details: "",
   });
   const [saving, setSaving] = useState(false);
+  const [relationCats, setRelationCats] = useState([]);
+
+  useEffect(() => {
+    axios.get(`${API}/api/relation-categories/public`).then(r => setRelationCats(r.data)).catch(() => {});
+  }, []);
 
   const updatePeople = (n) => {
     const num = Math.max(1, Math.min(20, parseInt(n) || 1));
@@ -297,6 +302,14 @@ function ManualAddDialog({ onClose, authHeaders }) {
   };
 
   const save = async () => {
+    if (!form.primary_mobile.trim()) { toast.error("Mobile number required"); return; }
+    if (form.attendees.some(a => !a.name.trim())) { toast.error("All attendee names required"); return; }
+    if (form.attendees.some(a => !a.age)) { toast.error("All attendee ages required"); return; }
+    if (form.selected_days.length === 0) { toast.error("Select at least one day"); return; }
+    if (!form.expected_arrival_time) { toast.error("Arrival time required"); return; }
+    if (!form.expected_departure_time) { toast.error("Departure time required"); return; }
+    if (!form.reference_person_id) { toast.error("Reference person required"); return; }
+    if (!form.relation_category) { toast.error("Relation required"); return; }
     setSaving(true);
     try {
       await axios.post(`${API}/api/admin/registrations/manual`, form, { headers: authHeaders() });
@@ -307,6 +320,11 @@ function ManualAddDialog({ onClose, authHeaders }) {
   };
 
   const DAYS = ["2026-05-27","2026-05-28","2026-05-29","2026-05-30","2026-05-31","2026-06-01","2026-06-02","2026-06-03","2026-06-04"];
+  const TIME_OPTIONS = [
+    "Early Morning (5-8 AM)", "Morning (8-11 AM)", "Afternoon (11 AM-2 PM)",
+    "Afternoon (2-5 PM)", "Evening (5-8 PM)", "Night (8-11 PM)", "Late Night (11 PM+)"
+  ];
+  const RELATION_OPTIONS = relationCats.length > 0 ? relationCats.map(c => c.name) : ["Friends", "In-laws Side", "Other Relatives", "Business Associates", "Other"];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -314,8 +332,8 @@ function ManualAddDialog({ onClose, authHeaders }) {
         <h2 className="font-bold text-[#0B1C3D] text-lg">Add Guest (Manual Entry)</h2>
 
         <div className="grid grid-cols-2 gap-3">
-          <input className="border rounded px-3 py-2 text-sm col-span-2" placeholder="Primary Mobile*" value={form.primary_mobile}
-            onChange={(e) => setForm({ ...form, primary_mobile: e.target.value })} />
+          <input className="border rounded px-3 py-2 text-sm col-span-2" placeholder="Primary Mobile (WhatsApp)*" value={form.primary_mobile}
+            onChange={(e) => setForm({ ...form, primary_mobile: e.target.value })} data-testid="manual-mobile" />
           <input className="border rounded px-3 py-2 text-sm" placeholder="Additional Phone*" value={form.additional_phone}
             onChange={(e) => setForm({ ...form, additional_phone: e.target.value })} />
           <input className="border rounded px-3 py-2 text-sm" placeholder="Email" value={form.email}
@@ -350,17 +368,14 @@ function ManualAddDialog({ onClose, authHeaders }) {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <input className="border rounded px-2 py-1.5 text-sm" placeholder="Name*" value={a.name} onChange={(e) => updateAttendee(i, "name", e.target.value)} />
-              <input className="border rounded px-2 py-1.5 text-sm" placeholder="Age" type="number" value={a.age} onChange={(e) => updateAttendee(i, "age", e.target.value)} />
+              <input className="border rounded px-2 py-1.5 text-sm" placeholder="Age*" type="number" value={a.age} onChange={(e) => updateAttendee(i, "age", e.target.value)} />
             </div>
             <input className="w-full border rounded px-2 py-1.5 text-sm" placeholder="Special needs" value={a.special_needs} onChange={(e) => updateAttendee(i, "special_needs", e.target.value)} />
           </div>
         ))}
 
-        <textarea className="w-full border rounded px-3 py-2 text-sm" rows={2} placeholder="Family special request"
-          value={form.family_special_request} onChange={(e) => setForm({ ...form, family_special_request: e.target.value })} />
-
         <div>
-          <label className="text-sm font-medium text-gray-700">Days Present</label>
+          <label className="text-sm font-medium text-gray-700">Days Present *</label>
           <div className="flex flex-wrap gap-1 mt-1">
             {DAYS.map(d => (
               <button key={d} type="button"
@@ -376,10 +391,41 @@ function ManualAddDialog({ onClose, authHeaders }) {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <input className="border rounded px-3 py-2 text-sm" placeholder="Arrival Time" value={form.expected_arrival_time}
-            onChange={(e) => setForm({ ...form, expected_arrival_time: e.target.value })} />
-          <input className="border rounded px-3 py-2 text-sm" placeholder="Departure Time" value={form.expected_departure_time}
-            onChange={(e) => setForm({ ...form, expected_departure_time: e.target.value })} />
+          <div>
+            <label className="text-xs font-medium text-gray-600">Arrival Time *</label>
+            <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.expected_arrival_time}
+              onChange={(e) => setForm({ ...form, expected_arrival_time: e.target.value })} data-testid="manual-arrival-time">
+              <option value="">Select...</option>
+              {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600">Departure Time *</label>
+            <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.expected_departure_time}
+              onChange={(e) => setForm({ ...form, expected_departure_time: e.target.value })} data-testid="manual-departure-time">
+              <option value="">Select...</option>
+              {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600">Reference Person *</label>
+            <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.reference_person_id}
+              onChange={(e) => setForm({ ...form, reference_person_id: e.target.value })} data-testid="manual-ref-person">
+              <option value="">Select...</option>
+              {(refPersons || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600">Relation *</label>
+            <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.relation_category}
+              onChange={(e) => setForm({ ...form, relation_category: e.target.value })} data-testid="manual-relation">
+              <option value="">Select...</option>
+              {RELATION_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -389,11 +435,14 @@ function ManualAddDialog({ onClose, authHeaders }) {
             onChange={(e) => setForm({ ...form, travel_details: e.target.value })} />
         </div>
 
+        <textarea className="w-full border rounded px-3 py-2 text-sm" rows={2} placeholder="Message"
+          value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} />
+
         <textarea className="w-full border rounded px-3 py-2 text-sm" rows={2} placeholder="Admin notes"
           value={form.admin_notes} onChange={(e) => setForm({ ...form, admin_notes: e.target.value })} />
 
         <div className="flex gap-2">
-          <button onClick={save} disabled={saving} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50">
+          <button onClick={save} disabled={saving} className="flex-1 bg-[#0B1C3D] text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50" data-testid="manual-save-btn">
             {saving ? "Adding..." : "Add to Expected List"}
           </button>
           <button onClick={onClose} className="flex-1 border py-2 rounded-lg text-sm">Cancel</button>
