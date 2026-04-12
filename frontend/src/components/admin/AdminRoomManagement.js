@@ -95,19 +95,25 @@ export default function AdminRoomManagement({ user }) {
     window.open(`${API}/api/admin/export-pdf?${params}`, "_blank");
   };
 
+  const [transferDialog, setTransferDialog] = useState(null); // { roomCode, occupant }
+
   // Build occupant map from registrations
   const roomOccupants = {};
   regs.forEach(r => {
     (r.room_assignments || []).forEach(code => {
       if (!roomOccupants[code]) roomOccupants[code] = [];
       const head = (r.attendees || []).find(a => a.id === r.group_head_id);
+      const familyName = r.family_name || head?.name || r.primary_mobile;
       roomOccupants[code].push({
         name: head?.name || r.primary_mobile,
+        familyName,
         num: r.num_people,
         ref: r.reference_person_name || "",
         relation: r.relation_category || "",
         swamsevak: r.assigned_swamsevak || "",
         regId: r.id,
+        departureDate: r.departure_date || r.expected_departure_time || "",
+        notes: r.admin_notes || "",
       });
     });
   });
@@ -240,17 +246,38 @@ export default function AdminRoomManagement({ user }) {
                 {groupRooms.map((rm) => {
                   const occupants = roomOccupants[rm.room_code] || [];
                   const isOccupied = rm.status === "occupied";
+                  // Calculate vacancy timing for occupied rooms
+                  const getVacancyLabel = (depDate) => {
+                    if (!depDate) return null;
+                    const dateStr = depDate.split("T")[0];
+                    const today = new Date(); today.setHours(0,0,0,0);
+                    const dep = new Date(dateStr + "T00:00:00");
+                    const diff = Math.ceil((dep - today) / 86400000);
+                    if (diff < 0) return { label: "Overdue", className: "text-red-700 bg-red-100" };
+                    if (diff === 0) return { label: "Departing today", className: "text-orange-700 bg-orange-100" };
+                    if (diff === 1) return { label: "Vacant tomorrow", className: "text-amber-700 bg-amber-100" };
+                    return { label: `Vacant in ${diff} days`, className: "text-blue-700 bg-blue-100" };
+                  };
                   return (
                     <div key={rm.room_code}
                       className={`rounded-xl p-3 border-2 transition ${isOccupied ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}
                       data-testid={`room-${rm.room_code}`}>
                       <div className="flex justify-between items-start mb-1">
                         <span className="font-bold text-sm text-[#0B1C3D]">{rm.room_code}</span>
-                        {isSuper && !isOccupied && (
-                          <button onClick={() => deleteRoom(rm.room_code)} className="text-red-400 hover:text-red-600" data-testid={`delete-room-${rm.room_code}`}>
-                            <Trash2 size={12} />
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {isSuper && isOccupied && (
+                            <button onClick={() => setTransferDialog({ roomCode: rm.room_code, occupants })}
+                              className="text-blue-400 hover:text-blue-600 text-xs px-1.5 py-0.5 bg-blue-50 rounded border border-blue-200"
+                              data-testid={`transfer-room-${rm.room_code}`} title="Transfer room">
+                              Transfer
+                            </button>
+                          )}
+                          {isSuper && !isOccupied && (
+                            <button onClick={() => deleteRoom(rm.room_code)} className="text-red-400 hover:text-red-600" data-testid={`delete-room-${rm.room_code}`}>
+                              <Trash2 size={12} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <p className="text-xs text-gray-500">
                         {rm.ac_type || "Non-AC"} · {occupants.reduce((s, o) => s + o.num, 0)}/{rm.capacity} beds
@@ -258,13 +285,26 @@ export default function AdminRoomManagement({ user }) {
                       {rm.floor && <p className="text-xs text-gray-400">Floor {rm.floor}</p>}
                       {rm.notes && <p className="text-xs text-gray-400 italic truncate">{rm.notes}</p>}
                       {occupants.length > 0 && (
-                        <div className="mt-1.5 space-y-1">
-                          {occupants.map((o, i) => (
-                            <div key={i} className="text-xs">
-                              <p className="font-medium text-[#0B1C3D] truncate">{o.name} <span className="font-normal text-gray-500">({o.num}p)</span></p>
-                              {o.swamsevak && <p className="text-purple-600 truncate text-xs">Contact: {o.swamsevak}</p>}
-                            </div>
-                          ))}
+                        <div className="mt-1.5 space-y-2">
+                          {occupants.map((o, i) => {
+                            const vac = o.departureDate ? getVacancyLabel(o.departureDate) : null;
+                            return (
+                              <div key={i} className="text-xs">
+                                <p className="font-medium text-[#0B1C3D] truncate">{o.name} <span className="font-normal text-gray-500">({o.num}p)</span></p>
+                                {o.familyName && o.familyName !== o.name && <p className="text-gray-500 truncate">Family: {o.familyName}</p>}
+                                {o.swamsevak && <p className="text-purple-600 truncate">Contact: {o.swamsevak}</p>}
+                                {o.notes && <p className="text-gray-400 italic truncate">{o.notes}</p>}
+                                {o.departureDate && (
+                                  <p className="text-gray-400 mt-0.5">Departs: <span className="font-medium text-gray-600">{o.departureDate.split("T")[0]}</span></p>
+                                )}
+                                {vac && (
+                                  <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-semibold ${vac.className}`} data-testid={`vacancy-label-${rm.room_code}`}>
+                                    {vac.label}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                       <span className={`inline-block mt-2 text-xs px-2 py-0.5 rounded-full ${isOccupied ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
@@ -391,6 +431,70 @@ export default function AdminRoomManagement({ user }) {
           )}
         </DialogContent>
       </Dialog>
+      {/* Transfer Room Dialog */}
+      <Dialog open={!!transferDialog} onOpenChange={() => setTransferDialog(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Transfer Room</DialogTitle></DialogHeader>
+          {transferDialog && (
+            <TransferRoomForm
+              fromRoom={transferDialog.roomCode}
+              occupants={transferDialog.occupants}
+              allRooms={rooms}
+              authHeaders={authHeaders}
+              onDone={() => { setTransferDialog(null); fetchData(); }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function TransferRoomForm({ fromRoom, occupants, allRooms, authHeaders, onDone }) {
+  const [targetRoom, setTargetRoom] = useState("");
+  const [regId, setRegId] = useState(occupants[0]?.regId || "");
+  const [loading, setLoading] = useState(false);
+  const availableRooms = allRooms.filter(r => r.status === "available" && r.room_code !== fromRoom);
+
+  const doTransfer = async () => {
+    if (!targetRoom) { toast.error("Select a target room"); return; }
+    if (!regId) { toast.error("Select which family to transfer"); return; }
+    setLoading(true);
+    try {
+      await axios.put(`${API}/api/admin/rooms/${fromRoom}/shift`, { new_room_code: targetRoom, registration_id: regId }, { headers: authHeaders() });
+      toast.success(`Transferred to ${targetRoom}`);
+      onDone();
+    } catch (e) { toast.error(e.response?.data?.detail || "Transfer failed"); }
+    setLoading(false);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-medium text-gray-700 mb-2">From Room: <strong>{fromRoom}</strong></p>
+        {occupants.length > 1 && (
+          <div className="mb-3">
+            <label className="text-xs text-gray-500 mb-1 block">Select family to transfer</label>
+            <select value={regId} onChange={e => setRegId(e.target.value)} className="border rounded-lg p-2 w-full text-sm" data-testid="transfer-family-select">
+              {occupants.map(o => <option key={o.regId} value={o.regId}>{o.name} ({o.num}p)</option>)}
+            </select>
+          </div>
+        )}
+        <label className="text-xs text-gray-500 mb-1 block">Move to Room</label>
+        {availableRooms.length === 0 ? (
+          <p className="text-sm text-red-600">No available rooms to transfer to.</p>
+        ) : (
+          <select value={targetRoom} onChange={e => setTargetRoom(e.target.value)} className="border rounded-lg p-2 w-full text-sm" data-testid="transfer-target-select">
+            <option value="">-- Select empty room --</option>
+            {availableRooms.map(r => <option key={r.room_code} value={r.room_code}>Room {r.room_code} (Floor {r.floor}, {r.ac_type})</option>)}
+          </select>
+        )}
+      </div>
+      <button onClick={doTransfer} disabled={loading || !targetRoom || availableRooms.length === 0}
+        className="w-full bg-[#0B1C3D] text-white py-2 rounded-lg text-sm font-medium disabled:opacity-50"
+        data-testid="confirm-transfer-btn">
+        {loading ? "Transferring..." : "Confirm Transfer"}
+      </button>
     </div>
   );
 }

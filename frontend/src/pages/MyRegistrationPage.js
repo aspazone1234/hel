@@ -199,31 +199,76 @@ export default function MyRegistrationPage() {
           {/* Confirmed State - Room + QR */}
           {isConfirmed && (
             <div className="p-5 bg-gradient-to-b from-green-50 to-white border-b border-green-100" data-testid="confirmed-section">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-4">
                 <Check size={16} className="text-green-600" />
                 <h3 className="font-semibold text-green-800 text-sm">{lang === "hi" ? "\u092C\u0941\u0915\u093F\u0902\u0917 \u0915\u0928\u094D\u092B\u0930\u094D\u092E" : "Booking Confirmed"}</h3>
               </div>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <div className="bg-white rounded-lg p-3 border">
-                  <p className="text-xs text-gray-500 mb-1">{lang === "hi" ? "\u0915\u092E\u0930\u093E" : "Room"}</p>
-                  <p className="font-bold text-[#0B1C3D]" data-testid="confirmed-room">{(reg.room_assignments || []).join(", ")}</p>
-                </div>
-                <div className="bg-white rounded-lg p-3 border">
-                  <p className="text-xs text-gray-500 mb-1">{lang === "hi" ? "\u0938\u0902\u092A\u0930\u094D\u0915 \u0935\u094D\u092F\u0915\u094D\u0924\u093F" : "Contact Person"}</p>
-                  <p className="font-bold text-[#0B1C3D]" data-testid="confirmed-contact">{reg.assigned_swamsevak}</p>
-                </div>
+
+              {/* Room Block */}
+              <div className="bg-white rounded-xl border border-green-200 p-4 mb-4 shadow-sm">
+                <p className="text-xs text-gray-500 mb-1">{lang === "hi" ? "\u0906\u092A\u0915\u093E \u0915\u092E\u0930\u093E" : "Your Room"}</p>
+                <p className="font-bold text-[#0B1C3D] text-xl" data-testid="confirmed-room">{(reg.room_assignments || []).join(", ")}</p>
               </div>
+
+              {/* Contact Person / Volunteer Block */}
+              <div className="bg-white rounded-xl border border-indigo-200 p-4 mb-4 shadow-sm space-y-2">
+                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">{lang === "hi" ? "\u0906\u092A\u0915\u093E \u0928\u093F\u092F\u0941\u0915\u094D\u0924 \u0938\u094D\u0935\u092F\u0902\u0938\u0947\u0935\u0915" : "Your Assigned Volunteer"}</p>
+                <p className="font-bold text-[#0B1C3D] text-base" data-testid="confirmed-contact">{reg.assigned_swamsevak}</p>
+                <p className="text-xs text-gray-600 leading-relaxed">
+                  {lang === "hi"
+                    ? "\u092F\u0939 \u0938\u094D\u0935\u092F\u0902\u0938\u0947\u0935\u0915 \u0915\u093E\u0930\u094D\u092F\u0915\u094D\u0930\u092E \u0938\u0947 \u092A\u0939\u0932\u0947 \u0914\u0930 \u0915\u093E\u0930\u094D\u092F\u0915\u094D\u0930\u092E \u0915\u0947 \u0926\u094C\u0930\u093E\u0928 \u0906\u092A\u0915\u0940 \u0938\u0939\u093E\u092F\u0924\u093E \u0914\u0930 \u0938\u0939\u092F\u094B\u0917 \u0915\u0947 \u0932\u093F\u090F \u0906\u092A\u0915\u093E \u092A\u094D\u0930\u0925\u092E \u0938\u0902\u092A\u0930\u094D\u0915 \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0939\u0948\u0964"
+                    : "This volunteer is your first point of contact for any help or support \u2014 both before the event and throughout your stay."}
+                </p>
+                {reg.assigned_swamsevak_mobile ? (
+                  <div className="bg-indigo-50 rounded-lg p-3">
+                    <p className="text-xs text-indigo-700">
+                      {lang === "hi" ? "\u0906\u092A \u0909\u0928\u094D\u0939\u0947\u0902 WhatsApp \u092A\u0930 \u0915\u0949\u0932 \u092F\u093E \u0938\u0902\u0926\u0947\u0936 \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902:" : "You can call or WhatsApp them directly on:"}
+                    </p>
+                    <p className="font-bold text-indigo-800 text-sm mt-1">{reg.assigned_swamsevak_mobile}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-indigo-600 bg-indigo-50 rounded-lg p-2">
+                    {lang === "hi"
+                      ? "\u0909\u0928\u0915\u0947 \u092A\u0902\u091C\u0940\u0915\u0943\u0924 WhatsApp \u0928\u0902\u092C\u0930 \u092A\u0930 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902\u0964"
+                      : "Please contact them on their registered WhatsApp number."}
+                  </p>
+                )}
+              </div>
+
+              {/* QR Code - Prominent */}
               {reg.qr_image_b64 && (
-                <div className="text-center">
-                  <img src={`data:image/png;base64,${reg.qr_image_b64}`} alt="QR Code" className="w-40 h-40 mx-auto rounded-lg border-2 border-[#D4AF37]/30" data-testid="confirmed-qr" />
-                  <button onClick={downloadQR} className="mt-2 text-xs text-[#D4AF37] font-medium flex items-center gap-1 mx-auto hover:underline" data-testid="download-qr-btn">
-                    <Download size={12} /> {lang === "hi" ? "QR \u0921\u093E\u0909\u0928\u0932\u094B\u0921 \u0915\u0930\u0947\u0902" : "Download QR Code"}
+                <div className="bg-gradient-to-b from-[#0B1C3D] to-[#1a3a6b] rounded-2xl p-5 mb-4 text-center shadow-xl">
+                  <p className="text-white/80 text-xs font-medium mb-3 uppercase tracking-wide">{lang === "hi" ? "\u0906\u092A\u0915\u093E \u092A\u094D\u0930\u0935\u0947\u0936 QR \u0915\u094B\u0921" : "Your Entry QR Code"}</p>
+                  <img src={`data:image/png;base64,${reg.qr_image_b64}`} alt="QR Code"
+                    className="w-44 h-44 mx-auto rounded-xl border-4 border-[#D4AF37]/60 shadow-2xl" data-testid="confirmed-qr" />
+                  <button onClick={downloadQR}
+                    className="mt-4 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white font-bold px-8 py-3.5 rounded-xl text-base shadow-lg flex items-center gap-2 mx-auto hover:from-[#e6c64a] hover:to-[#c9961f] transition active:scale-95"
+                    data-testid="download-qr-btn">
+                    <Download size={18} /> {lang === "hi" ? "QR \u0915\u094B\u0921 \u0921\u093E\u0909\u0928\u0932\u094B\u0921 \u0915\u0930\u0947\u0902" : "Download Your QR Code"}
                   </button>
+                  <p className="text-white/50 text-xs mt-3">
+                    {lang === "hi" ? "\u0907\u0935\u0947\u0902\u091F \u092E\u0947\u0902 \u092A\u094D\u0930\u0935\u0947\u0936 \u0915\u0947 \u0932\u093F\u090F QR \u0915\u094B\u0921 \u091C\u0930\u0942\u0930\u0940 \u0939\u0948\u0964" : "This QR code is required for event entry. Save it to your phone."}
+                  </p>
                 </div>
               )}
-              <p className="text-xs text-gray-500 text-center mt-3">
-                {lang === "hi" ? `\u0938\u0939\u093E\u092F\u0924\u093E \u0915\u0947 \u0932\u093F\u090F \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902: ${ADMIN_CONTACT}` : `For assistance contact: ${ADMIN_CONTACT}`}
-              </p>
+
+              {/* Form Closed Notice */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 space-y-1">
+                <p className="text-xs font-bold text-amber-800">
+                  {lang === "hi" ? "\u092B\u0949\u0930\u094D\u092E \u092C\u0902\u0926 \u0939\u094B \u0917\u092F\u093E \u0939\u0948" : "Registration Form Closed"}
+                </p>
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  {lang === "hi"
+                    ? "\u092F\u0926\u093F \u0906\u092A\u0915\u094B \u0905\u092A\u0928\u0940 \u092F\u094B\u091C\u0928\u093E \u092E\u0947\u0902 \u092C\u0926\u0932\u093E\u0935 \u0915\u0930\u0928\u093E \u0939\u0948, \u0924\u094B \u0915\u0943\u092A\u092F\u093E \u0928\u0940\u091A\u0947 \u0926\u093F\u090F \u0928\u0902\u092C\u0930 \u092A\u0930 \u0938\u093F\u0938\u094D\u091F\u092E \u090F\u0921\u092E\u093F\u0928\u093F\u0938\u094D\u091F\u094D\u0930\u0947\u091F\u0930 \u0938\u0947 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902\u0964"
+                    : "If you need to make any changes to your plan, please contact the System Administrator on the number below."}
+                </p>
+              </div>
+
+              {/* System Admin Contact */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-center">
+                <p className="text-xs text-gray-500 font-medium">{lang === "hi" ? "\u0938\u093F\u0938\u094D\u091F\u092E \u090F\u0921\u092E\u093F\u0928\u093F\u0938\u094D\u091F\u094D\u0930\u0947\u091F\u0930 \u0938\u0902\u092A\u0930\u094D\u0915" : "System Administrator Contact"}</p>
+                <p className="font-bold text-[#0B1C3D] text-sm mt-0.5" data-testid="admin-contact">{ADMIN_CONTACT}</p>
+              </div>
             </div>
           )}
 

@@ -220,6 +220,8 @@ export default function RegisterPage() {
       if (!form.address.city.trim()) e.city = true;
       if (!form.address.state.trim()) e.state = true;
       if (!form.address.country.trim()) e.country = true;
+      // Head of Family is mandatory when there are multiple attendees
+      if (form.attendees.length > 0 && !form.group_head_id) e.group_head_id = true;
     }
     if (step === 1) {
       if (form.selected_days.length === 0) e.selected_days = true;
@@ -241,6 +243,7 @@ export default function RegisterPage() {
       if (e.attendee_age) msgs.push(lang === "hi" ? "\u0938\u0939\u0940 \u0909\u092E\u094D\u0930 \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Enter valid age (0-120)");
       if (e.additional_phone || e.additional_phone_format) msgs.push(lang === "hi" ? "\u0938\u0939\u0940 \u092B\u093C\u094B\u0928 \u0928\u0902\u092C\u0930 \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Enter a valid phone number");
       if (e.email) msgs.push(lang === "hi" ? "\u0938\u0939\u0940 \u0908\u092E\u0947\u0932 \u092A\u0924\u093E \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Enter a valid email address");
+      if (e.group_head_id) msgs.push(lang === "hi" ? "\u092A\u0930\u093F\u0935\u093E\u0930 \u0915\u093E \u092E\u0941\u0916\u093F\u092F\u093E \u091A\u0941\u0928\u0947\u0902 (\u0939\u0947\u0921 \u0911\u092B \u092B\u0948\u092E\u093F\u0932\u0940)" : "Please select the Head of Family before continuing");
       if (e.selected_days) msgs.push(lang === "hi" ? "\u0915\u092E \u0938\u0947 \u0915\u092E \u090F\u0915 \u0926\u093F\u0928 \u091A\u0941\u0928\u0947\u0902" : "Select at least one day");
       if (e.expected_arrival_time) msgs.push(lang === "hi" ? "\u0906\u0917\u092E\u0928 \u0938\u092E\u092F \u091A\u0941\u0928\u0947\u0902" : "Expected arrival time is required");
       if (e.expected_departure_time) msgs.push(lang === "hi" ? "\u092A\u094D\u0930\u0938\u094D\u0925\u093E\u0928 \u0938\u092E\u092F \u091A\u0941\u0928\u0947\u0902" : "Expected departure time is required");

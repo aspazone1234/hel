@@ -9,13 +9,18 @@ function createAudioPlayer() {
   const audio = new Audio("/flute.opus");
   audio.loop = true;
   audio.volume = 0.5;
+  let pendingPlay = false;
   audio.onerror = () => {
     audio.src = "/flute.mp3";
     audio.load();
+    // Retry play after fallback loads if play was requested
+    if (pendingPlay) {
+      audio.addEventListener("canplaythrough", () => { audio.play().catch(() => {}); }, { once: true });
+    }
   };
   return {
-    start: () => { audio.play().catch(() => {}); },
-    stop: () => { audio.pause(); audio.currentTime = 0; },
+    start: () => { pendingPlay = true; audio.play().catch(() => {}); },
+    stop: () => { pendingPlay = false; audio.pause(); audio.currentTime = 0; },
     audio,
   };
 }

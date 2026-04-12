@@ -55,6 +55,14 @@ export default function AdminDashboard({ user }) {
     <div className="p-4 md:p-6 space-y-6" data-testid="command-centre">
       <h1 className="text-xl md:text-2xl font-bold text-[#0B1C3D]" data-testid="command-centre-title">Command Centre</h1>
 
+      {/* === ACTIONABLE NOTIFICATIONS — ABSOLUTE TOP === */}
+      {data.active_tickets > 0 && (
+        <div className="flex items-center gap-3 bg-red-50 border-2 border-red-300 rounded-xl p-3 animate-pulse" data-testid="top-notifications">
+          <AlertTriangle className="text-red-500 shrink-0" size={18} />
+          <span className="text-red-700 font-semibold text-sm">{data.active_tickets} active help ticket{data.active_tickets > 1 ? "s" : ""} need attention</span>
+        </div>
+      )}
+
       {/* Pending Approval Alert */}
       {data.pending_count > 0 && user?.role === "superadmin" && (
         <div className="flex items-center gap-3 bg-amber-50 border border-amber-300 rounded-xl p-4" data-testid="pending-alert">
@@ -177,30 +185,31 @@ export default function AdminDashboard({ user }) {
         </DialogContent>
       </Dialog>
 
-      {/* === ACTIONABLE NOTIFICATIONS — TOP === */}
-      {(data.active_tickets > 0) && (
-        <div className="space-y-2" data-testid="top-notifications">
-          {data.active_tickets > 0 && (
-            <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
-              <AlertTriangle className="text-red-500 shrink-0" size={18} />
-              <span className="text-red-700 font-medium text-sm">{data.active_tickets} active help ticket{data.active_tickets > 1 ? "s" : ""} need attention</span>
-            </div>
-          )}
+
+      {/* Main Stats Grid — 3 blocks */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Block 1: Expected Guests + Not Coming */}
+        <div className="bg-gradient-to-br from-blue-50 to-sky-50 rounded-xl p-4 border border-blue-100" data-testid="stat-expected-block">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock size={18} className="text-blue-600" />
+            <span className="font-semibold text-blue-800 text-sm">Expected Guests</span>
+          </div>
+          <div className="space-y-2">
+            <button onClick={() => openDrillDown("arrival_status", "not_arrived", "Expected Guests")}
+              className="flex justify-between items-center w-full text-left hover:bg-blue-100/50 rounded px-2 py-1 transition" data-testid="stat-expected">
+              <span className="text-sm text-blue-700">Expected</span>
+              <span className="font-bold text-blue-900 text-sm">{arr.expected.families} fam / {arr.expected.people} ppl</span>
+            </button>
+            <button onClick={() => openDrillDown("arrival_status", "not_coming", "Not Coming")}
+              className="flex justify-between items-center w-full text-left hover:bg-red-100/50 rounded px-2 py-1 transition" data-testid="stat-not-coming">
+              <span className="text-sm text-red-600">Not Coming</span>
+              <span className="font-bold text-red-700 text-sm">{arr.not_coming.families} fam / {arr.not_coming.people} ppl</span>
+            </button>
+          </div>
         </div>
-      )}
 
-      {/* Main Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Expected Guests - own block */}
-        <StatCard
-          icon={Clock} label="Expected Guests" color="bg-blue-50" textColor="text-blue-700" iconColor="text-blue-500"
-          families={arr.expected.families} people={arr.expected.people}
-          onClick={() => openDrillDown("arrival_status", "not_arrived", "Expected Guests")}
-          testId="stat-expected"
-        />
-
-        {/* Combined: Arrived + Not Coming + Not Arrived */}
-        <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-4 border border-emerald-100 cursor-pointer hover:shadow-md transition-shadow" data-testid="stat-arrival-status">
+        {/* Block 2: Arrival Status — Arrived, Not Arrived, Departed */}
+        <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-4 border border-emerald-100" data-testid="stat-arrival-status">
           <div className="flex items-center gap-2 mb-3">
             <UserCheck size={18} className="text-emerald-600" />
             <span className="font-semibold text-emerald-800 text-sm">Arrival Status</span>
@@ -210,26 +219,18 @@ export default function AdminDashboard({ user }) {
               <span className="text-sm text-emerald-700">Arrived</span>
               <span className="font-bold text-emerald-900 text-sm">{arr.arrived.families} fam / {arr.arrived.people} ppl</span>
             </button>
-            <button onClick={() => openDrillDown("arrival_status", "not_coming", "Not Coming")} className="flex justify-between items-center w-full text-left hover:bg-red-100/50 rounded px-2 py-1 transition" data-testid="stat-not-coming">
-              <span className="text-sm text-red-600">Not Coming</span>
-              <span className="font-bold text-red-700 text-sm">{arr.not_coming.families} fam / {arr.not_coming.people} ppl</span>
-            </button>
             <button onClick={() => openDrillDown("arrival_status", "not_arrived", "Not Yet Arrived")} className="flex justify-between items-center w-full text-left hover:bg-amber-100/50 rounded px-2 py-1 transition" data-testid="stat-not-arrived">
               <span className="text-sm text-amber-600">Not Arrived</span>
               <span className="font-bold text-amber-700 text-sm">{arr.not_arrived?.families || arr.expected.families} fam</span>
             </button>
+            <button onClick={() => openDrillDown("arrival_status", "departed", "Departed Guests")} className="flex justify-between items-center w-full text-left hover:bg-gray-100/50 rounded px-2 py-1 transition" data-testid="stat-departed">
+              <span className="text-sm text-gray-600">Departed</span>
+              <span className="font-bold text-gray-700 text-sm">{arr.departed.families} fam / {arr.departed.people} ppl</span>
+            </button>
           </div>
         </div>
 
-        {/* Departed - own block */}
-        <StatCard
-          icon={Plane} label="Departed" color="bg-gray-50" textColor="text-gray-600" iconColor="text-gray-400"
-          families={arr.departed.families} people={arr.departed.people}
-          onClick={() => openDrillDown("arrival_status", "departed", "Departed Guests")}
-          testId="stat-departed"
-        />
-
-        {/* Room Stats - merged into one card */}
+        {/* Block 3: Rooms */}
         <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-xl p-4 border border-purple-100" data-testid="stat-rooms">
           <div className="flex items-center gap-2 mb-3">
             <Hotel size={18} className="text-purple-600" />
@@ -242,8 +243,6 @@ export default function AdminDashboard({ user }) {
           </div>
         </div>
       </div>
-
-      {/* Active Tickets Alert — REMOVED (now at top) */}
 
       {/* Daily Schedule */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="daily-schedule">
@@ -343,27 +342,79 @@ export default function AdminDashboard({ user }) {
       )}
 
       {/* Top Geographies */}
-      {data.top_states?.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="top-states">
+      {(data.top_countries?.length > 0 || data.top_states?.length > 0 || data.top_cities?.length > 0) && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="top-geographies">
           <div className="p-4 border-b flex items-center gap-2">
             <Users size={16} className="text-teal-600" />
-            <h2 className="font-semibold text-[#0B1C3D] text-base">Top 5 States</h2>
+            <h2 className="font-semibold text-[#0B1C3D] text-base">Top Geographies</h2>
           </div>
-          <div className="p-4 space-y-2">
-            {data.top_states.map((s, i) => (
-              <div key={s.name} className="flex items-center gap-3">
-                <span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span>
-                <div className="flex-1">
-                  <div className="flex justify-between items-center mb-0.5">
-                    <span className="text-sm font-medium text-[#0B1C3D]">{s.name}</span>
-                    <span className="text-xs text-gray-500">{s.families} fam</span>
-                  </div>
-                  <div className="bg-gray-100 rounded-full h-1.5">
-                    <div className="bg-teal-500 h-1.5 rounded-full" style={{width: `${Math.min(100, (s.families / (data.top_states[0]?.families || 1)) * 100)}%`}}></div>
-                  </div>
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Top Countries */}
+            {data.top_countries?.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Countries</p>
+                <div className="space-y-2">
+                  {data.top_countries.map((s, i) => (
+                    <div key={s.name} className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-400 w-3">{i + 1}</span>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-0.5">
+                          <span className="text-sm font-medium text-[#0B1C3D] truncate max-w-[70%]">{s.name}</span>
+                          <span className="text-xs text-gray-500">{s.families} fam</span>
+                        </div>
+                        <div className="bg-gray-100 rounded-full h-1.5">
+                          <div className="bg-teal-500 h-1.5 rounded-full" style={{width: `${Math.min(100, (s.families / (data.top_countries[0]?.families || 1)) * 100)}%`}}></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
+            {/* Top States */}
+            {data.top_states?.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">States</p>
+                <div className="space-y-2">
+                  {data.top_states.map((s, i) => (
+                    <div key={s.name} className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-400 w-3">{i + 1}</span>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-0.5">
+                          <span className="text-sm font-medium text-[#0B1C3D] truncate max-w-[70%]">{s.name}</span>
+                          <span className="text-xs text-gray-500">{s.families} fam</span>
+                        </div>
+                        <div className="bg-gray-100 rounded-full h-1.5">
+                          <div className="bg-indigo-500 h-1.5 rounded-full" style={{width: `${Math.min(100, (s.families / (data.top_states[0]?.families || 1)) * 100)}%`}}></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {/* Top Cities */}
+            {data.top_cities?.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Cities</p>
+                <div className="space-y-2">
+                  {data.top_cities.map((s, i) => (
+                    <div key={s.name} className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-gray-400 w-3">{i + 1}</span>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-0.5">
+                          <span className="text-sm font-medium text-[#0B1C3D] truncate max-w-[70%]">{s.name}</span>
+                          <span className="text-xs text-gray-500">{s.families} fam</span>
+                        </div>
+                        <div className="bg-gray-100 rounded-full h-1.5">
+                          <div className="bg-amber-500 h-1.5 rounded-full" style={{width: `${Math.min(100, (s.families / (data.top_cities[0]?.families || 1)) * 100)}%`}}></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

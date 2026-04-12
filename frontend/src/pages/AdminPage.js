@@ -1,10 +1,11 @@
 import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { toast } from "sonner";
 import {
   LayoutDashboard, ScanLine, Headphones, ListTodo, Users, Hotel,
   ClipboardList, FileText, MessageSquare, Settings, LogOut, ChevronLeft, ChevronRight, Shield,
-  Menu, X, UserCheck, Plane
+  UserCheck, Plane, ChevronsRight
 } from "lucide-react";
 import AdminDashboard from "../components/admin/AdminDashboard";
 import PendingApproval from "../components/admin/PendingApproval";
@@ -17,6 +18,7 @@ import HelpCentre from "../components/admin/HelpCentre";
 import MessageCenter from "../components/admin/MessageCenter";
 import TodoModule from "../components/admin/TodoModule";
 import CustomFieldsManager from "../components/admin/CustomFieldsManager";
+import AdminAuditLog from "../components/admin/AdminAuditLog";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -64,10 +66,11 @@ function LoginForm({ onLogin }) {
 
 function AdminShell({ user, onLogout }) {
   const [currentView, setCurrentView] = useState("dashboard");
-  const [collapsed, setCollapsed] = useState(true);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  // Mobile: collapsed (icon-only) by default; Desktop: expanded by default
+  const [collapsed, setCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const navigate = useNavigate();
   const isSuper = user?.role === "superadmin";
+  const authHeaders = useCallback(() => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` }), []);
 
   const handleLogout = () => {
     localStorage.removeItem("admin_token");
@@ -99,7 +102,10 @@ function AdminShell({ user, onLogout }) {
 
   const handleNavClick = (id) => {
     setCurrentView(id);
-    setMobileOpen(false);
+    // Auto-collapse on mobile after nav
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setCollapsed(true);
+    }
   };
 
   const renderView = () => {
@@ -116,7 +122,7 @@ function AdminShell({ user, onLogout }) {
       case "todos": return <TodoModule user={user} />;
       case "customfields": return isSuper ? <CustomFieldsManager user={user} /> : <NoAccess />;
       case "admins": return isSuper ? <AdminManagement user={user} /> : <NoAccess />;
-      case "audit": return <AuditLog user={user} />;
+      case "audit": return <AdminAuditLog user={user} authHeaders={authHeaders} />;
       default: return <AdminDashboard user={user} />;
     }
   };
@@ -124,8 +130,7 @@ function AdminShell({ user, onLogout }) {
   const sidebarContent = (
     <>
       <nav className="flex-1 overflow-y-auto py-2" data-testid="admin-nav">
-        {!collapsed && !mobileOpen ? null : null}
-        {(mobileOpen || !collapsed) && (
+        {!collapsed && (
           <div className="mx-3 mb-2 p-2 bg-white/5 rounded-lg border border-white/10" data-testid="training-section">
             <p className="text-white/40 text-[10px] uppercase tracking-wider mb-1">Quick Guide</p>
             <p className="text-white/60 text-[11px] leading-tight">
@@ -141,23 +146,23 @@ function AdminShell({ user, onLogout }) {
           return (
             <button key={item.id} onClick={() => handleNavClick(item.id)}
               data-testid={`nav-${item.id}`}
-              title={collapsed && !mobileOpen ? item.label : undefined}
+              title={collapsed ? item.label : undefined}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
                 active ? "bg-white/15 text-[#B8860B] font-semibold" :
                 item.highlight ? "text-yellow-300 hover:bg-white/10" :
                 "text-white/80 hover:bg-white/10"
-              }`}>
+              } ${collapsed ? "justify-center px-2" : ""}`}>
               <Icon size={18} className="shrink-0" />
-              {(mobileOpen || !collapsed) && <span className="truncate">{item.label}</span>}
+              {!collapsed && <span className="truncate">{item.label}</span>}
             </button>
           );
         })}
       </nav>
       <div className="p-3 border-t border-white/10">
-        {(mobileOpen || !collapsed) && <p className="text-xs text-white/50 mb-2 truncate">{user?.display_name || user?.name}</p>}
+        {!collapsed && <p className="text-xs text-white/50 mb-2 truncate">{user?.display_name || user?.name}</p>}
         <button onClick={handleLogout} data-testid="logout-btn"
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-300 hover:bg-red-500/20 rounded transition">
-          <LogOut size={16} /> {(mobileOpen || !collapsed) && "Logout"}
+          className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-red-300 hover:bg-red-500/20 rounded transition ${collapsed ? "justify-center" : ""}`}>
+          <LogOut size={16} /> {!collapsed && "Logout"}
         </button>
       </div>
     </>
@@ -165,40 +170,38 @@ function AdminShell({ user, onLogout }) {
 
   return (
     <div className="min-h-screen flex bg-gray-50" data-testid="admin-shell">
-      {/* Mobile top bar */}
-      <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-[#0B1C3D] text-white flex items-center justify-between px-4 py-3">
-        <button onClick={() => setMobileOpen(!mobileOpen)} data-testid="mobile-menu-toggle"
-          className="text-white p-1 rounded hover:bg-white/10">
-          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
-        </button>
-        <span className="font-bold text-sm">Swamsevak Portal</span>
-        <div className="w-8" />
-      </div>
-
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-30 bg-black/50" onClick={() => setMobileOpen(false)} />
-      )}
-
-      {/* Mobile sidebar drawer */}
-      <aside className={`md:hidden fixed top-12 left-0 bottom-0 z-30 bg-[#0B1C3D] text-white flex flex-col w-64 transform transition-transform duration-300 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
-        data-testid="mobile-sidebar">
-        {sidebarContent}
-      </aside>
-
-      {/* Desktop sidebar */}
-      <aside className={`hidden md:flex bg-[#0B1C3D] text-white flex-col transition-all duration-300 ${collapsed ? "w-16" : "w-60"} shrink-0`} data-testid="admin-sidebar">
-        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+      {/* Unified sidebar — always visible; icon-only on mobile by default */}
+      <aside
+        className={`bg-[#0B1C3D] text-white flex flex-col transition-all duration-300 shrink-0 ${collapsed ? "w-14" : "w-60"}`}
+        style={{ minHeight: "100vh", position: "sticky", top: 0, alignSelf: "flex-start", height: "100vh", overflowY: "auto" }}
+        data-testid="admin-sidebar">
+        {/* Sidebar header with expand/collapse toggle */}
+        <div className={`border-b border-white/10 flex items-center ${collapsed ? "justify-center py-4 px-2" : "px-4 py-4 justify-between"}`}>
           {!collapsed && <span className="font-bold text-sm truncate">Swamsevak Portal</span>}
-          <button onClick={() => setCollapsed(!collapsed)} className="text-white/70 hover:text-white" data-testid="sidebar-toggle">
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
+          <div className="relative">
+            <button onClick={() => setCollapsed(!collapsed)} className="text-white/70 hover:text-white" data-testid="sidebar-toggle" title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+              {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            </button>
+            {/* Blinking expand cue — shown only when collapsed */}
+            {collapsed && (
+              <span className="absolute -top-1 -right-1 flex h-3 w-3" data-testid="expand-cue">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#B8860B] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#D4AF37]"></span>
+              </span>
+            )}
+          </div>
         </div>
+        {/* Expand hint when collapsed */}
+        {collapsed && (
+          <div className="flex flex-col items-center py-2 px-1 border-b border-white/10">
+            <ChevronsRight size={14} className="text-[#B8860B] animate-pulse" />
+          </div>
+        )}
         {sidebarContent}
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto min-h-screen md:pt-0 pt-12">
+      <main className="flex-1 overflow-y-auto min-h-screen">
         {renderView()}
       </main>
     </div>
@@ -303,55 +306,6 @@ function AdminManagement({ user }) {
               <button onClick={() => setShowCreate(false)} className="border px-4 py-2 rounded text-sm flex-1">Cancel</button>
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AuditLog({ user }) {
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const isSuper = user?.role === "superadmin";
-  const authHeaders = useCallback(() => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` }), []);
-
-  const fetchLogs = useCallback(async () => {
-    try {
-      const { data } = await axios.get(`${API}/api/admin/audit-logs`, { headers: authHeaders(), params: { per_page: 100 } });
-      setLogs(data.data || []);
-    } catch {}
-    setLoading(false);
-  }, [authHeaders]);
-
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
-
-  const clearLogs = async () => {
-    if (!window.confirm("Clear all audit logs?")) return;
-    try {
-      await axios.delete(`${API}/api/admin/audit-logs`, { headers: authHeaders() });
-      fetchLogs();
-    } catch {}
-  };
-
-  return (
-    <div className="p-4 md:p-6 space-y-4" data-testid="audit-log">
-      <div className="flex justify-between items-center">
-        <h1 className="text-xl font-bold text-[#0B1C3D]">Activity Log</h1>
-        {isSuper && <button onClick={clearLogs} className="text-red-500 text-sm hover:underline" data-testid="clear-logs-btn">Clear All</button>}
-      </div>
-      {loading ? <p className="text-gray-500">Loading...</p> : (
-        <div className="space-y-2">
-          {logs.map((l, i) => (
-            <div key={i} className="bg-white rounded-lg p-3 border text-sm">
-              <div className="flex justify-between">
-                <span className="font-medium text-[#0B1C3D]">{l.action}</span>
-                <span className="text-xs text-gray-400">{l.performed_by}</span>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">{l.description} {l.target_id && `(${l.target_id})`}</p>
-              <p className="text-xs text-gray-400">{new Date(l.created_at).toLocaleString()}</p>
-            </div>
-          ))}
-          {logs.length === 0 && <p className="text-gray-400 text-center py-4">No activity logs</p>}
         </div>
       )}
     </div>

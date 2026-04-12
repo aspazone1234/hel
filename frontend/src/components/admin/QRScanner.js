@@ -240,41 +240,87 @@ export default function QRScanner({ user }) {
           {/* Scan Result - Checkin Flow */}
           {scanResult && <AttendanceCheckin reg={scanResult} authHeaders={authHeaders} onDone={() => { setScanResult(null); setScanInput(""); }} />}
 
-          {/* Already Arrived Popup */}
+          {/* Already Arrived Popup — Read-Only View */}
           {alreadyArrivedInfo && (
-            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-5 space-y-3" data-testid="already-arrived-popup">
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-5 space-y-4" data-testid="already-arrived-popup">
               <div className="text-center">
-                <p className="font-bold text-amber-800 text-base">Already Marked as Arrived</p>
-                <p className="text-sm text-amber-700 mt-1">This family has already been marked as arrived. For any changes, contact the superintendent.</p>
+                <div className="inline-flex items-center gap-2 bg-amber-600 text-white px-4 py-1.5 rounded-full text-sm font-bold mb-2">
+                  <Check size={14} /> Attendance Already Marked
+                </div>
+                <p className="text-sm text-amber-800 font-medium">This person's attendance has already been recorded. This is a read-only view.</p>
               </div>
-              <div className="bg-white rounded-lg p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Name</span>
-                  <span className="font-medium">{(alreadyArrivedInfo.attendees || []).find(a => a.id === alreadyArrivedInfo.group_head_id)?.name || alreadyArrivedInfo.primary_mobile}</span>
+
+              {/* Full Guest Profile */}
+              <div className="bg-white rounded-xl border border-amber-200 divide-y">
+                <div className="p-3">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Family Head</p>
+                  <p className="font-bold text-[#0B1C3D] text-base">
+                    {(alreadyArrivedInfo.attendees || []).find(a => a.id === alreadyArrivedInfo.group_head_id)?.name || alreadyArrivedInfo.primary_mobile}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-0.5">{alreadyArrivedInfo.num_people} people · Room: {(alreadyArrivedInfo.room_assignments || []).join(", ") || "—"}</p>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Mobile</span>
-                  <span className="font-medium">{alreadyArrivedInfo.primary_mobile}</span>
+                {/* All Attendees */}
+                {(alreadyArrivedInfo.attendees || []).length > 0 && (
+                  <div className="p-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">All Attendees</p>
+                    <div className="space-y-1.5">
+                      {(alreadyArrivedInfo.attendees || []).map((a) => (
+                        <div key={a.id} className="flex items-center gap-2 text-sm">
+                          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs shrink-0 ${a.id === alreadyArrivedInfo.group_head_id ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-600"}`}>
+                            {a.id === alreadyArrivedInfo.group_head_id ? "H" : "·"}
+                          </span>
+                          <span className="font-medium text-[#0B1C3D]">{a.name}</span>
+                          {a.age && <span className="text-gray-400 text-xs">Age {a.age}</span>}
+                          {a.special_needs && <span className="text-amber-600 text-xs bg-amber-50 px-1.5 py-0.5 rounded">{a.special_needs}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Other Details */}
+                <div className="p-3 space-y-1.5 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Contact Volunteer</span>
+                    <span className="font-medium text-purple-700">{alreadyArrivedInfo.assigned_swamsevak || "—"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Reference Person</span>
+                    <span className="font-medium">{alreadyArrivedInfo.reference_person_name || "—"}</span>
+                  </div>
+                  {(alreadyArrivedInfo.selected_days || []).length > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Stay Dates</span>
+                      <span className="font-medium text-xs text-right max-w-[60%]">{(alreadyArrivedInfo.selected_days || []).join(", ")}</span>
+                    </div>
+                  )}
+                  {alreadyArrivedInfo.family_special_request && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Family Note</span>
+                      <span className="font-medium text-amber-700 text-xs text-right max-w-[60%]">{alreadyArrivedInfo.family_special_request}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Attendance Status</span>
+                    <span className="font-bold text-green-700 uppercase text-xs">{alreadyArrivedInfo.arrival_status}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">People</span>
-                  <span className="font-medium">{alreadyArrivedInfo.num_people}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Room</span>
-                  <span className="font-medium">{(alreadyArrivedInfo.room_assignments || []).join(", ") || "—"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Contact</span>
-                  <span className="font-medium">{alreadyArrivedInfo.assigned_swamsevak || "—"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Status</span>
-                  <span className="font-bold text-green-700">ARRIVED</span>
-                </div>
+                {/* Admin Note */}
+                {alreadyArrivedInfo.admin_notes && (
+                  <div className="p-3">
+                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Admin Notes</p>
+                    <p className="text-sm text-gray-700">{alreadyArrivedInfo.admin_notes}</p>
+                  </div>
+                )}
               </div>
-              <button onClick={() => { setAlreadyArrivedInfo(null); setScanInput(""); }} className="w-full bg-amber-600 text-white py-2 rounded-lg text-sm font-medium" data-testid="dismiss-arrived-popup">
-                Dismiss
+
+              {/* Super Admin Contact Note */}
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                <p className="text-xs text-red-700 font-medium">Attendance marked incorrectly?</p>
+                <p className="text-xs text-red-600 mt-0.5">Contact the <strong>Super Admin</strong> to make any corrections. No changes can be made from this QR scan flow.</p>
+              </div>
+
+              <button onClick={() => { setAlreadyArrivedInfo(null); setScanInput(""); }} className="w-full bg-amber-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-amber-700 transition" data-testid="dismiss-arrived-popup">
+                Dismiss — Scan Next Guest
               </button>
             </div>
           )}

@@ -1234,6 +1234,22 @@ async def get_dashboard(request: Request):
     ]
     top_states = [{"name": g["_id"], "families": g["families"], "people": g["people"]} for g in await db.registrations.aggregate(geo_pipeline).to_list(5) if g["_id"]]
 
+    # Top 5 countries
+    country_pipeline = [
+        {"$match": {"approval_status": "approved", "address.country": {"$exists": True, "$ne": ""}}},
+        {"$group": {"_id": "$address.country", "families": {"$sum": 1}, "people": {"$sum": "$num_people"}}},
+        {"$sort": {"families": -1}}, {"$limit": 5}
+    ]
+    top_countries = [{"name": g["_id"], "families": g["families"], "people": g["people"]} for g in await db.registrations.aggregate(country_pipeline).to_list(5) if g["_id"]]
+
+    # Top 5 cities
+    city_pipeline = [
+        {"$match": {"approval_status": "approved", "address.city": {"$exists": True, "$ne": ""}}},
+        {"$group": {"_id": "$address.city", "families": {"$sum": 1}, "people": {"$sum": "$num_people"}}},
+        {"$sort": {"families": -1}}, {"$limit": 5}
+    ]
+    top_cities = [{"name": g["_id"], "families": g["families"], "people": g["people"]} for g in await db.registrations.aggregate(city_pipeline).to_list(5) if g["_id"]]
+
     return {
         "pending_count": pending_count,
         "approved_count": approved_count,
@@ -1255,6 +1271,8 @@ async def get_dashboard(request: Request):
         "relation_stats": relation_stats,
         "nested_ref_stats": nested_ref_stats,
         "top_states": top_states,
+        "top_countries": top_countries,
+        "top_cities": top_cities,
     }
 
 # ─── Audit Logs ───
@@ -1807,6 +1825,8 @@ class TodoCreate(BaseModel):
     priority: str = "medium"
     todo_type: str = "manual"
     related_registration_id: str = ""
+    is_recurring: bool = False
+    recurring_time: str = ""
 
 class TodoUpdate(BaseModel):
     title: Optional[str] = None
@@ -1815,6 +1835,8 @@ class TodoUpdate(BaseModel):
     due_date: Optional[str] = None
     priority: Optional[str] = None
     completed: Optional[bool] = None
+    last_completed_date: Optional[str] = None
+    completion_history: Optional[List[dict]] = None
 
 @api_router.get("/admin/todos")
 async def get_todos(request: Request, assigned_to: Optional[str] = None, completed: Optional[str] = None, due_date: Optional[str] = None, page: int = 1, per_page: int = 50):
@@ -1838,31 +1860,55 @@ async def get_todos(request: Request, assigned_to: Optional[str] = None, complet
 @api_router.post("/admin/todos")
 async def create_todo(body: TodoCreate, request: Request):
     user = await get_current_user(request)
+    # Volunteers can only create tasks for themselves; superadmin can assign to others
+    if user.get("role") != "superadmin":
+        assigned_to = user["username"]
+    else:
+        assigned_to = body.assigned_to or user["username"]
     doc = {
         "id": str(uuid.uuid4()),
         "title": body.title,
         "description": body.description,
-        "assigned_to": body.assigned_to or user["username"],
+        "assigned_to": assigned_to,
         "due_date": body.due_date,
         "priority": body.priority,
         "todo_type": body.todo_type,
         "related_registration_id": body.related_registration_id,
+        "is_recurring": body.is_recurring if user.get("role") == "superadmin" else False,
+        "recurring_time": body.recurring_time if user.get("role") == "superadmin" else "",
         "completed": False,
         "completed_at": "",
+        "last_completed_date": "",
+        "completion_history": [],
         "created_by": user["username"],
+        "created_by_role": user.get("role", "swamsevak"),
         "created_by_name": user["name"],
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.todos.insert_one(doc)
     doc.pop("_id", None)
-    await log_audit("todo_create", "todo", doc["id"], body.title, f"To-do created for {body.assigned_to or user['username']}", user["name"])
+    await log_audit("todo_create", "todo", doc["id"], body.title, f"To-do created for {assigned_to}", user["name"])
     return doc
 
 @api_router.put("/admin/todos/{todo_id}")
 async def update_todo(todo_id: str, body: TodoUpdate, request: Request):
     user = await get_current_user(request)
+    todo = await db.todos.find_one({"id": todo_id}, {"_id": 0})
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
-    if "completed" in updates and updates["completed"]:
+    # Handle recurring task completion differently
+    if "completed" in updates and updates["completed"] and todo.get("is_recurring"):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        history_entry = {"date": today, "completed_at": datetime.now(timezone.utc).isoformat(), "completed_by": user["name"]}
+        completion_history = todo.get("completion_history", [])
+        completion_history.append(history_entry)
+        updates["completion_history"] = completion_history
+        updates["last_completed_date"] = today
+        # Don't mark as permanently completed for recurring tasks
+        del updates["completed"]
+        updates["completed"] = False
+    elif "completed" in updates and updates["completed"]:
         updates["completed_at"] = datetime.now(timezone.utc).isoformat()
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.todos.update_one({"id": todo_id}, {"$set": updates})
@@ -1871,10 +1917,21 @@ async def update_todo(todo_id: str, body: TodoUpdate, request: Request):
 @api_router.delete("/admin/todos/{todo_id}")
 async def delete_todo(todo_id: str, request: Request):
     user = await get_current_user(request)
-    if user.get("role") != "superadmin":
-        todo = await db.todos.find_one({"id": todo_id})
-        if todo and todo.get("created_by") != user["username"]:
-            raise HTTPException(status_code=403, detail="Only Super Admin or creator can delete")
+    todo = await db.todos.find_one({"id": todo_id}, {"_id": 0})
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    is_super = user.get("role") == "superadmin"
+    if not is_super:
+        # Volunteers cannot delete recurring tasks
+        if todo.get("is_recurring"):
+            raise HTTPException(status_code=403, detail="Cannot delete recurring tasks")
+        # Volunteers cannot delete tasks created by super admin
+        creator = await db.admins.find_one({"username": todo.get("created_by", "")}, {"_id": 0, "role": 1})
+        if creator and creator.get("role") == "superadmin":
+            raise HTTPException(status_code=403, detail="Cannot delete tasks created by Super Admin")
+        # Volunteers can only delete their own tasks
+        if todo.get("created_by") != user["username"]:
+            raise HTTPException(status_code=403, detail="Only creator or Super Admin can delete this task")
     await db.todos.delete_one({"id": todo_id})
     await log_audit("todo_delete", "todo", todo_id, "", "To-do deleted", user["name"])
     return {"message": "Deleted"}
@@ -2015,8 +2072,8 @@ class CustomFieldCreate(BaseModel):
     field_type: str = "text"
     default_value: str = ""
     options: List[str] = []
-    scope: str = "registration"
-    visibility: str = "admin_only"
+    target_scope: str = "all"  # "expected", "arrived", "all"
+    applies_to: List[str] = []  # list of registration IDs this field applies to
 
 @api_router.get("/admin/custom-fields")
 async def get_custom_fields(request: Request):
@@ -2030,7 +2087,8 @@ async def create_custom_field(body: CustomFieldCreate, request: Request):
     doc = {
         "id": str(uuid.uuid4()), "name": body.name, "field_type": body.field_type,
         "default_value": body.default_value, "options": body.options,
-        "scope": body.scope, "visibility": body.visibility,
+        "target_scope": body.target_scope, "visibility": "admin_only",
+        "applies_to": body.applies_to,
         "created_at": datetime.now(timezone.utc).isoformat(), "created_by": user["name"],
     }
     await db.custom_fields.insert_one(doc)
@@ -2388,8 +2446,11 @@ async def swamsevak_dashboard(request: Request):
     user = await get_current_user(request)
     name = user["name"]
     username = user["username"]
+    is_super = user.get("role") == "superadmin"
     # Match by full name OR username (backward compatibility for old assignments stored as username)
     swamsevak_query = {"$or": [{"assigned_swamsevak": name}, {"assigned_swamsevak": username}]}
+    # For superadmin, special_needs and other global views show ALL guests
+    global_query: dict = {}
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     # My assigned guests
     assigned = await db.registrations.count_documents({**swamsevak_query, "approval_status": "approved"})
@@ -2406,9 +2467,10 @@ async def swamsevak_dashboard(request: Request):
                 head = a.get("name", "")
         dep_list.append({"id": r["id"], "head_name": head, "departure_time": r.get("expected_departure_time", ""),
                          "rooms": r.get("room_assignments", [])})
-    # Special needs for assigned guests
+    # Special needs — superadmin sees ALL, volunteers see only their assigned guests
+    special_query = global_query if is_super else swamsevak_query
     special = await db.registrations.find(
-        {**swamsevak_query, "approval_status": "approved",
+        {**special_query, "approval_status": "approved",
          "$or": [{"family_special_request": {"$ne": ""}}, {"attendees.special_needs": {"$ne": ""}}]},
         {"_id": 0, "id": 1, "attendees": 1, "group_head_id": 1, "family_special_request": 1, "room_assignments": 1}
     ).to_list(50)
