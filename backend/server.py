@@ -2079,6 +2079,10 @@ class CustomFieldCreate(BaseModel):
 async def get_custom_fields(request: Request):
     await get_current_user(request)
     fields = await db.custom_fields.find({}, {"_id": 0}).sort("name", 1).to_list(100)
+    # Backward compatibility: add defaults for old fields without new fields
+    for f in fields:
+        f.setdefault("target_scope", "all")
+        f.setdefault("applies_to", [])
     return fields
 
 @api_router.post("/admin/custom-fields")
@@ -2468,10 +2472,22 @@ async def swamsevak_dashboard(request: Request):
         dep_list.append({"id": r["id"], "head_name": head, "departure_time": r.get("expected_departure_time", ""),
                          "rooms": r.get("room_assignments", [])})
     # Special needs — superadmin sees ALL, volunteers see only their assigned guests
-    special_query = global_query if is_super else swamsevak_query
+    if is_super:
+        special_filter = {
+            "approval_status": "approved",
+            "$or": [{"family_special_request": {"$ne": ""}}, {"attendees.special_needs": {"$ne": ""}}]
+        }
+    else:
+        # Use $and to combine swamsevak filter + special_needs filter without $or collision
+        special_filter = {
+            "approval_status": "approved",
+            "$and": [
+                swamsevak_query,
+                {"$or": [{"family_special_request": {"$ne": ""}}, {"attendees.special_needs": {"$ne": ""}}]}
+            ]
+        }
     special = await db.registrations.find(
-        {**special_query, "approval_status": "approved",
-         "$or": [{"family_special_request": {"$ne": ""}}, {"attendees.special_needs": {"$ne": ""}}]},
+        special_filter,
         {"_id": 0, "id": 1, "attendees": 1, "group_head_id": 1, "family_special_request": 1, "room_assignments": 1}
     ).to_list(50)
     special_list = []

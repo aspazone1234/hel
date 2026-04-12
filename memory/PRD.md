@@ -1,91 +1,156 @@
-# PRD - Shrimad Bhagavat Katha 2026 Event Operations Platform
+# PRD - Shrimad Bhagavat Katha 2026 Event Registration & Admin System
 
-## Overview
-Comprehensive event operations platform for Shrimad Bhagavat Katha 2026, Pushkar. React + FastAPI + MongoDB.
+## Original Problem Statement
+Full-stack event management platform for Katha 2026 (Shrimad Bhagavat). Mobile-first, WhatsApp-based guest registration and admin management system with QR code attendance, room assignments, volunteer management, and real-time dashboard.
 
-## Core Identity
-- **Mobile Number (WhatsApp)** = immutable primary identity key across ALL workflows
-- Event: May 28 - June 3, 2026 | Registration Cutoff: May 19, 2026
-- Venue: Shri Gautam Ashram, Pushkar, Rajasthan
+---
 
-## Implemented Features (All Verified)
+## User Personas
+1. **Guest / Attendee** — Registers via mobile number + WhatsApp OTP, gets confirmation with QR code
+2. **Swamsevak (Volunteer Admin)** — Manages assigned guests, marks attendance via QR, handles help tickets
+3. **Super Admin (superashwini)** — Full control: approvals, room assignment, analytics, task management, edit all records
 
-### Landing Page
-- Splash animation, Hindi/English toggle, countdown timer
-- **Deadline notice**: "Registrations and application changes are open until 19 May 2026"
-- **All CTAs say "Register / Update"** (nav header, sticky button, RegistrationCTA)
+---
 
-### Registration Form (Public)
-- OTP-based WhatsApp mobile verification (format validated before OTP send)
-- Multi-step: Attendees -> Stay/Travel -> Reference -> Review
-- **Mandatory**: Names, Age, Additional Phone, Address, Days, Arrival Time, Departure Time, Reference Person, Relation, Group Head
-- **Optional**: Email, Special Needs, Family/Group Special Request (in attendees modal), Travel mode/details
-- **Removed from UI**: Family/Group Special Request (from step 0, moved to attendees edit), Preferred Language
-- Post-submit: redirects to User Portal with success banner
-- **Fixed (Feb 2026)**: `stateSearch is not defined` crash after OTP verification → renamed to `addrStateSearch`
+## Core Requirements
+- WhatsApp mobile-based primary identity (DO NOT change)
+- QR code for attendance entry
+- Mobile-first design
+- Room management and swamsevak assignment
+- Help ticket / support system
 
-### User Single-Page Portal (/my-registration)
-- Collapsible sections: Attendees, Contact, Address, Stay & Travel, Reference, Allocation
-- **5 Modal-based edits**: attendees (with family/group request), address, communication (WhatsApp locked), stay/travel, reference
-- Edit locked after May 19, 2026 or when confirmed
-- **Confirmed state**: approved + room + QR + contact -> locked edits, room/QR display, admin contact (+91 7048850050)
-- Language switcher (Hindi/English)
+---
 
-### Thank-You Page
-- **"Final Confirmation on May 21"** is FIRST and MOST PROMINENT step (large green card)
-- **"Room details sent on 21 May via WhatsApp"** prominently highlighted
-- "Editable until May 19" and "Locked on May 19" as secondary/tertiary steps
+## Architecture
+```
+/app/
+├── backend/
+│   ├── server.py              # All endpoints (~2600 lines)
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── AddressSelector.js     # Country/State/City autocomplete
+│   │   │   ├── Navbar.js              # Flute sound player
+│   │   │   ├── HeroSection.js         # Golden door + flute trigger
+│   │   │   └── admin/
+│   │   │       ├── QRScanner.js       # jsQR auto-detect + re-scan read-only view
+│   │   │       ├── AdminDashboard.js  # Command Center (3-block layout)
+│   │   │       ├── TodoModule.js      # Tasks + recurring + Guest Assignment
+│   │   │       ├── AdminAuditLog.js   # Activity Log
+│   │   │       ├── AdminRoomManagement.js  # Room cards with vacancy info + transfer
+│   │   │       ├── CustomFieldsManager.js  # target_scope redesign
+│   │   │       ├── ExpectedGuestList.js    # Full edit dialog
+│   │   │       └── ArrivedGuestList.js     # Full edit dialog
+│   │   └── pages/
+│   │       ├── RegisterPage.js        # Guest self-registration
+│   │       ├── MyRegistrationPage.js  # Confirmation with volunteer contact
+│   │       ├── ThankYouPage.js
+│   │       └── AdminPage.js           # Admin shell with icon sidebar
+└── memory/
+    └── PRD.md
+```
 
-### Admin Portal
-- **CRITICAL FIX**: Approve/Disapprove now uses dedicated `/approve` and `/reject` endpoints (was silently failing with generic PUT)
-- Instant UI update on approve/reject (local state removal)
-- **Super Admin edit/delete** across ALL 3 buckets (Pending, Expected, Arrived)
-- **PDF + CSV exports** on ALL lists: Pending, Expected, Arrived, Rooms
-- **Manual Entry form**: exact field replica of public form (reference/relation dropdowns, mandatory age/times, time slot selectors)
-- **Audit log**: stores previous AND new values for every field change
+---
 
-### Room Management
-- Floor-wise / Reference Person / Swamsevak-wise views
-- **Fixed (Feb 2026)**: Room creation error toast with FastAPI validation error arrays → now parses properly
-- **Fixed (Feb 2026)**: Room list display (raw list vs `.data` wrapper) fixed in both AdminRoomManagement and ExpectedGuestList
-- **Fixed (Feb 2026)**: Room assignment dialog now shows ALL rooms — available (green, clickable) and occupied (red, grayed out, shows occupant name)
-- **Updated (Feb 2026)**: Add Room dialog now shows labeled fields: Room Number, AC/Non-AC, Number of Beds, Floor (optional), Other Notes
-- **Added (Feb 2026)**: Bulk Create tab — enter multiple room numbers (one per line), set shared AC type, beds, floor, notes
-- Room cards now display: Beds, AC type, Floor, Notes, occupant info
+## What's Been Implemented
 
-### Swamsevak / Contact Person Assignment
-- **Fixed (Feb 2026)**: Swamsevak assignment stored `username` instead of `name` → dashboard showed 0 assigned guests
-- **Fixed (Feb 2026)**: swamsevak-dashboard now queries by both name AND username (backward compat)
-- Todos and tickets in swamsevak dashboard now match by both name and username
+### June 2025 — Phase 1 (Foundation)
+- WhatsApp OTP-based registration flow
+- Guest self-registration (multi-step form)
+- QR code generation + download
+- Admin panel with login
+- Basic expected/arrived guest lists
 
-### Dashboard — Reference Person & Relation Stats
-- **Added (Feb 2026)**: "By Reference Person" section — clickable cards per reference person showing families/people count
-- **Added (Feb 2026)**: "By Relation" section — clickable cards per relation category showing families/people count
-- Both sections open drill-down popup listing guests when clicked
+### Phase 2 (Core Features)
+- Room management (create, assign, bulk create)
+- Swamsevak assignment and dashboard
+- Help Centre (tickets)
+- Custom fields framework
+- Todo/task module
+- Reference person management
+- PDF/CSV exports
 
-### QR Code System
-- **Super Admin only** generation (in Expected list only)
-- **Conditional button**: "Generate QR" (no QR) / "Download QR" (QR exists)
-- QR permanently bound to mobile, dynamic data, versioned
-- QR scan validates token + active + 3 conditions
-- PNG download from Expected list and User Portal
+### Phase 3 (Stabilization)
+- Address standardization (Country/State/City via AddressSelector)
+- DB cleanup (stale rooms, test data)
+- Swamsevak count fixes
+- Reference person stats
+- Room management export
+- Expected guest list filters
 
-### Attendance & Arrival Rules
-- **3-condition hard block**: contact person + room + QR required
-- Specific error messages for each missing condition
-- **No double-marking**: already arrived -> popup with person details (name, mobile, room, status)
-- **Camera preview PRIMARY**: visible by default, manual token entry secondary
-- Both scan and search modes use `mark-arrival` endpoint (enforces 3-condition block)
+### Phase 4 (Apr 2026 — 18-Point Overhaul)
+1. ✅ QR re-scan: shows full read-only guest profile + "contact super admin" note
+2. ✅ Confirmation page: volunteer contact explanation, mobile number, bigger QR button, form-closed notice, System Admin label
+3. ✅ Head of Family mandatory in registration form
+4. ✅ Toast import fixed in AdminPage.js (admin creation no longer errors)
+5. ✅ Edit permissions: Super Admin = full edit (all customer fields except mobile), Volunteer = admin notes + custom fields only. Edit button visible to ALL admin roles.
+6. ✅ Active ticket notification at ABSOLUTE TOP of Command Center (above My Day)
+7. ✅ Room transfer: super admin can shift occupied room to empty room
+8. ✅ Dashboard blocks restructured: Expected+NotComing | ArrivalStatus(Arrived/NotArrived/Departed) | Rooms
+9. ✅ Room cards: occupant name/family, departure date, "Vacant in X days" label
+10. ✅ Custom fields: target_scope (Expected/Arrived/All), admin-only, guest selector
+11. ✅ Activity Log uses full AdminAuditLog.js component
+12. ✅ Guest Assignment section in TodoModule (see all volunteer→guest assignments)
+13. ✅ Recurring tasks: daily reset at configured time, completion history, permissions (volunteers can't delete recurring/superadmin tasks)
+14. ✅ Top Geographies: Countries + States + Cities (not just states)
+15. ✅ My Day: Special Needs shows ALL guests for super admin, only assigned for volunteers
+16. ✅ Flute sound: fallback to MP3 now also calls play()
+17. ✅ Mobile sidebar: icon-only default on mobile, expanded default on desktop, blinking expand cue
+18. ✅ Regression maintained
 
-## Remaining Backlog
-### P0 - QR Scanner Auto-Detection (jsQR)
-- Implement `requestAnimationFrame` loop in `QRScanner.js` using jsQR for hands-free scan
+---
 
-### P1
-- Real Twilio SMS / WhatsApp Business API integration
+## Key API Endpoints
+- `POST /api/auth/login` — Admin login
+- `POST /api/register` — Guest registration
+- `GET /api/registration/by-mobile/{mobile}` — Guest self-lookup
+- `GET /api/admin/dashboard` — Full analytics (includes top_countries, top_cities)
+- `GET /api/admin/swamsevak-dashboard` — My Day (superadmin=global, volunteer=scoped)
+- `GET /api/admin/guests/expected` — Expected list (paginated)
+- `GET /api/admin/guests/arrived` — Arrived list (paginated)
+- `PUT /api/admin/registrations/{id}` — Update registration
+- `PUT /api/admin/rooms/{code}/shift` — Room transfer
+- `POST /api/admin/todos` — Create task (recurring supported)
+- `POST /api/admin/custom-fields` — Create custom field (with target_scope, applies_to)
+- `GET /api/admin/audit-logs` — Activity log
+- `POST /api/admin/scan-qr` — QR attendance (already-arrived returns full details)
 
-### P2
+---
+
+## DB Schema (Key Fields)
+- `registrations`: `arrival_status` (expected/arrived/departed/not_coming), `address` (country/state/city/pin_code), `selected_days`, `group_head_id`, `assigned_swamsevak`, `assigned_swamsevak_mobile`, `custom_field_values`
+- `rooms`: `room_code`, `status`, `capacity`, `floor`, `ac_type`, `notes`, `occupant_ids`
+- `todos`: `is_recurring`, `recurring_time`, `completion_history`, `last_completed_date`, `created_by_role`
+- `custom_fields`: `target_scope` (expected/arrived/all), `applies_to` (list of reg IDs), `visibility` (always "admin_only")
+- `audit_logs`: `action`, `entity_type`, `target_id`, `performed_by`, `description`, `created_at`
+
+---
+
+## Prioritized Backlog
+
+### P0 — Immediate Next
+- None (all 18 tasks + QR scanner complete)
+
+### P1 — High Priority
+- Real Twilio SMS / WhatsApp Business API integration (currently mocked)
+- Test coverage for new recurring tasks and custom fields features
+
+### P2 — Important
 - Push notifications for status changes
-- Advanced analytics dashboard
-- Activity Log date parsing fix (minor UI)
-- Old assigned_swamsevak data stored as username (not full name) — may need data migration to display properly in Contact badges
+- Advanced analytics dashboard (trend charts)
+- Bulk room assignment UI
+- Email notifications for approvals
+
+### P3 — Future
+- Multi-event support
+- Guest mobile app
+- WhatsApp bot integration
+- Report builder
+
+---
+
+## Known Issues / Caveats
+- WhatsApp OTP is MOCKED (uses any 6-digit code)
+- The `server.py` is ~2600 lines; future refactoring should split into route modules
+- `top_countries/cities/states` only shows data when registrations have addresses

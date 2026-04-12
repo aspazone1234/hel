@@ -29,12 +29,15 @@ export default function AdminRoomManagement({ user }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [roomRes, regRes] = await Promise.all([
+      const [roomRes, expRes, arrRes] = await Promise.all([
         axios.get(`${API}/api/admin/rooms`, { headers: authHeaders() }),
         axios.get(`${API}/api/admin/guests/expected`, { headers: authHeaders(), params: { per_page: 500 } }),
+        axios.get(`${API}/api/admin/guests/arrived`, { headers: authHeaders(), params: { per_page: 500 } }),
       ]);
       setRooms(roomRes.data.data || roomRes.data || []);
-      setRegs(regRes.data.data || []);
+      // Combine expected + arrived for room occupant mapping
+      const allGuests = [...(expRes.data.data || []), ...(arrRes.data.data || [])];
+      setRegs(allGuests);
     } catch {}
     setLoading(false);
   }, [authHeaders]);
