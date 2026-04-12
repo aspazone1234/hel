@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { Plus, Edit2, Trash2, Save, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-export default function ReferencePersonManager({ user, authHeaders }) {
+export default function ReferencePersonManager({ user }) {
   const [persons, setPersons] = useState([]);
   const [cats, setCats] = useState([]);
   const [newName, setNewName] = useState("");
@@ -17,6 +17,8 @@ export default function ReferencePersonManager({ user, authHeaders }) {
   const [editName, setEditName] = useState("");
   const [newCat, setNewCat] = useState("");
   const [loading, setLoading] = useState(true);
+
+  const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` });
 
   const fetchAll = async () => {
     setLoading(true);

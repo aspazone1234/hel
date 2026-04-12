@@ -92,7 +92,7 @@ export default function AdminDashboard({ user }) {
           {/* Special Needs */}
           {myDay.special_needs?.length > 0 && (
             <div className="mt-3 space-y-1">
-              <p className="text-xs font-semibold text-purple-700 mb-1 flex items-center gap-1"><AlertTriangle size={10} /> Special Needs:</p>
+              <p className="text-xs font-semibold text-purple-700 mb-1 flex items-center gap-1"><AlertTriangle size={10} /> Special Needs of Families Assigned to You:</p>
               {myDay.special_needs.slice(0, 5).map((s, i) => (
                 <div key={i} className="bg-white rounded-lg p-2 space-y-1">
                   {(s.needs || []).map((n, j) => (
@@ -177,6 +177,18 @@ export default function AdminDashboard({ user }) {
         </DialogContent>
       </Dialog>
 
+      {/* === ACTIONABLE NOTIFICATIONS — TOP === */}
+      {(data.active_tickets > 0) && (
+        <div className="space-y-2" data-testid="top-notifications">
+          {data.active_tickets > 0 && (
+            <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-3">
+              <AlertTriangle className="text-red-500 shrink-0" size={18} />
+              <span className="text-red-700 font-medium text-sm">{data.active_tickets} active help ticket{data.active_tickets > 1 ? "s" : ""} need attention</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Main Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Expected Guests - own block */}
@@ -231,13 +243,7 @@ export default function AdminDashboard({ user }) {
         </div>
       </div>
 
-      {/* Active Tickets Alert */}
-      {data.active_tickets > 0 && (
-        <div className="flex items-center gap-3 bg-red-50 border border-red-200 rounded-xl p-3" data-testid="ticket-alert">
-          <AlertTriangle className="text-red-500 shrink-0" size={18} />
-          <span className="text-red-700 font-medium text-sm">{data.active_tickets} active help ticket{data.active_tickets > 1 ? "s" : ""} need attention</span>
-        </div>
-      )}
+      {/* Active Tickets Alert — REMOVED (now at top) */}
 
       {/* Daily Schedule */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="daily-schedule">
@@ -278,7 +284,7 @@ export default function AdminDashboard({ user }) {
         )}
       </div>
 
-      {/* Reference Person Stats */}
+      {/* Reference Person Stats (was "By Reference Person") */}
       {data.reference_person_stats?.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="reference-person-stats">
           <div className="p-4 border-b flex items-center gap-2">
@@ -301,24 +307,62 @@ export default function AdminDashboard({ user }) {
         </div>
       )}
 
-      {/* Relation Category Stats */}
-      {data.relation_stats?.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="relation-stats">
+      {/* By Reference — nested reference + relation + top geographies */}
+      {data.nested_ref_stats?.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="nested-ref-stats">
           <div className="p-4 border-b flex items-center gap-2">
             <Heart size={16} className="text-rose-500" />
-            <h2 className="font-semibold text-[#0B1C3D] text-base">By Relation</h2>
-            <span className="text-xs text-gray-400 ml-1">(click to see guests)</span>
+            <h2 className="font-semibold text-[#0B1C3D] text-base">By Reference</h2>
+            <span className="text-xs text-gray-400 ml-1">— nested by relation</span>
           </div>
-          <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-            {data.relation_stats.map((rel) => (
-              <button key={rel.name}
-                onClick={() => openDrillDown("relation_category", rel.name, `Guests — Relation: ${rel.name}`)}
-                className="text-left bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl p-3 transition"
-                data-testid={`relation-stat-${rel.name}`}>
-                <p className="font-semibold text-[#0B1C3D] text-sm truncate">{rel.name}</p>
-                <p className="text-rose-700 font-bold text-lg">{rel.families}</p>
-                <p className="text-xs text-rose-600">{rel.families} families · {rel.people} people</p>
-              </button>
+          <div className="divide-y">
+            {data.nested_ref_stats.map((ref) => (
+              <div key={ref.name} className="p-4">
+                <button onClick={() => openDrillDown("reference_person", ref.name, `Guests — Ref: ${ref.name}`)}
+                  className="w-full text-left group" data-testid={`nested-ref-${ref.name}`}>
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-[#0B1C3D] group-hover:text-amber-700 transition">{ref.name}</p>
+                    <span className="text-sm font-bold text-amber-700">{ref.total_families} fam · {ref.total_people} ppl</span>
+                  </div>
+                </button>
+                {/* Sub-breakdown by relation */}
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-1.5 pl-2 border-l-2 border-amber-200">
+                  {(ref.relations || []).map((rel) => (
+                    <button key={rel.name}
+                      onClick={() => openDrillDown("relation_category", rel.name, `${rel.name} — ${ref.name}`)}
+                      className="text-left bg-rose-50 hover:bg-rose-100 rounded-lg p-2 transition text-xs" data-testid={`rel-stat-${rel.name}`}>
+                      <p className="font-medium text-[#0B1C3D] truncate">{rel.name || "Other"}</p>
+                      <p className="text-rose-600">{rel.families} fam · {rel.people} ppl</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Top Geographies */}
+      {data.top_states?.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="top-states">
+          <div className="p-4 border-b flex items-center gap-2">
+            <Users size={16} className="text-teal-600" />
+            <h2 className="font-semibold text-[#0B1C3D] text-base">Top 5 States</h2>
+          </div>
+          <div className="p-4 space-y-2">
+            {data.top_states.map((s, i) => (
+              <div key={s.name} className="flex items-center gap-3">
+                <span className="text-xs font-bold text-gray-400 w-4">{i + 1}</span>
+                <div className="flex-1">
+                  <div className="flex justify-between items-center mb-0.5">
+                    <span className="text-sm font-medium text-[#0B1C3D]">{s.name}</span>
+                    <span className="text-xs text-gray-500">{s.families} fam</span>
+                  </div>
+                  <div className="bg-gray-100 rounded-full h-1.5">
+                    <div className="bg-teal-500 h-1.5 rounded-full" style={{width: `${Math.min(100, (s.families / (data.top_states[0]?.families || 1)) * 100)}%`}}></div>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         </div>

@@ -39,7 +39,7 @@ export default function QRScanner({ user }) {
         const reg = data.registration;
         const head = (reg.attendees || []).find(a => a.id === reg.group_head_id);
         setAlreadyArrivedInfo(reg);
-        toast.info(`${head?.name || reg.primary_mobile} - Attendance already marked`);
+        toast.info(`${head?.name || reg.primary_mobile} — Already marked as arrived`);
       } else {
         setScanResult(data.registration);
         toast.success("QR scanned successfully");
@@ -243,9 +243,9 @@ export default function QRScanner({ user }) {
           {/* Already Arrived Popup */}
           {alreadyArrivedInfo && (
             <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-5 space-y-3" data-testid="already-arrived-popup">
-              <div className="flex items-center gap-2 text-amber-800 font-bold">
-                <Check size={18} className="text-amber-600" />
-                Attendance Already Marked
+              <div className="text-center">
+                <p className="font-bold text-amber-800 text-base">Already Marked as Arrived</p>
+                <p className="text-sm text-amber-700 mt-1">This family has already been marked as arrived. For any changes, contact the superintendent.</p>
               </div>
               <div className="bg-white rounded-lg p-4 space-y-2 text-sm">
                 <div className="flex justify-between">

@@ -1189,14 +1189,33 @@ async def get_dashboard(request: Request):
     # Not arrived count
     not_arrived_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "not_arrived"})
 
-    # Reference person stats (from approved registrations)
-    ref_pipeline = [
+    # Reference person stats with nested relation breakdown
+    ref_rel_pipeline = [
         {"$match": {"approval_status": "approved", "reference_person_name": {"$exists": True, "$ne": ""}}},
-        {"$group": {"_id": "$reference_person_name", "families": {"$sum": 1}, "people": {"$sum": "$num_people"}}},
-        {"$sort": {"families": -1}},
+        {"$group": {
+            "_id": {"ref": "$reference_person_name", "rel": "$relation_category"},
+            "families": {"$sum": 1}, "people": {"$sum": "$num_people"}
+        }},
+        {"$sort": {"_id.ref": 1, "_id.rel": 1}},
     ]
-    ref_stats = await db.registrations.aggregate(ref_pipeline).to_list(100)
-    ref_stats = [{"name": r["_id"], "families": r["families"], "people": r["people"]} for r in ref_stats if r["_id"]]
+    ref_rel_data = await db.registrations.aggregate(ref_rel_pipeline).to_list(500)
+    from collections import defaultdict
+    ref_map = defaultdict(lambda: {"total_families": 0, "total_people": 0, "relations": {}})
+    for item in ref_rel_data:
+        rn = item["_id"]["ref"] or ""
+        rl = item["_id"]["rel"] or "Unknown"
+        if rn:
+            ref_map[rn]["total_families"] += item["families"]
+            ref_map[rn]["total_people"] += item["people"]
+            ref_map[rn]["relations"][rl] = {"families": item["families"], "people": item["people"]}
+    nested_ref_stats = [
+        {"name": k, "total_families": v["total_families"], "total_people": v["total_people"],
+         "relations": [{"name": rn, "families": rv["families"], "people": rv["people"]} for rn, rv in sorted(v["relations"].items())]}
+        for k, v in sorted(ref_map.items(), key=lambda x: -x[1]["total_families"])
+    ]
+
+    # Reference person stats (flat, for top cards)
+    ref_stats = [{"name": s["name"], "families": s["total_families"], "people": s["total_people"]} for s in nested_ref_stats]
 
     # Relation category stats
     relation_pipeline = [
@@ -1206,6 +1225,14 @@ async def get_dashboard(request: Request):
     ]
     relation_stats = await db.registrations.aggregate(relation_pipeline).to_list(100)
     relation_stats = [{"name": r["_id"], "families": r["families"], "people": r["people"]} for r in relation_stats if r["_id"]]
+
+    # Top 5 states by families
+    geo_pipeline = [
+        {"$match": {"approval_status": "approved", "address.state": {"$exists": True, "$ne": ""}}},
+        {"$group": {"_id": "$address.state", "families": {"$sum": 1}, "people": {"$sum": "$num_people"}}},
+        {"$sort": {"families": -1}}, {"$limit": 5}
+    ]
+    top_states = [{"name": g["_id"], "families": g["families"], "people": g["people"]} for g in await db.registrations.aggregate(geo_pipeline).to_list(5) if g["_id"]]
 
     return {
         "pending_count": pending_count,
@@ -1226,6 +1253,8 @@ async def get_dashboard(request: Request):
         "available_rooms": available_rooms,
         "reference_person_stats": ref_stats,
         "relation_stats": relation_stats,
+        "nested_ref_stats": nested_ref_stats,
+        "top_states": top_states,
     }
 
 # ─── Audit Logs ───

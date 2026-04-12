@@ -3,6 +3,7 @@ import { useSearchParams, Link } from "react-router-dom";
 import { ArrowLeft, Edit, Lock, Calendar, Users, MapPin, Phone, Mail, Clock, ChevronDown, ChevronUp, Globe, Check, Download, QrCode, X, User, Plane } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
+import AddressSelector from "../components/AddressSelector";
 import { useLang } from "../context/LanguageContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
@@ -512,91 +513,27 @@ function EditContactModal({ reg, lang, onSave, onClose }) {
 }
 
 function EditAddressModal({ reg, lang, onSave, onClose }) {
-  const addr = reg.address || {};
-  const [country, setCountry] = useState(addr.country || "India");
-  const [state, setState] = useState(addr.state || "");
-  const [city, setCity] = useState(addr.city || "");
-  const [pinCode, setPinCode] = useState(addr.pin_code || "");
-  const [full, setFull] = useState(addr.full_address || "");
+  const [addrData, setAddrData] = useState(reg.address || { country: "India", state: "", city: "", pin_code: "", full_address: "" });
   const [saving, setSaving] = useState(false);
-  const [countries, setCountries] = useState([]);
-  const [states, setStates] = useState([]);
-  const [countrySearch, setCountrySearch] = useState("");
-  const [stateSearch, setStateSearch] = useState("");
-
-  useEffect(() => {
-    axios.get(`${API}/api/geo/countries`).then(r => setCountries(r.data)).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!country) { setStates([]); return; }
-    const c = countries.find(cc => cc.name === country);
-    if (c) {
-      axios.get(`${API}/api/geo/states/${c.code}`).then(r => setStates(r.data)).catch(() => setStates([]));
-    }
-  }, [country, countries]);
-
-  const filteredCountries = countries.filter(c => c.name.toLowerCase().includes(countrySearch.toLowerCase()));
-  const filteredStates = states.filter(s => s.name.toLowerCase().includes(stateSearch.toLowerCase()));
 
   const save = async () => {
-    if (!country.trim() || !state.trim() || !city.trim() || !full.trim()) { toast.error(lang === "hi" ? "\u0938\u092D\u0940 \u092A\u0924\u093E \u092B\u0940\u0932\u094D\u0921 \u092D\u0930\u0947\u0902" : "Country, State, City and Full Address required"); return; }
+    if (!addrData.country?.trim() || !addrData.state?.trim() || !addrData.city?.trim() || !addrData.full_address?.trim()) {
+      toast.error(lang === "hi" ? "सभी पता फील्ड भरें" : "Country, State, City and Full Address required");
+      return;
+    }
     setSaving(true);
-    await onSave({ address: { country, state, city, pin_code: pinCode, full_address: full } });
+    await onSave({ address: addrData });
     setSaving(false);
   };
 
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{lang === "hi" ? "\u092A\u0924\u093E \u0938\u0902\u092A\u093E\u0926\u093F\u0924 \u0915\u0930\u0947\u0902" : "Edit Address"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{lang === "hi" ? "पता संपादित करें" : "Edit Address"}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div>
-            <Label className="text-sm">{lang === "hi" ? "\u0926\u0947\u0936 *" : "Country *"}</Label>
-            <Input placeholder={lang === "hi" ? "\u0926\u0947\u0936 \u0916\u094B\u091C\u0947\u0902..." : "Search country..."} value={countrySearch} onChange={e => setCountrySearch(e.target.value)} className="mt-1 text-sm" data-testid="edit-country-search" />
-            {countrySearch && filteredCountries.length > 0 && (
-              <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg">
-                {filteredCountries.slice(0, 8).map(c => (
-                  <button key={c.code} onClick={() => { setCountry(c.name); setCountrySearch(""); setState(""); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{c.name}</button>
-                ))}
-              </div>
-            )}
-            <p className="text-xs text-gray-500 mt-0.5">{lang === "hi" ? "\u091A\u092F\u0928\u093F\u0924" : "Selected"}: <b>{country}</b></p>
-          </div>
-          <div>
-            <Label className="text-sm">{lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F *" : "State *"}</Label>
-            {states.length > 0 ? (
-              <>
-                <Input placeholder={lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F \u0916\u094B\u091C\u0947\u0902..." : "Search state..."} value={stateSearch} onChange={e => setStateSearch(e.target.value)} className="mt-1 text-sm" data-testid="edit-state-search" />
-                {stateSearch && filteredStates.length > 0 && (
-                  <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg">
-                    {filteredStates.slice(0, 8).map(s => (
-                      <button key={s.code} onClick={() => { setState(s.name); setStateSearch(""); }} className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{s.name}</button>
-                    ))}
-                  </div>
-                )}
-                <p className="text-xs text-gray-500 mt-0.5">{lang === "hi" ? "\u091A\u092F\u0928\u093F\u0924" : "Selected"}: <b>{state || "\u2014"}</b></p>
-              </>
-            ) : (
-              <Input value={state} onChange={e => setState(e.target.value)} className="mt-1 text-sm" data-testid="edit-state" placeholder={lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F" : "State"} />
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <Label className="text-sm">{lang === "hi" ? "\u0936\u0939\u0930 *" : "City *"}</Label>
-              <Input value={city} onChange={e => setCity(e.target.value)} className="mt-1 text-sm" data-testid="edit-city" />
-            </div>
-            <div>
-              <Label className="text-sm">{lang === "hi" ? "\u092A\u093F\u0928 \u0915\u094B\u0921" : "Pin Code"}</Label>
-              <Input value={pinCode} onChange={e => setPinCode(e.target.value)} className="mt-1 text-sm" data-testid="edit-pincode" />
-            </div>
-          </div>
-          <div>
-            <Label className="text-sm">{lang === "hi" ? "\u092A\u0942\u0930\u093E \u092A\u0924\u093E *" : "Full Address *"}</Label>
-            <Textarea value={full} onChange={e => setFull(e.target.value)} className="mt-1 text-sm" rows={2} data-testid="edit-address-full" />
-          </div>
+          <AddressSelector value={addrData} onChange={setAddrData} />
           <Button onClick={save} disabled={saving} className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90" data-testid="save-address-btn">
-            {saving ? "..." : (lang === "hi" ? "\u0938\u0939\u0947\u091C\u0947\u0902" : "Save")}
+            {saving ? "..." : (lang === "hi" ? "सहेजें" : "Save")}
           </Button>
         </div>
       </DialogContent>

@@ -1,14 +1,15 @@
 import { useState, useEffect } from "react";
+import AddressSelector from "../components/AddressSelector";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, ChevronLeft, Globe, Phone, Check, AlertTriangle, Users, Calendar, Clock, MapPin, User } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Progress } from "@/components/ui/progress";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Checkbox } from "../components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "../components/ui/radio-group";
+import { Progress } from "../components/ui/progress";
+import { Textarea } from "../components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { toast } from "sonner";
 import { useLang } from "@/context/LanguageContext";
 import axios from "axios";
@@ -555,63 +556,16 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Address */}
+              {/* Address — standardized AddressSelector */}
               <div className="border-t border-[#D4AF37]/10 pt-5 space-y-3">
                 <h3 className="text-base font-semibold text-[#0B1C3D] flex items-center gap-1.5">
-                  <MapPin size={14} className="text-[#D4AF37]" /> {lang === "hi" ? "\u092A\u0924\u093E *" : "Address *"}
+                  <MapPin size={14} className="text-[#D4AF37]" /> {lang === "hi" ? "पता *" : "Address *"}
                 </h3>
-                <div>
-                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0926\u0947\u0936 *" : "Country *"}</Label>
-                  <Input placeholder={lang === "hi" ? "\u0926\u0947\u0936 \u0916\u094B\u091C\u0947\u0902..." : "Search country..."} value={addrCountrySearch} onChange={e => setAddrCountrySearch(e.target.value)}
-                    className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.country ? "border-red-400" : ""}`} data-testid="country-search" />
-                  {addrCountrySearch && countries.filter(c => c.name.toLowerCase().includes(addrCountrySearch.toLowerCase())).length > 0 && (
-                    <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg z-10 relative">
-                      {countries.filter(c => c.name.toLowerCase().includes(addrCountrySearch.toLowerCase())).slice(0, 8).map(c => (
-                        <button key={c.code} type="button" onClick={() => { setAddr("country", c.name); setAddrCountrySearch(""); setAddr("state", ""); }}
-                          className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{c.name}</button>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-400 mt-0.5">{form.address.country || "\u2014"}</p>
-                </div>
-                <div>
-                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F *" : "State *"}</Label>
-                  {geoStates.length > 0 ? (
-                    <>
-                      <Input placeholder={lang === "hi" ? "\u0930\u093E\u091C\u094D\u092F \u0916\u094B\u091C\u0947\u0902..." : "Search state..."} value={addrStateSearch} onChange={e => setAddrStateSearch(e.target.value)}
-                        className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.state ? "border-red-400" : ""}`} data-testid="state-search" />
-                      {addrStateSearch && geoStates.filter(s => s.name.toLowerCase().includes(addrStateSearch.toLowerCase())).length > 0 && (
-                        <div className="border rounded-lg mt-1 max-h-32 overflow-y-auto bg-white shadow-lg z-10 relative">
-                          {geoStates.filter(s => s.name.toLowerCase().includes(addrStateSearch.toLowerCase())).slice(0, 8).map(s => (
-                            <button key={s.code} type="button" onClick={() => { setAddr("state", s.name); setAddrStateSearch(""); }}
-                              className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-100">{s.name}</button>
-                          ))}
-                        </div>
-                      )}
-                      <p className="text-xs text-gray-400 mt-0.5">{form.address.state || "\u2014"}</p>
-                    </>
-                  ) : (
-                    <Input data-testid="address-state" value={form.address.state} onChange={e => setAddr("state", e.target.value)}
-                      className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.state ? "border-red-400" : ""}`} />
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u0936\u0939\u0930 *" : "City *"}</Label>
-                    <Input data-testid="address-city" value={form.address.city} onChange={e => setAddr("city", e.target.value)}
-                      className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.city ? "border-red-400" : ""}`} />
-                  </div>
-                  <div>
-                    <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u092A\u093F\u0928 \u0915\u094B\u0921" : "Pin Code"}</Label>
-                    <Input data-testid="address-pincode" value={form.address.pin_code} onChange={e => setAddr("pin_code", e.target.value)}
-                      className="mt-1 bg-white border-[#D4AF37]/20 text-sm" />
-                  </div>
-                </div>
-                <div>
-                  <Label className="text-[#0B1C3D]/60 text-xs">{lang === "hi" ? "\u092A\u0942\u0930\u093E \u092A\u0924\u093E *" : "Full Address *"}</Label>
-                  <Textarea data-testid="address-full" value={form.address.full_address} onChange={e => setAddr("full_address", e.target.value)}
-                    className={`mt-1 bg-white border-[#D4AF37]/20 text-sm ${errors.full_address ? "border-red-400" : ""}`} rows={2} />
-                </div>
+                <AddressSelector
+                  value={form.address}
+                  onChange={(addr) => setForm(f => ({ ...f, address: addr }))}
+                  errors={{ country: errors.country ? "Required" : "", state: errors.state ? "Required" : "", city: errors.city ? "Required" : "", full_address: errors.full_address ? "Required" : "" }}
+                />
               </div>
             </div>
           )}

@@ -4,6 +4,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { FullRegistrationView } from "./PendingApproval";
+import AddressSelector from "../AddressSelector";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -45,19 +46,14 @@ function EditRegistrationDialog({ reg, onClose, onSaved, authHeaders }) {
             <div><label className="text-xs font-medium text-gray-600">Email</label>
               <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
           </div>
-          <div><label className="text-xs font-medium text-gray-600">Full Address</label>
-            <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.full_address} onChange={e => setForm({...form, address: {...form.address, full_address: e.target.value}})} /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs font-medium text-gray-600">City</label>
-              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.city} onChange={e => setForm({...form, address: {...form.address, city: e.target.value}})} /></div>
-            <div><label className="text-xs font-medium text-gray-600">State</label>
-              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.state} onChange={e => setForm({...form, address: {...form.address, state: e.target.value}})} /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="text-xs font-medium text-gray-600">Country</label>
-              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.country} onChange={e => setForm({...form, address: {...form.address, country: e.target.value}})} /></div>
-            <div><label className="text-xs font-medium text-gray-600">Pin Code</label>
-              <input className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.address.pin_code} onChange={e => setForm({...form, address: {...form.address, pin_code: e.target.value}})} /></div>
+          <div>
+            <label className="text-xs font-medium text-gray-600">Address</label>
+            <div className="mt-1">
+              <AddressSelector
+                value={form.address}
+                onChange={(addr) => setForm({...form, address: addr})}
+              />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="text-xs font-medium text-gray-600">Arrival Time</label>

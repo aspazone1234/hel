@@ -1,19 +1,22 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, Settings, Eye, EyeOff } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import { toast } from "sonner";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-export default function CustomFieldsManager({ user, authHeaders }) {
+export default function CustomFieldsManager({ user }) {
   const [fields, setFields] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [previewField, setPreviewField] = useState(null);
+
+  const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` });
 
   const fetchFields = async () => {
     setLoading(true);
@@ -60,6 +63,7 @@ export default function CustomFieldsManager({ user, authHeaders }) {
                 </div>
                 <div className="flex gap-1">
                   <span className="text-[10px] flex items-center gap-0.5">{f.visibility === "admin_only" ? <EyeOff size={10} /> : <Eye size={10} />}{f.visibility}</span>
+                  <Button size="sm" variant="ghost" onClick={() => setPreviewField(f)} className="h-6 w-6 p-0 text-blue-400" title="Preview"><Eye size={12} /></Button>
                   <Button size="sm" variant="ghost" onClick={() => deleteField(f.id)} className="h-6 w-6 p-0 text-red-400"><Trash2 size={12} /></Button>
                 </div>
               </div>
@@ -74,6 +78,36 @@ export default function CustomFieldsManager({ user, authHeaders }) {
       }
 
       <CreateFieldDialog open={showCreate} onClose={() => setShowCreate(false)} authHeaders={authHeaders} onCreated={() => { setShowCreate(false); fetchFields(); }} />
+
+      {/* Preview Dialog */}
+      <Dialog open={!!previewField} onOpenChange={() => setPreviewField(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Field Preview: {previewField?.name}</DialogTitle></DialogHeader>
+          {previewField && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">{TYPE_LABELS[previewField.field_type]} · {previewField.scope} · {previewField.visibility}</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{previewField.name}</label>
+                {previewField.field_type === "text" && <input type="text" placeholder={previewField.default_value || "Enter value..."} className="w-full border rounded px-3 py-2 text-sm" />}
+                {previewField.field_type === "number" && <input type="number" placeholder={previewField.default_value || "0"} className="w-full border rounded px-3 py-2 text-sm" />}
+                {previewField.field_type === "date" && <input type="date" defaultValue={previewField.default_value} className="w-full border rounded px-3 py-2 text-sm" />}
+                {previewField.field_type === "toggle" && (
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" defaultChecked={previewField.default_value === "true"} className="w-4 h-4" />
+                    <span className="text-sm text-gray-600">{previewField.default_value === "true" ? "Yes" : "No"}</span>
+                  </label>
+                )}
+                {previewField.field_type === "select" && (
+                  <select className="w-full border rounded px-3 py-2 text-sm bg-white">
+                    {(previewField.options || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                  </select>
+                )}
+              </div>
+              <p className="text-xs text-gray-400 italic">This is how the field will appear in guest records</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

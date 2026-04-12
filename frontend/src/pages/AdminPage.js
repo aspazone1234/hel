@@ -217,7 +217,7 @@ function NoAccess() {
 function AdminManagement({ user }) {
   const [admins, setAdmins] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ username: "", password: "", display_name: "", role: "admin", mobile: "" });
+  const [form, setForm] = useState({ username: "", password: "", name: "", role: "swamsevak", mobile: "" });
   const authHeaders = useCallback(() => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` }), []);
 
   const fetchAdmins = useCallback(async () => {
@@ -230,20 +230,31 @@ function AdminManagement({ user }) {
   useEffect(() => { fetchAdmins(); }, [fetchAdmins]);
 
   const createAdmin = async () => {
+    if (!form.username.trim() || !form.password.trim() || !form.name.trim()) {
+      toast.error("Username, Name and Password are required");
+      return;
+    }
     try {
       await axios.post(`${API}/api/admin/admins`, form, { headers: authHeaders() });
+      toast.success(`Swamsevak '${form.name}' created`);
       setShowCreate(false);
-      setForm({ username: "", password: "", display_name: "", role: "admin", mobile: "" });
+      setForm({ username: "", password: "", name: "", role: "swamsevak", mobile: "" });
       fetchAdmins();
-    } catch {}
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Failed to create Swamsevak");
+    }
   };
 
   const deleteAdmin = async (id) => {
     if (!window.confirm("Delete this Swamsevak?")) return;
     try {
       await axios.delete(`${API}/api/admin/admins/${id}`, { headers: authHeaders() });
+      toast.success("Swamsevak deleted");
       fetchAdmins();
-    } catch {}
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Delete failed");
+    }
   };
 
   return (
@@ -258,8 +269,8 @@ function AdminManagement({ user }) {
         {admins.map((a) => (
           <div key={a.id || a.username} className="bg-white rounded-lg p-4 border flex justify-between items-center" data-testid={`admin-${a.username}`}>
             <div>
-              <p className="font-medium text-[#0B1C3D]">{a.display_name || a.username}</p>
-              <p className="text-xs text-gray-500">{a.role} {a.mobile && `• ${a.mobile}`}</p>
+              <p className="font-medium text-[#0B1C3D]">{a.name || a.username}</p>
+              <p className="text-xs text-gray-500">{a.role} {a.mobile && `• WhatsApp: ${a.mobile}`} {a.city && `• ${a.city}`}</p>
             </div>
             {a.source === "custom" && (
               <button onClick={() => deleteAdmin(a.id)} className="text-red-500 text-sm hover:underline" data-testid={`delete-admin-${a.username}`}>Delete</button>
@@ -271,12 +282,24 @@ function AdminManagement({ user }) {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-sm space-y-3">
             <h2 className="font-bold text-[#0B1C3D]">Add New Swamsevak</h2>
-            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Username" value={form.username} onChange={(e) => setForm({...form, username: e.target.value})} />
-            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Display Name" value={form.display_name} onChange={(e) => setForm({...form, display_name: e.target.value})} />
-            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} />
-            <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Mobile Number" value={form.mobile} onChange={(e) => setForm({...form, mobile: e.target.value})} />
+            <div>
+              <label className="text-xs text-gray-500 mb-0.5 block">Username *</label>
+              <input className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. rameshpatel" value={form.username} onChange={(e) => setForm({...form, username: e.target.value})} data-testid="create-swam-username" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-0.5 block">Full Name *</label>
+              <input className="w-full border rounded px-3 py-2 text-sm" placeholder="e.g. Ramesh Patel" value={form.name} onChange={(e) => setForm({...form, name: e.target.value})} data-testid="create-swam-name" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-0.5 block">Password *</label>
+              <input className="w-full border rounded px-3 py-2 text-sm" placeholder="Password" type="password" value={form.password} onChange={(e) => setForm({...form, password: e.target.value})} data-testid="create-swam-password" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 mb-0.5 block">WhatsApp Mobile Number</label>
+              <input className="w-full border rounded px-3 py-2 text-sm" placeholder="+91 98765 43210" value={form.mobile} onChange={(e) => setForm({...form, mobile: e.target.value})} data-testid="create-swam-mobile" />
+            </div>
             <div className="flex gap-2">
-              <button onClick={createAdmin} className="bg-[#0B1C3D] text-white px-4 py-2 rounded text-sm flex-1">Create</button>
+              <button onClick={createAdmin} className="bg-[#0B1C3D] text-white px-4 py-2 rounded text-sm flex-1" data-testid="create-swam-submit">Create</button>
               <button onClick={() => setShowCreate(false)} className="border px-4 py-2 rounded text-sm flex-1">Cancel</button>
             </div>
           </div>
