@@ -27,6 +27,8 @@ Full-stack event management platform for Katha 2026 (Shrimad Bhagavat). Mobile-f
 ├── backend/
 │   ├── server.py              # All endpoints (~2600 lines)
 │   └── requirements.txt
+│   ├── pages/
+│   │   ├── PrivacyPolicyPage.js  # /privacy-policy route (DONE)
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
@@ -130,7 +132,7 @@ Full-stack event management platform for Katha 2026 (Shrimad Bhagavat). Mobile-f
 ## Prioritized Backlog
 
 ### P0 — Immediate Next
-- None (all 18 tasks + QR scanner complete)
+- None (all tasks including /privacy-policy complete)
 
 ### P1 — High Priority
 - Real Twilio SMS / WhatsApp Business API integration (currently mocked)

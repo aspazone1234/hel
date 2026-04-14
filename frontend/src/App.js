@@ -9,6 +9,7 @@ import RegisterPage from "@/pages/RegisterPage";
 import AdminPage from "@/pages/AdminPage";
 import ThankYouPage from "@/pages/ThankYouPage";
 import MyRegistrationPage from "@/pages/MyRegistrationPage";
+import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 
 axios.defaults.withCredentials = false;
 
@@ -23,6 +24,7 @@ function App() {
             <Route path="/thank-you" element={<ThankYouPage />} />
             <Route path="/my-registration" element={<MyRegistrationPage />} />
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
           </Routes>
         </BrowserRouter>
         <Toaster position="top-right" richColors />

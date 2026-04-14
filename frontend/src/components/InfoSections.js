@@ -412,6 +412,7 @@ export function Footer() {
           <div className="flex justify-center gap-6 mb-6 text-[#F8F1E5]/40 text-sm">
             <Link to="/" className="hover:text-[#D4AF37] transition-colors">{t.footer.home}</Link>
             <Link to="/register" className="hover:text-[#D4AF37] transition-colors">{t.footer.register}</Link>
+            <Link to="/privacy-policy" className="hover:text-[#D4AF37] transition-colors">Privacy Policy</Link>
           </div>
           <p className="text-[#F8F1E5]/30 text-xs">{t.footer.credit}</p>
         </div>
