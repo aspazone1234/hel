@@ -279,14 +279,28 @@ WA_BIZ_ID = os.environ.get("WA_BUSINESS_ACCOUNT_ID", "")
 WA_WEBHOOK_VERIFY = os.environ.get("WA_WEBHOOK_VERIFY_TOKEN", "")
 WA_API_BASE = "https://graph.facebook.com/v21.0"
 
+def normalize_phone_for_wa(phone: str) -> str:
+    """Normalize a phone number for WhatsApp Cloud API (no + prefix, with country code).
+    - Strips spaces, dashes, parentheses.
+    - If starts with '+', returns the digits after '+' (assumes country code is present).
+    - If 10 digits long, assumes India (+91) and prefixes '91'.
+    - Otherwise, returns digits as-is (assumes country code is already included).
+    This correctly handles UK (+44), US (+1), Indian (+91 or 10-digit), and any international number.
+    """
+    p = (phone or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if p.startswith("+"):
+        return p[1:]
+    # Drop any stray leading zeros commonly prefixed (e.g., 07911... should be treated as needing country code)
+    # BUT we don't auto-add a country code for unknown shapes — user must include it if not Indian 10-digit.
+    if len(p) == 10 and p[:1] in ("6", "7", "8", "9"):
+        return "91" + p
+    return p
+
 async def send_whatsapp_template(phone: str, template_name: str, language: str, body_params: list = None, header_media_url: str = None, header_type: str = None):
     """Send a WhatsApp template message via Meta Cloud API. Returns (success, wa_message_id_or_error)"""
     if not WA_PHONE_ID or not WA_TOKEN:
         return False, "WhatsApp API not configured"
-    clean_phone = phone.strip().replace(" ", "").replace("-", "")
-    if not clean_phone.startswith("+") and not clean_phone.startswith("91"):
-        clean_phone = "91" + clean_phone
-    clean_phone = clean_phone.lstrip("+")
+    clean_phone = normalize_phone_for_wa(phone)
 
     components = []
     if header_media_url and header_type:
@@ -337,10 +351,7 @@ async def send_otp(body: OTPSendRequest):
         upsert=True
     )
     # Send OTP via WhatsApp (template has body + URL button that both need the OTP code)
-    clean_phone = mobile.strip().replace(" ", "").replace("-", "")
-    if not clean_phone.startswith("+") and not clean_phone.startswith("91"):
-        clean_phone = "91" + clean_phone
-    clean_phone = clean_phone.lstrip("+")
+    clean_phone = normalize_phone_for_wa(mobile)
 
     payload = {
         "messaging_product": "whatsapp",
@@ -2112,6 +2123,12 @@ async def resolve_ticket(ticket_id: str, body: TicketResolve, request: Request):
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }})
     await log_audit("ticket_resolve", "ticket", ticket_id, ticket.get("title", ""), f"Resolved by {user['name']}", user["name"])
+    # Session 4B: fire HC ticket-resolved system trigger (notifies guest)
+    try:
+        resolved_ticket = {**ticket, "resolved_by_name": user["name"], "closing_note": body.closing_note}
+        await fire_hc_ticket_resolved(resolved_ticket)
+    except Exception as e:
+        logger.warning(f"[HC Trigger] fire_hc_ticket_resolved failed: {e}")
     return {"message": "Ticket resolved"}
 
 # ─── TO-DO MODULE ───
@@ -2435,6 +2452,45 @@ async def run_auto_response_matcher(from_number: str, text: str):
                     "step_index": idx, "template_id": tid, "status": "skipped",
                     "error": "template has no meta_template_name", "at": datetime.now(timezone.utc).isoformat(),
                 }}})
+                continue
+            # Session 4B: If this step is marked as a Flow CTA step, mint a flow_token and send flow-template
+            step_flow_id = str(step.get("flow_id", "") or tmpl.get("flow_id", "") or "").strip()
+            is_flow_step = bool(step.get("is_flow_step") or tmpl.get("is_flow_template") or step_flow_id)
+            if is_flow_step:
+                ok, result, flow_token = await send_wa_flow_template(
+                    phone=from_number,
+                    template_name=meta_name,
+                    language=language,
+                    flow_id=step_flow_id,
+                    flow_cta_text=step.get("flow_cta_text", "Open"),
+                )
+                await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
+                    "step_index": idx, "template_id": tid, "meta_template_name": meta_name,
+                    "status": "sent" if ok else "failed",
+                    "wa_message_id": result if ok else "",
+                    "flow_token": flow_token,
+                    "error": "" if ok else str(result),
+                    "at": datetime.now(timezone.utc).isoformat(),
+                }}})
+                if not ok:
+                    continue
+                # Persist outgoing message in conversation (Flow-CTA)
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    await ensure_conversation(from_number, "", "auto_response")
+                    conv_phone = normalize_phone_for_wa(from_number)
+                    await db.wa_conversations.update_one({"phone": conv_phone}, {
+                        "$push": {"messages": {
+                            "id": str(uuid.uuid4()), "direction": "outgoing",
+                            "text": f"[Flow CTA sent · template: {meta_name}]",
+                            "msg_type": "template_flow", "wa_message_id": result,
+                            "flow_token": flow_token,
+                            "timestamp": now_iso, "status": "sent",
+                        }},
+                        "$set": {"last_message": f"[Flow CTA · {meta_name}]", "last_message_at": now_iso}
+                    })
+                except Exception as e:
+                    logger.warning(f"[AutoResponse] conv persist failed for flow step: {e}")
                 continue
             ok, result = await send_whatsapp_template(
                 phone=from_number,
@@ -2930,6 +2986,203 @@ async def get_campaign_stats(camp_id: str, request: Request):
             "delivered": stats.get("delivered", 0), "read": stats.get("read", 0),
             "failed": stats.get("failed", 0)}
 
+# ─── Campaign Export (CSV / PDF) ───
+async def _load_campaign_for_export(camp_id: str):
+    camp = await db.wa_campaigns.find_one({"id": camp_id}, {"_id": 0})
+    if not camp:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    recs = await db.wa_campaign_recipients.find(
+        {"campaign_id": camp_id}, {"_id": 0}
+    ).sort("created_at", 1).to_list(100000)
+    # Live stats
+    pipeline = [
+        {"$match": {"campaign_id": camp_id}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]
+    agg = await db.wa_campaign_recipients.aggregate(pipeline).to_list(20)
+    stats = {r["_id"]: r["count"] for r in agg}
+    return camp, recs, stats
+
+@api_router.get("/admin/wa-campaigns/{camp_id}/export.csv")
+async def export_campaign_csv(camp_id: str, request: Request):
+    await require_superadmin(request)
+    camp, recs, stats = await _load_campaign_for_export(camp_id)
+
+    # Collect union of variable keys across all recipients
+    var_keys = []
+    seen = set()
+    for r in recs:
+        for k in (r.get("variable_values") or {}).keys():
+            if k not in seen:
+                seen.add(k)
+                var_keys.append(k)
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    # ─── Campaign summary block ───
+    w.writerow(["Campaign Export"])
+    w.writerow(["Name", camp.get("name", "") or camp.get("campaign_name", "")])
+    w.writerow(["Campaign ID", camp.get("id", "")])
+    w.writerow(["Template (Meta name)", camp.get("template_name", "")])
+    w.writerow(["Template (Display)", camp.get("template_display", "")])
+    w.writerow(["Media URL", camp.get("media_url", "")])
+    w.writerow(["Status", camp.get("status", "")])
+    w.writerow(["Created By", camp.get("created_by", "")])
+    w.writerow(["Created At", camp.get("created_at", "")])
+    w.writerow(["Started At", camp.get("started_at", "")])
+    w.writerow(["Completed At", camp.get("completed_at", "")])
+    w.writerow(["Total Recipients", camp.get("total_recipients", len(recs))])
+    w.writerow(["Queued", stats.get("queued", 0)])
+    w.writerow(["Sent", stats.get("sent", 0)])
+    w.writerow(["Delivered", stats.get("delivered", 0)])
+    w.writerow(["Read", stats.get("read", 0)])
+    w.writerow(["Failed", stats.get("failed", 0)])
+    w.writerow([])
+    # ─── Recipient header row ───
+    headers = [
+        "phone_number", "status", "wa_message_id",
+        "sent_at", "delivered_at", "read_at",
+        "error_code", "error_message", "created_at",
+    ] + [f"var: {k}" for k in var_keys]
+    w.writerow(headers)
+    for r in recs:
+        vv = r.get("variable_values") or {}
+        row = [
+            r.get("phone_number", ""),
+            r.get("status", ""),
+            r.get("wa_message_id", ""),
+            r.get("sent_at", ""),
+            r.get("delivered_at", ""),
+            r.get("read_at", ""),
+            r.get("error_code", ""),
+            r.get("error_message", ""),
+            r.get("created_at", ""),
+        ] + [str(vv.get(k, "")) for k in var_keys]
+        w.writerow(row)
+
+    data = buf.getvalue().encode("utf-8-sig")  # BOM for Excel compat
+    fname = f"campaign_{(camp.get('name') or camp.get('id') or 'export').replace(' ', '_')}.csv"
+    return Response(
+        content=data,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+@api_router.get("/admin/wa-campaigns/{camp_id}/export.pdf")
+async def export_campaign_pdf(camp_id: str, request: Request):
+    await require_superadmin(request)
+    camp, recs, stats = await _load_campaign_for_export(camp_id)
+
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 8, "WhatsApp Campaign Report", ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(90, 90, 90)
+    pdf.cell(0, 5, f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", ln=1)
+    pdf.ln(2)
+
+    # ── Summary box ──
+    pdf.set_text_color(11, 28, 61)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 6, camp.get("name", "") or camp.get("campaign_name", "Untitled"), ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(60, 60, 60)
+
+    def _row(label, value):
+        safe = str(value if value not in (None, "") else "-").encode("latin-1", "replace").decode("latin-1")
+        # Truncate long values to keep them on one line (avoid multi_cell edge cases)
+        if len(safe) > 180:
+            safe = safe[:177] + "..."
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(45, 5, label, border=0, ln=0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 5, safe, border=0, ln=1)
+
+    _row("Campaign ID", camp.get("id", ""))
+    _row("Template", f"{camp.get('template_display', '')}  ({camp.get('template_name', '')})")
+    if camp.get("media_url"):
+        _row("Media URL", camp.get("media_url", ""))
+    _row("Status", camp.get("status", ""))
+    _row("Created By", camp.get("created_by", ""))
+    _row("Created At", camp.get("created_at", ""))
+    if camp.get("completed_at"):
+        _row("Completed At", camp.get("completed_at", ""))
+
+    pdf.ln(2)
+    # ── Stats row ──
+    pdf.set_fill_color(240, 244, 255)
+    pdf.set_text_color(11, 28, 61)
+    pdf.set_font("Helvetica", "B", 9)
+    total = sum(stats.values()) or camp.get("total_recipients", len(recs))
+    boxes = [
+        ("Total", total),
+        ("Queued", stats.get("queued", 0)),
+        ("Sent", stats.get("sent", 0)),
+        ("Delivered", stats.get("delivered", 0)),
+        ("Read", stats.get("read", 0)),
+        ("Failed", stats.get("failed", 0)),
+    ]
+    box_w = 45
+    for label, val in boxes:
+        pdf.cell(box_w, 10, f"{label}: {val}", border=1, fill=True)
+    pdf.ln(12)
+
+    # ── Recipient table ──
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(11, 28, 61)
+    pdf.set_text_color(255, 255, 255)
+    headers = [("Phone", 38), ("Status", 22), ("Sent", 36), ("Delivered", 36), ("Read", 36), ("Error", 109)]
+    for h, w in headers:
+        pdf.cell(w, 7, h, border=1, fill=True, align="L")
+    pdf.ln(7)
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Helvetica", "", 8)
+    fill = False
+    for r in recs:
+        if pdf.get_y() > 190:
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_fill_color(11, 28, 61)
+            pdf.set_text_color(255, 255, 255)
+            for h, w in headers:
+                pdf.cell(w, 7, h, border=1, fill=True, align="L")
+            pdf.ln(7)
+            pdf.set_text_color(40, 40, 40)
+            pdf.set_font("Helvetica", "", 8)
+
+        def _fmt_dt(v):
+            if not v:
+                return "-"
+            return str(v).replace("T", " ")[:19]
+
+        pdf.set_fill_color(248, 250, 252) if fill else pdf.set_fill_color(255, 255, 255)
+        cells = [
+            ("+" + str(r.get("phone_number", "")), 38),
+            (str(r.get("status", "")), 22),
+            (_fmt_dt(r.get("sent_at", "")), 36),
+            (_fmt_dt(r.get("delivered_at", "")), 36),
+            (_fmt_dt(r.get("read_at", "")), 36),
+            ((str(r.get("error_message") or "") or "-")[:180], 109),
+        ]
+        for text, w in cells:
+            # Safe-encode (latin-1 for FPDF core font)
+            safe = str(text).encode("latin-1", "replace").decode("latin-1")
+            pdf.cell(w, 6, safe, border=1, fill=True, align="L")
+        pdf.ln(6)
+        fill = not fill
+
+    out = pdf.output(dest="S")
+    if isinstance(out, str):
+        out = out.encode("latin-1")
+    fname = f"campaign_{(camp.get('name') or camp.get('id') or 'export').replace(' ', '_')}.pdf"
+    return Response(
+        content=bytes(out),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
 # ═══════════════════════════════════════════════════════════════
 # CONVERSATIONS MODULE
 # ═══════════════════════════════════════════════════════════════
@@ -2976,9 +3229,7 @@ async def send_conversation_message(phone: str, request: Request):
         raise HTTPException(status_code=400, detail="Message text required")
 
     # Send via WhatsApp Cloud API (free-form text, within 24h window)
-    clean_phone = phone.strip().replace(" ", "").replace("-", "").lstrip("+")
-    if not clean_phone.startswith("91"):
-        clean_phone = "91" + clean_phone
+    clean_phone = normalize_phone_for_wa(phone)
 
     payload = {
         "messaging_product": "whatsapp",
@@ -3145,9 +3396,7 @@ async def send_conversation_media(phone: str, request: Request, file: UploadFile
     file_url = f"{app_url}/api/static/uploads/{safe_name}"
     
     # Send via WhatsApp Cloud API
-    clean_phone = phone.strip().replace(" ", "").replace("-", "").lstrip("+")
-    if not clean_phone.startswith("91"):
-        clean_phone = "91" + clean_phone
+    clean_phone = normalize_phone_for_wa(phone)
     
     payload = {
         "messaging_product": "whatsapp",
@@ -3224,9 +3473,7 @@ async def send_conversation_bundle(
     if not WA_PHONE_ID or not WA_TOKEN:
         raise HTTPException(status_code=500, detail="WhatsApp API not configured")
 
-    clean_phone = phone.strip().replace(" ", "").replace("-", "").lstrip("+")
-    if not clean_phone.startswith("91"):
-        clean_phone = "91" + clean_phone
+    clean_phone = normalize_phone_for_wa(phone)
 
     import os as _os
     static_dir = _os.path.join(_os.path.dirname(__file__), "static", "uploads")
@@ -3696,6 +3943,12 @@ async def wa_flow_data_exchange(request: Request):
                     }},
                 )
 
+            # Session 4B: fire HC system triggers (captured / not_on_premise + POC notify)
+            try:
+                await fire_hc_flow_outcome(phone, arrived_status, ticket)
+            except Exception as e:
+                logger.warning(f"[HC Trigger] fire_hc_flow_outcome failed: {e}")
+
             return _respond({
                 "version": version, "screen": "SUCCESS",
                 "data": {
@@ -3798,7 +4051,13 @@ SYSTEM_TRIGGERS = [
     {"key": "room_transferred", "type": "user", "label": "Room Transferred", "description": "When guest's room is changed", "recipient_logic": "registrant_mobile"},
     {"key": "help_ticket_response", "type": "user", "label": "Help Ticket Response", "description": "When admin responds to a help request", "recipient_logic": "registrant_mobile"},
     {"key": "departure_marked", "type": "user", "label": "Departure Marked", "description": "When guest is marked as departed", "recipient_logic": "registrant_mobile"},
-    {"key": "help_ticket_created", "type": "admin", "label": "Help Ticket Created", "description": "When a guest raises a help request", "recipient_logic": "assigned_swamsevak_mobile"},
+    # ── Help Centre / WA Flow triggers (Session 4B) ──
+    {"key": "hc_flow_captured", "type": "user", "label": "HC: Query Captured", "description": "Confirms ticket capture with SLA + escalation notice (guest is on-premise)", "recipient_logic": "registrant_mobile"},
+    {"key": "hc_flow_not_on_premise", "type": "user", "label": "HC: Not on Premise", "description": "Sent when help-form submitter is NOT in arrived-guest list", "recipient_logic": "registrant_mobile"},
+    {"key": "hc_ticket_resolved", "type": "user", "label": "HC: Ticket Resolved", "description": "Sent to guest when swayamsevak marks ticket resolved", "recipient_logic": "registrant_mobile"},
+    # ── Admin / Swayamsevak triggers ──
+    {"key": "help_ticket_created", "type": "admin", "label": "Help Ticket Created", "description": "When a guest raises a help request — notifies assigned Swayamsevak (POC)", "recipient_logic": "assigned_swamsevak_mobile"},
+    {"key": "hc_ticket_escalated_all", "type": "admin", "label": "HC: Ticket Escalated (All Swayamsevaks)", "description": "When SLA breached — broadcasts to ALL swayamsevaks", "recipient_logic": "all_swamsevaks_mobile"},
     {"key": "new_registration", "type": "admin", "label": "New Registration", "description": "When a new guest registers", "recipient_logic": "superadmin_mobile"},
     {"key": "guest_arrived", "type": "admin", "label": "Guest Arrived", "description": "When assigned guest checks in", "recipient_logic": "assigned_swamsevak_mobile"},
 ]
@@ -3875,6 +4134,199 @@ async def fire_system_trigger(trigger_key: str, phone: str, variables: dict = No
     await db.wa_message_queue.insert_one(queue_doc)
     # Process immediately in background
     asyncio.create_task(process_queue_item(queue_doc["id"]))
+
+# ═══════════════════════════════════════════════════════════════
+# HELP CENTRE · SYSTEM TRIGGER WIRING (Session 4B)
+# ═══════════════════════════════════════════════════════════════
+async def fire_hc_flow_outcome(phone: str, arrived_status: str, ticket: dict):
+    """Called after a WA Flow submission creates a ticket. Fires either
+    hc_flow_captured (on-premise) or hc_flow_not_on_premise (off-premise)."""
+    sla_minutes = int(ticket.get("resolution_time_minutes") or 0)
+    sla_human = f"{sla_minutes} minutes" if sla_minutes and sla_minutes < 60 else (f"{sla_minutes // 60} hour(s)" if sla_minutes else "")
+    variables = {
+        "guest_name": ticket.get("guest_name", ""),
+        "ticket_id": (ticket.get("id") or "")[:8].upper(),
+        "service_type": ticket.get("category_label") or ticket.get("category", ""),
+        "priority": ticket.get("priority", ""),
+        "sla_minutes": str(sla_minutes),
+        "sla": sla_human,
+        "arrived_status": arrived_status,
+    }
+    if arrived_status == "on_premise":
+        await fire_system_trigger("hc_flow_captured", phone, variables)
+    else:
+        await fire_system_trigger("hc_flow_not_on_premise", phone, variables)
+    # Also notify the assigned Swayamsevak (POC) if any
+    if ticket.get("assigned_to"):
+        swam = await db.custom_admins.find_one({"username": ticket["assigned_to"]}, {"_id": 0})
+        if swam and swam.get("phone"):
+            poc_vars = {
+                "swamsevak_name": swam.get("name", ""),
+                "guest_name": ticket.get("guest_name", ""),
+                "guest_mobile": ticket.get("guest_mobile", ""),
+                "ticket_id": (ticket.get("id") or "")[:8].upper(),
+                "service_type": ticket.get("category_label") or ticket.get("category", ""),
+                "priority": ticket.get("priority", ""),
+                "room_or_location": ticket.get("room_or_location", ""),
+                "description": (ticket.get("description", "") or "")[:200],
+            }
+            await fire_system_trigger("help_ticket_created", swam["phone"], poc_vars)
+
+async def fire_hc_ticket_resolved(ticket: dict):
+    """Called when a ticket is marked resolved. Notifies the guest."""
+    phone = ticket.get("guest_mobile", "")
+    if not phone:
+        return
+    variables = {
+        "guest_name": ticket.get("guest_name", ""),
+        "ticket_id": (ticket.get("id") or "")[:8].upper(),
+        "service_type": ticket.get("category_label") or ticket.get("category", ""),
+        "resolved_by_name": ticket.get("resolved_by_name", ""),
+        "closing_note": (ticket.get("closing_note", "") or "")[:300],
+    }
+    await fire_system_trigger("hc_ticket_resolved", phone, variables)
+
+async def fire_hc_ticket_escalated_all(ticket: dict):
+    """Called when a ticket breaches SLA. Broadcasts to all swayamsevaks."""
+    swamsevaks = await db.custom_admins.find({"role": {"$in": ["swamsevak", "admin"]}}, {"_id": 0}).to_list(1000)
+    base_vars = {
+        "ticket_id": (ticket.get("id") or "")[:8].upper(),
+        "guest_name": ticket.get("guest_name", ""),
+        "guest_mobile": ticket.get("guest_mobile", ""),
+        "service_type": ticket.get("category_label") or ticket.get("category", ""),
+        "priority": ticket.get("priority", ""),
+        "room_or_location": ticket.get("room_or_location", ""),
+        "description": (ticket.get("description", "") or "")[:200],
+        "assigned_to_name": ticket.get("assigned_to_name", ""),
+    }
+    fired = 0
+    for s in swamsevaks:
+        if s.get("phone"):
+            vars_for_s = {**base_vars, "swamsevak_name": s.get("name", "")}
+            await fire_system_trigger("hc_ticket_escalated_all", s["phone"], vars_for_s)
+            fired += 1
+    logger.info(f"[HC Escalation] Ticket {ticket.get('id')} broadcast to {fired} swayamsevaks")
+    return fired
+
+async def sla_escalation_scanner():
+    """Background task: every 60s, find tickets whose SLA is breached & not yet escalated, fire escalation broadcast."""
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            # Find open tickets past SLA that haven't been escalated yet
+            cursor = db.tickets.find({
+                "status": {"$in": ["open", "in_progress"]},
+                "escalated_at": {"$in": [None, ""]},
+            }, {"_id": 0})
+            count = 0
+            async for t in cursor:
+                try:
+                    created = t.get("created_at", "")
+                    sla_min = int(t.get("resolution_time_minutes") or 0)
+                    if not created or not sla_min:
+                        continue
+                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    age_min = (now - created_dt).total_seconds() / 60
+                    if age_min >= sla_min:
+                        await db.tickets.update_one({"id": t["id"]}, {"$set": {
+                            "escalated_at": now.isoformat(), "escalation_level": "all_swamsevaks",
+                        }})
+                        await fire_hc_ticket_escalated_all(t)
+                        count += 1
+                except Exception as e:
+                    logger.warning(f"[SLA Scanner] error on ticket {t.get('id')}: {e}")
+            if count:
+                logger.info(f"[SLA Scanner] Escalated {count} tickets to all swayamsevaks")
+        except Exception as e:
+            logger.exception(f"[SLA Scanner] loop error: {e}")
+        await asyncio.sleep(60)
+
+@api_router.post("/admin/tickets/escalate-check")
+async def admin_escalate_check(request: Request):
+    """Manual endpoint to run SLA escalation check immediately (admin tool)."""
+    await require_superadmin(request)
+    now = datetime.now(timezone.utc)
+    escalated = []
+    async for t in db.tickets.find({
+        "status": {"$in": ["open", "in_progress"]},
+        "escalated_at": {"$in": [None, ""]},
+    }, {"_id": 0}):
+        created = t.get("created_at", "")
+        sla_min = int(t.get("resolution_time_minutes") or 0)
+        if not created or not sla_min:
+            continue
+        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        age_min = (now - created_dt).total_seconds() / 60
+        if age_min >= sla_min:
+            await db.tickets.update_one({"id": t["id"]}, {"$set": {
+                "escalated_at": now.isoformat(), "escalation_level": "all_swamsevaks",
+            }})
+            fired = await fire_hc_ticket_escalated_all(t)
+            escalated.append({"ticket_id": t["id"], "swamsevaks_notified": fired})
+    return {"escalated_count": len(escalated), "details": escalated}
+
+# ─── Keyword → Template-with-Flow-CTA helper (Session 4B) ───
+async def send_wa_flow_template(phone: str, template_name: str, language: str, flow_id: str,
+                                flow_cta_text: str = "Open", flow_action: str = "data_exchange",
+                                body_params: list = None):
+    """Send a WhatsApp template that contains a Flow CTA button.
+    Mints a flow_token, binds it to the phone (so Flow submission knows the user), then sends
+    the template with the flow parameters. Returns (success, wa_message_id_or_error, flow_token).
+    """
+    if not WA_PHONE_ID or not WA_TOKEN:
+        return False, "WhatsApp API not configured", ""
+    flow_token = f"hc_{uuid.uuid4().hex[:16]}"
+    # Bind token → phone first so Flow submission can resolve phone
+    await db.wa_flow_sessions.update_one(
+        {"flow_token": flow_token},
+        {"$set": {
+            "id": str(uuid.uuid4()), "flow_token": flow_token,
+            "phone": normalize_phone_for_wa(phone),
+            "status": "awaiting_submission",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True
+    )
+    clean_phone = normalize_phone_for_wa(phone)
+    components = []
+    if body_params:
+        components.append({"type": "body", "parameters": [{"type": "text", "text": str(v)} for v in body_params]})
+    # Flow CTA button as a button component (index 0)
+    components.append({
+        "type": "button",
+        "sub_type": "flow",
+        "index": "0",
+        "parameters": [{
+            "type": "action",
+            "action": {
+                "flow_token": flow_token,
+                "flow_action_data": {},
+            }
+        }]
+    })
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": clean_phone,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language},
+            "components": components,
+        }
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client_http:
+            resp = await client_http.post(
+                f"{WA_API_BASE}/{WA_PHONE_ID}/messages",
+                headers={"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"},
+                json=payload
+            )
+            data = resp.json()
+            if resp.status_code == 200 and data.get("messages"):
+                return True, data["messages"][0]["id"], flow_token
+            return False, data.get("error", {}).get("message", str(data)), flow_token
+    except Exception as e:
+        return False, str(e), flow_token
 
 async def process_queue_item(queue_id: str):
     """Process a single queued message"""
@@ -4558,6 +5010,10 @@ async def startup():
     # Indexes for Flow + auto-response
     await db.wa_flow_sessions.create_index("flow_token", unique=True, sparse=True)
     await db.wa_auto_responses.create_index("id", unique=True, sparse=True)
+
+    # Session 4B: kick off SLA escalation scanner (runs every 60s)
+    asyncio.create_task(sla_escalation_scanner())
+    logger.info("[HC] SLA escalation scanner started")
 
     logger.info("V2 startup complete")
 

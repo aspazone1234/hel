@@ -597,6 +597,40 @@ function CampaignDetailView({ campaignId, authHeaders, onBack, onOpenConvo }) {
         <button onClick={() => { fetchCampaign(); fetchRecipients(); }} className="text-sm text-gray-500 flex items-center gap-1 hover:text-[#0B1C3D] bg-gray-50 px-3 py-1.5 rounded-lg">
           <RefreshCw size={13} /> Refresh
         </button>
+        <button
+          data-testid={`export-campaign-csv-${campaignId}`}
+          onClick={async () => {
+            try {
+              const resp = await axios.get(`${API}/admin/wa-campaigns/${campaignId}/export.csv`, { headers: authHeaders(), responseType: "blob" });
+              const blob = new Blob([resp.data], { type: "text/csv;charset=utf-8" });
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `campaign_${(campaign?.name || campaign?.campaign_name || campaignId).replace(/\s+/g, "_")}.csv`;
+              document.body.appendChild(a); a.click(); a.remove();
+              window.URL.revokeObjectURL(url);
+            } catch { toast.error("CSV export failed"); }
+          }}
+          className="text-sm text-[#0B1C3D] flex items-center gap-1 hover:bg-[#0B1C3D] hover:text-white bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+          <FileSpreadsheet size={13} /> Export CSV
+        </button>
+        <button
+          data-testid={`export-campaign-pdf-${campaignId}`}
+          onClick={async () => {
+            try {
+              const resp = await axios.get(`${API}/admin/wa-campaigns/${campaignId}/export.pdf`, { headers: authHeaders(), responseType: "blob" });
+              const blob = new Blob([resp.data], { type: "application/pdf" });
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `campaign_${(campaign?.name || campaign?.campaign_name || campaignId).replace(/\s+/g, "_")}.pdf`;
+              document.body.appendChild(a); a.click(); a.remove();
+              window.URL.revokeObjectURL(url);
+            } catch { toast.error("PDF export failed"); }
+          }}
+          className="text-sm text-white flex items-center gap-1 bg-[#0B1C3D] hover:bg-[#142a5c] px-3 py-1.5 rounded-lg">
+          <FileText size={13} /> Export PDF
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -978,73 +1012,166 @@ function CreateCampaignFlow({ authHeaders, templates, onClose, onDone }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*                     TRIGGERS TAB                               */
+/*                     TRIGGERS TAB (User vs Admin split)          */
 /* ═══════════════════════════════════════════════════════════════ */
 function TriggersTab({ authHeaders }) {
   const [triggers, setTriggers] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [audience, setAudience] = useState("user"); // "user" | "admin"
+  const [saving, setSaving] = useState("");
 
   const fetchData = useCallback(async () => {
     try {
-      const { data } = await axios.get(`${API}/admin/wa-triggers`, { headers: authHeaders() });
-      setTriggers(data);
+      const [tRes, tmplRes] = await Promise.all([
+        axios.get(`${API}/admin/wa-triggers`, { headers: authHeaders() }),
+        axios.get(`${API}/admin/wa-templates`, { headers: authHeaders() }),
+      ]);
+      setTriggers(Array.isArray(tRes.data) ? tRes.data : (tRes.data?.data || []));
+      setTemplates(Array.isArray(tmplRes.data) ? tmplRes.data : (tmplRes.data?.data || []));
     } catch { /* silent */ }
     finally { setLoading(false); }
   }, [authHeaders]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const TRIGGER_TYPES = [
-    { id: "registration_approved", label: "Registration Approved", desc: "Sent when a registration is approved" },
-    { id: "registration_rejected", label: "Registration Disapproved", desc: "Sent when a registration is disapproved" },
-    { id: "room_assigned", label: "Room Assigned", desc: "Sent when a room is assigned" },
-    { id: "arrival_confirmed", label: "Arrival Confirmed", desc: "Sent on arrival confirmation" },
-    { id: "event_reminder", label: "Event Reminder", desc: "General event reminder" },
-  ];
-
-  const toggleTrigger = async (id, current) => {
+  const saveTrigger = async (tr, patch) => {
+    setSaving(tr.key);
     try {
-      await axios.put(`${API}/admin/wa-triggers/${id}`, { is_active: !current }, { headers: authHeaders() });
-      toast.success(`Trigger ${!current ? "enabled" : "disabled"}`);
-      fetchData();
-    } catch { toast.error("Failed to update"); }
+      const payload = {
+        enabled: patch.enabled ?? tr.enabled ?? false,
+        template_id: patch.template_id ?? tr.template_id ?? "",
+        template_name: (() => {
+          const id = patch.template_id ?? tr.template_id;
+          const t = templates.find(x => x.id === id);
+          return t?.meta_template_name || tr.template_name || "";
+        })(),
+        delay_minutes: patch.delay_minutes ?? tr.delay_minutes ?? 0,
+      };
+      await axios.put(`${API}/admin/wa-triggers/${tr.key}`, payload, { headers: authHeaders() });
+      toast.success("Saved");
+      await fetchData();
+    } catch { toast.error("Save failed"); }
+    finally { setSaving(""); }
+  };
+
+  const filtered = triggers.filter(t => (t.type || "user") === audience);
+  const userCount = triggers.filter(t => (t.type || "user") === "user").length;
+  const adminCount = triggers.filter(t => (t.type || "user") === "admin").length;
+
+  const recipientLabel = (logic) => {
+    switch (logic) {
+      case "registrant_mobile": return "Guest's registered mobile";
+      case "assigned_swamsevak_mobile": return "Assigned Swayamsevak (POC)";
+      case "all_swamsevaks_mobile": return "All Swayamsevaks";
+      case "superadmin_mobile": return "Super Admin";
+      default: return logic || "—";
+    }
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="triggers-tab">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="font-semibold text-[#0B1C3D]">System Message Triggers</h2>
-          <p className="text-xs text-gray-500">Auto-send WhatsApp messages on portal events · managed by system</p>
+          <p className="text-xs text-gray-500">Auto-send WhatsApp messages on portal events. Managed by system — toggle, pick template, and set optional delay.</p>
         </div>
       </div>
 
+      {/* Audience toggle */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit" data-testid="trigger-audience-toggle">
+        <button
+          data-testid="audience-user"
+          onClick={() => setAudience("user")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${audience === "user" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
+          <User size={14} /> User Triggers <span className="text-[10px] opacity-70">({userCount})</span>
+        </button>
+        <button
+          data-testid="audience-admin"
+          onClick={() => setAudience("admin")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${audience === "admin" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
+          <Radio size={14} /> Admin / Swayamsevak Triggers <span className="text-[10px] opacity-70">({adminCount})</span>
+        </button>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-900">
+        {audience === "user"
+          ? <>These messages are sent to the <b>guest/shraddhalu</b> on their registered mobile number, when something happens to them on the portal.</>
+          : <>These messages go to <b>Swayamsevaks or the Super Admin</b> on their registered WhatsApp number when guest events require their attention.</>
+        }
+      </div>
+
       {loading ? <p className="text-gray-400 text-center py-8">Loading...</p> :
-        triggers.length === 0 ? (
+        filtered.length === 0 ? (
           <div className="text-center py-12 text-gray-400">
             <Zap size={40} className="mx-auto mb-3 opacity-30" />
-            <p>No triggers configured yet</p>
-            <p className="text-xs mt-1">Default triggers are seeded by the system — they'll appear here once active.</p>
+            <p>No triggers in this section</p>
           </div>
         ) : (
-          <div className="space-y-2">
-            {triggers.map(tr => {
-              const ttype = TRIGGER_TYPES.find(t => t.id === tr.trigger_type);
-              return (
-                <div key={tr.id} className="bg-white rounded-xl p-4 border flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <button onClick={() => toggleTrigger(tr.id, tr.is_active)}
-                      className={`${tr.is_active ? "text-green-500" : "text-gray-300"}`} data-testid={`toggle-${tr.id}`}>
-                      {tr.is_active ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
-                    </button>
-                    <div>
-                      <p className="font-medium text-[#0B1C3D] text-sm">{ttype?.label || tr.trigger_type}</p>
-                      <p className="text-xs text-gray-500">{ttype?.desc || ""} • Template: {tr.template_name}</p>
+          <div className="space-y-2" data-testid={`triggers-list-${audience}`}>
+            {filtered.map(tr => (
+              <div key={tr.key} className="bg-white rounded-xl p-4 border" data-testid={`trigger-card-${tr.key}`}>
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => saveTrigger(tr, { enabled: !tr.enabled })}
+                    className={`${tr.enabled ? "text-green-500" : "text-gray-300"} flex-shrink-0`}
+                    data-testid={`toggle-${tr.key}`}
+                    disabled={saving === tr.key}>
+                    {tr.enabled ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-[#0B1C3D] text-sm">{tr.label}</p>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${tr.enabled ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                        {tr.enabled ? "Enabled" : "Disabled"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">{tr.description}</p>
+                    <p className="text-[11px] text-gray-400 mt-1">
+                      <b>Recipient:</b> {recipientLabel(tr.recipient_logic)}
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
+                      <div>
+                        <Label className="text-[10px] text-gray-500">Template</Label>
+                        <Select
+                          value={tr.template_id || ""}
+                          onValueChange={(v) => saveTrigger(tr, { template_id: v === "__none__" ? "" : v })}>
+                          <SelectTrigger className="h-9 text-xs" data-testid={`template-select-${tr.key}`}>
+                            <SelectValue placeholder="— Pick a template —" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">— None —</SelectItem>
+                            {templates.map(t => (
+                              <SelectItem key={t.id} value={t.id}>
+                                {t.display_name || t.meta_template_name} <span className="text-gray-400 ml-1">({t.meta_template_name})</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-[10px] text-gray-500">Delay (minutes, optional)</Label>
+                        <Input
+                          type="number" min={0} step={1}
+                          value={tr.delay_minutes || 0}
+                          onChange={(e) => {
+                            const v = parseInt(e.target.value || "0", 10) || 0;
+                            setTriggers(prev => prev.map(x => x.key === tr.key ? { ...x, delay_minutes: v } : x));
+                          }}
+                          onBlur={(e) => {
+                            const v = parseInt(e.target.value || "0", 10) || 0;
+                            if (v !== (tr.delay_minutes || 0)) saveTrigger(tr, { delay_minutes: v });
+                          }}
+                          className="h-9 text-xs"
+                          data-testid={`delay-${tr.key}`}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )
       }
