@@ -1,57 +1,76 @@
 # Shrimad Bhagavat Katha Mahotsav 2026 — Swamsevak Portal (PRD)
 
+**Last updated:** 2026-04-17
+
 ## Original Problem Statement
-Import the GitHub repo `aspazone1234/hel@new2`, install deps, get it running end-to-end, then progressively complete the WhatsApp feature roadmap documented in `HANDOFF.md` (Sessions 1–5).
+Import the GitHub repo `aspazone1234/hel@new2`, install deps, get it running end-to-end, then progressively complete the WhatsApp feature roadmap (the original HANDOFF's Sessions 1–5).
 
 ## Architecture
-- **Backend**: FastAPI monolith (`/app/backend/server.py`, ~5000 LOC). Runs on `:8001` behind nginx/CF ingress, path-prefixed `/api`.
-- **Frontend**: React 19 + CRA+CRACO, Tailwind + shadcn/ui. Runs on `:3000`.
-- **DB**: MongoDB (motor async). DB = `test_database`.
+- **Backend**: FastAPI monolith (`/app/backend/server.py`, ~5100 LOC). Port 8001, supervisor-managed. All routes prefixed `/api`.
+- **Frontend**: React 19 + CRA+CRACO + Tailwind + shadcn/ui. Port 3000, supervisor-managed.
+- **DB**: MongoDB (motor async). DB name = `test_database`.
 - **Auth**: JWT HS256. Super admin `superashwini` / `supersebhiupper123`.
-- **Integrations**: WhatsApp Cloud API v21.0 (templates, OTP, media, Flows), Meta WA Flow RSA-2048 encryption.
+- **WhatsApp**: Meta Cloud API v21.0. Webhook, Templates, Flows (RSA-2048 encrypted), OTP, Conversations, Campaigns, Auto-Response, System Triggers.
 
-## Environment (backend/.env)
-```
-MONGO_URL, DB_NAME, CORS_ORIGINS, JWT_SECRET
-APP_URL=https://code-mirror-60.preview.emergentagent.com
-WA_PHONE_NUMBER_ID, WA_BUSINESS_ACCOUNT_ID, WA_ACCESS_TOKEN
-WA_WEBHOOK_VERIFY_TOKEN=swamsevak2026
-WA_FLOW_PRIVATE_KEY_PATH=/app/backend/keys/wa_flow_private.pem
-WA_FLOW_PRIVATE_KEY_PASSPHRASE=swamsevak_flow_2026
-```
-Meta webhook callback: `https://<APP_URL>/api/webhooks/whatsapp` · Flow endpoint: `https://<APP_URL>/api/webhooks/wa-flow`
+## Event window
+28 May – 3 Jun 2026, Pushkar, Rajasthan. Registration cutoff 19 May 2026.
 
-## What's Been Implemented (rolling log)
-### 2026-04-17 (session 1)
-- Imported repo from GitHub; installed deps; wired JWT_SECRET; services running; Meta webhook verified; Flow public key uploaded (status VALID).
+## Personas
+- **Guest / Shraddhalu**: public registrant. Uses public site to register, opens WA Flow for help, receives system messages.
+- **Swayamsevak (Sevak)**: volunteer. Assigned to specific guests as Point of Contact. Receives admin-side triggers, resolves HC tickets.
+- **Super Admin**: top-level operator. Approves registrations, assigns rooms/sevaks, manages WA templates/triggers/campaigns, handles escalations.
 
-### 2026-04-17 (session 2) — Feature add + Sessions 4B & 5 handover
-- **Campaign Export (CSV + PDF)** — every detail included: `GET /api/admin/wa-campaigns/{id}/export.csv` and `.pdf`. CSV has BOM for Excel. PDF is landscape A4 with summary card + stats row + recipient table, auto-paginates. UI buttons added next to Refresh.
-- **International number fix** — Centralized `normalize_phone_for_wa()` in server.py. Replaced 4 hand-rolled normalizers. UK (+44), US (+1), and any country-code-prefixed number now routes correctly. 10-digit bare numbers still assumed India.
-- **Session 4B — HC system triggers**:
-  - Added 4 new triggers: `hc_flow_captured`, `hc_flow_not_on_premise`, `hc_ticket_resolved`, `hc_ticket_escalated_all`.
-  - `help_ticket_created` (POC notify) wired on auto-assign during WA-Flow ticket creation.
-  - `resolve_ticket` now fires `hc_ticket_resolved` to guest.
-  - **SLA escalation scanner**: background task runs every 60 s → scans open tickets past SLA → marks `escalated_at` + broadcasts `hc_ticket_escalated_all` to ALL swayamsevaks. Admin override endpoint: `POST /api/admin/tickets/escalate-check`.
-  - **Keyword → Template-with-Flow-CTA**: new helper `send_wa_flow_template()` mints `flow_token`, binds it to the phone in `wa_flow_sessions`, and sends a template with a Flow CTA button. Auto-Response engine now supports a `is_flow_step` step type.
-- **Session 5 — User vs Admin trigger split**:
-  - Backend `SYSTEM_TRIGGERS` already carries `type: "user"|"admin"`; now 14 user + 4 admin triggers.
-  - Frontend `TriggersTab` rewritten: audience toggle (User / Admin-Swayamsevak), per-trigger enable toggle, template dropdown, delay input, recipient label ("Guest's registered mobile" / "Assigned Swayamsevak" / "All Swayamsevaks" / "Super Admin").
+## Core modules (all live)
+- Public registration + cutoff enforcement + public-update window
+- Attendee-level arrival tracking (family / partially-arrived / arrived / departed / not-coming)
+- Room management + assignments + vacancy forecast
+- QR code generation + scan-based check-in
+- Reference Person + Relation Category taxonomy
+- Custom fields on registrations
+- Help Centre: ticket CRUD, SLA, auto-assign, auto-escalation, WA Flow auto-create
+- To-Do module for swayamsevaks
+- Notification Management UI: Bulk Campaigns, Auto Response, System Messages, Template Registry, Conversations, OTP Logs
+- WA Flow Settings (under Help Centre)
 
-## Core Requirements (static)
-- Guest registration workflow
-- Volunteer (Swayamsevak) portal with room/QR/help-centre management
-- Super-admin control panel
-- Full WhatsApp messaging stack: OTP, templates, bulk campaigns, free-form conversations, auto-response, Flow-based help tickets
+## Implemented (rolling log)
+### 2026-04-17 Session 1 — Import & bootstrap
+- Imported from `aspazone1234/hel@new2`; installed deps; wired JWT_SECRET; services up.
+- Meta webhook verified (verify token `swamsevak2026`), Flow public key uploaded (status VALID).
 
-## Backlog
-- **P1** Frontend Auto-Response editor: expose `is_flow_step` / `flow_id` fields on a step so admins can wire keyword → Flow template without DB edits.
-- **P1** Seed default HC templates in Meta, then pick them from the trigger UI.
-- **P2** Add "Test Send" button on each enabled trigger (send to the operator's own phone for QA).
-- **P2** Notify POC also via `hc_ticket_resolved` (currently only the guest gets notified on resolve).
-- **P2** Localize HC system messages (en + hi) based on guest's preferred language.
+### 2026-04-17 Session 2 — Bulk campaign export + i18n phone fix + HC handover (Sessions 4B + 5)
+- **Campaign export (CSV + PDF)** — `.../export.csv` and `.../export.pdf`. BOM-prefixed CSV, landscape A4 PDF, auto-paginates recipient table. UI buttons wired.
+- **International number fix** — single `normalize_phone_for_wa()` helper; replaced 4 broken ad-hoc normalizers. UK/US/any CC-prefixed number now routes correctly.
+- **HC system triggers wired** (`hc_flow_captured`, `hc_flow_not_on_premise`, `hc_ticket_resolved`, `hc_ticket_escalated_all`, `help_ticket_created` POC-notify).
+- **SLA escalation scanner** — asyncio loop 60 s, auto-broadcasts to all sevaks.
+- **Keyword → Flow-CTA template** — `send_wa_flow_template()` helper + `run_flow_keyword_matcher()` wired into webhook.
+- **User/Admin trigger split** — audience toggle + per-trigger template dropdown + delay input in frontend.
 
-## Next Tasks
-1. Create Meta templates matching the 4 new HC triggers and map them in the System Messages tab.
-2. Live-test `hc_flow_captured` by submitting the WA Flow from an on-premise arrived-guest number.
-3. Live-test escalation by forcing a ticket's `resolution_time_minutes` to 1 and watching the 60-s scanner broadcast.
+### 2026-04-17 Session 3 — Trigger registry cleanup + fire-call wiring
+- **Removed 8 rejected triggers** from SYSTEM_TRIGGERS: `registration_approved`, `registration_rejected`, `qr_generated`, `room_assigned`, `swamsevak_assigned`, `marked_not_coming`, `room_transferred`, `new_registration`. Old rows auto-purged on startup.
+- **Wired 5 missing `fire_system_trigger` calls** — previously these trigger keys existed but no code path called them:
+  - `registration_submitted` → fires on `POST /api/registrations` after insert
+  - `arrival_confirmed` → fires on `mark_arrival` when status→arrived
+  - `guest_arrived` (admin) → fires on same mark_arrival, to assigned swayamsevak
+  - `departure_marked` → fires on mark_arrival when status→departed
+  - `help_ticket_response` → fires on `PUT /api/admin/tickets/{id}` when `notes` field changes
+- **Alias-aware variable resolution** in `fire_system_trigger` — lowercases + strips `var_` prefix + resolves multiple aliases, so templates labeled `Name`, `guest_name`, `GUEST_NAME` all work.
+- **Structured trigger logs** — every fire logs `[Trigger] <key>: firing template=… to <phone> params=[…]` or skipped reason.
+- **WA Flow Builder test-mode ticket** — flow submissions via Meta Flow Builder (token prefix `flows-builder-`) now create a visible test ticket with placeholder phone `+00-flow-builder-test` so admins can verify flow end-to-end in Help Centre without real WhatsApp.
+- **`keyword_template_name` field added to WA Flow Settings** — so admins can configure which Meta template opens on keyword match.
+
+## In-flight / awaiting user decision
+- 🟡 Delete button on trigger cards (core vs optional distinction agreed, not built)
+- 🟡 Auto-Response editor UI exposing `is_flow_step` / `flow_id` fields (backend ready)
+- 🟡 User must create 4 Meta templates for HC triggers (captured / not-on-premise / resolved / escalated) in Meta Business Manager and map them in System Messages tab
+- 🟡 Live UK-number WA send test
+
+## Backlog (P2, rejected suggestions not included)
+- "Claim ticket" deep-link button in escalation template (first-to-claim becomes new POC)
+
+## Known stable behaviours
+- Hot reload ON — no service restart needed for code edits; only for `.env` or dep installs.
+- Backend auto-startup: seeds 6 relation categories, 10 message templates, 15 ticket categories if collections empty; creates all required indexes; kicks off SLA scanner.
+- Trigger registry is source-of-truth in Python `SYSTEM_TRIGGERS` list. DB rows are synced on startup (stale keys purged).
+
+## Rejected (user explicitly said no)
+- Adding curated "additional" triggers I proposed (pre_arrival_reminder, katha reminders, daily briefing, post-event feedback, etc.) — user wants to keep the system minimal with only the 10 current triggers.
