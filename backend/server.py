@@ -350,8 +350,7 @@ async def send_otp(body: OTPSendRequest):
             "name": "otp_verification",
             "language": {"code": "en"},
             "components": [
-                {"type": "body", "parameters": [{"type": "text", "text": otp_code}]},
-                {"type": "button", "sub_type": "url", "index": "0", "parameters": [{"type": "text", "text": otp_code}]}
+                {"type": "body", "parameters": [{"type": "text", "text": otp_code}]}
             ]
         }
     }
