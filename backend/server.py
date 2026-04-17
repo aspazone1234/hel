@@ -2297,6 +2297,103 @@ async def get_campaigns(request: Request, page: int = 1, per_page: int = 20):
 
 # ─── Webhook Endpoints ───
 # Meta sends GET to verify, POST for events. Also handle HEAD for infra probes.
+
+async def run_auto_response_matcher(from_number: str, text: str):
+    """Match incoming WhatsApp text against active auto-response rules and fire the step chain."""
+    try:
+        incoming = (text or "").strip().lower()
+        if not incoming:
+            return
+        rules = await db.wa_auto_responses.find({"is_active": True}, {"_id": 0}).to_list(200)
+        matched = None
+        for r in rules:
+            phrase = (r.get("trigger_phrase") or "").strip().lower()
+            if not phrase:
+                continue
+            if r.get("match_type", "exact") == "exact":
+                if incoming == phrase:
+                    matched = r
+                    break
+            else:  # contains
+                if phrase in incoming:
+                    matched = r
+                    break
+        if not matched:
+            return
+
+        run_id = str(uuid.uuid4())
+        await db.wa_auto_response_runs.insert_one({
+            "id": run_id,
+            "rule_id": matched["id"],
+            "trigger_phrase": matched.get("trigger_phrase", ""),
+            "phone": from_number,
+            "incoming_text": text,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "steps_results": [],
+        })
+
+        logger.info(f"[AutoResponse] Match: phrase='{matched['trigger_phrase']}' phone={from_number} rule={matched['id']}")
+
+        # Fire steps sequentially, honoring per-step delay
+        for idx, step in enumerate(matched.get("steps", [])):
+            delay = max(0, int(step.get("delay_seconds", 0) or 0))
+            if delay > 0:
+                await asyncio.sleep(delay)
+            tid = step.get("template_id", "")
+            tmpl = await db.wa_templates.find_one({"id": tid}, {"_id": 0})
+            if not tmpl:
+                await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
+                    "step_index": idx, "template_id": tid, "status": "skipped",
+                    "error": "template not found", "at": datetime.now(timezone.utc).isoformat(),
+                }}})
+                continue
+            meta_name = tmpl.get("meta_template_name", "")
+            language = tmpl.get("language", "en") or "en"
+            if not meta_name:
+                await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
+                    "step_index": idx, "template_id": tid, "status": "skipped",
+                    "error": "template has no meta_template_name", "at": datetime.now(timezone.utc).isoformat(),
+                }}})
+                continue
+            ok, result = await send_whatsapp_template(
+                phone=from_number,
+                template_name=meta_name,
+                language=language,
+                body_params=None,
+            )
+            await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
+                "step_index": idx, "template_id": tid, "meta_template_name": meta_name,
+                "status": "sent" if ok else "failed",
+                "wa_message_id": result if ok else "",
+                "error": "" if ok else str(result),
+                "at": datetime.now(timezone.utc).isoformat(),
+            }}})
+            if ok:
+                # Persist outgoing message in conversation
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    msg_doc = {
+                        "id": str(uuid.uuid4()), "direction": "outgoing",
+                        "text": f"[template: {meta_name}]", "msg_type": "template",
+                        "wa_message_id": result, "timestamp": now_iso,
+                        "status": "sent", "sent_by": "AutoResponse",
+                    }
+                    await db.wa_conversations.update_one({"phone": from_number}, {
+                        "$push": {"messages": msg_doc},
+                        "$set": {"last_message": f"[auto: {meta_name}]", "last_message_at": now_iso},
+                    })
+                except Exception as e:
+                    logger.warning(f"[AutoResponse] Conversation log failed: {e}")
+                logger.info(f"[AutoResponse] Step {idx} sent template='{meta_name}' wa_msg_id={result}")
+            else:
+                logger.error(f"[AutoResponse] Step {idx} failed template='{meta_name}': {result}")
+
+        await db.wa_auto_response_runs.update_one({"id": run_id}, {"$set": {
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }})
+    except Exception as e:
+        logger.exception(f"[AutoResponse] Matcher crashed: {e}")
+
 @api_router.get("/webhooks/whatsapp")
 @api_router.head("/webhooks/whatsapp")
 async def whatsapp_webhook_verify(request: Request):
@@ -2380,6 +2477,10 @@ async def whatsapp_webhook_receive(request: Request):
                         "last_message": text_body, "last_message_at": now_iso,
                         "created_at": now_iso, "messages": [message_doc],
                     })
+
+                # ─── Auto Response: match incoming text against active rules ───
+                if text_body and msg_type in ("text", "button", "interactive"):
+                    asyncio.create_task(run_auto_response_matcher(from_number, text_body))
 
             # ─── Handle status updates ───
             statuses = value.get("statuses", [])
@@ -3247,6 +3348,28 @@ async def delete_auto_response(rule_id: str, request: Request):
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Rule not found")
     return {"message": "Deleted"}
+
+@api_router.get("/admin/wa-auto-responses/runs")
+async def list_auto_response_runs(request: Request, limit: int = 50):
+    """View recent auto-response executions for debugging."""
+    await require_superadmin(request)
+    runs = await db.wa_auto_response_runs.find({}, {"_id": 0}).sort("started_at", -1).limit(min(limit, 200)).to_list(200)
+    return runs
+
+@api_router.post("/admin/wa-auto-responses/test")
+async def test_auto_response(request: Request):
+    """Simulate an incoming WhatsApp message to test auto-response rules without needing Meta."""
+    await require_superadmin(request)
+    body = await request.json()
+    phone = (body.get("phone") or "").strip().lstrip("+")
+    text = (body.get("text") or "").strip()
+    if not phone or not text:
+        raise HTTPException(status_code=400, detail="phone and text are required")
+    # Run synchronously so caller sees result
+    await run_auto_response_matcher(phone, text)
+    # Return most recent run for this phone
+    run = await db.wa_auto_response_runs.find_one({"phone": phone}, {"_id": 0}, sort=[("started_at", -1)])
+    return {"matched": run is not None, "run": run}
 
 # ─── WhatsApp Flows Data Exchange Endpoint ───
 @api_router.get("/webhooks/wa-flow")
