@@ -4,7 +4,7 @@ import {
   ToggleLeft, ToggleRight, Edit2, Trash2, Radio, CheckCircle2,
   XCircle, Clock, Mail, Bell, ChevronRight, Search, X, FileText, Zap,
   MessageCircle, ArrowLeft, Paperclip, Check, ChevronDown, AlertTriangle, User,
-  Key, GitBranch, Image
+  Key, Image, Timer, ArrowDown
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -24,11 +24,11 @@ export default function NotificationManagement({ user }) {
 
   const TABS = [
     { id: "campaigns", label: "Bulk Campaigns", icon: Send },
-    { id: "triggers", label: "System Messages", icon: Zap },
+    { id: "auto", label: "Auto Response", icon: Zap },
+    { id: "triggers", label: "System Messages", icon: Bell },
     { id: "templates", label: "Template Registry", icon: FileText },
     { id: "conversations", label: "Conversations", icon: MessageCircle },
     { id: "otplogs", label: "OTP Logs", icon: Key },
-    { id: "flows", label: "WA Flows", icon: GitBranch },
   ];
 
   return (
@@ -46,11 +46,11 @@ export default function NotificationManagement({ user }) {
         ))}
       </div>
       {activeTab === "campaigns" && <CampaignTab authHeaders={authHeaders} onOpenConvo={(phone) => { setActiveTab("conversations"); setConvoPhone(phone); }} />}
+      {activeTab === "auto" && <AutoResponseTab authHeaders={authHeaders} />}
       {activeTab === "triggers" && <TriggersTab authHeaders={authHeaders} />}
       {activeTab === "templates" && <TemplatesTab authHeaders={authHeaders} />}
       {activeTab === "conversations" && <ConversationsTab authHeaders={authHeaders} initialPhone={convoPhone} />}
       {activeTab === "otplogs" && <OTPLogsTab authHeaders={authHeaders} />}
-      {activeTab === "flows" && <FlowsTab authHeaders={authHeaders} />}
     </div>
   );
 }
@@ -982,20 +982,13 @@ function CreateCampaignFlow({ authHeaders, templates, onClose, onDone }) {
 /* ═══════════════════════════════════════════════════════════════ */
 function TriggersTab({ authHeaders }) {
   const [triggers, setTriggers] = useState([]);
-  const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ trigger_type: "", template_id: "" });
 
   const fetchData = useCallback(async () => {
     try {
-      const [trRes, tRes] = await Promise.all([
-        axios.get(`${API}/admin/wa-triggers`, { headers: authHeaders() }),
-        axios.get(`${API}/admin/wa-templates`, { headers: authHeaders() }),
-      ]);
-      setTriggers(trRes.data);
-      setTemplates(tRes.data);
-    } catch {}
+      const { data } = await axios.get(`${API}/admin/wa-triggers`, { headers: authHeaders() });
+      setTriggers(data);
+    } catch { /* silent */ }
     finally { setLoading(false); }
   }, [authHeaders]);
 
@@ -1014,26 +1007,7 @@ function TriggersTab({ authHeaders }) {
       await axios.put(`${API}/admin/wa-triggers/${id}`, { is_active: !current }, { headers: authHeaders() });
       toast.success(`Trigger ${!current ? "enabled" : "disabled"}`);
       fetchData();
-    } catch (e) { toast.error("Failed to update"); }
-  };
-
-  const createTrigger = async () => {
-    if (!form.trigger_type || !form.template_id) { toast.error("Select both trigger type and template"); return; }
-    try {
-      await axios.post(`${API}/admin/wa-triggers`, form, { headers: authHeaders() });
-      toast.success("Trigger created");
-      setShowCreate(false);
-      fetchData();
-    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
-  };
-
-  const deleteTrigger = async (id) => {
-    if (!window.confirm("Delete this trigger?")) return;
-    try {
-      await axios.delete(`${API}/admin/wa-triggers/${id}`, { headers: authHeaders() });
-      toast.success("Deleted");
-      fetchData();
-    } catch (e) { toast.error("Failed to delete"); }
+    } catch { toast.error("Failed to update"); }
   };
 
   return (
@@ -1041,11 +1015,8 @@ function TriggersTab({ authHeaders }) {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="font-semibold text-[#0B1C3D]">System Message Triggers</h2>
-          <p className="text-xs text-gray-500">Auto-send WhatsApp messages on registration events</p>
+          <p className="text-xs text-gray-500">Auto-send WhatsApp messages on portal events · managed by system</p>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="bg-[#0B1C3D] text-white" data-testid="create-trigger-btn">
-          <Plus size={14} className="mr-1" /> New Trigger
-        </Button>
       </div>
 
       {loading ? <p className="text-gray-400 text-center py-8">Loading...</p> :
@@ -1053,6 +1024,7 @@ function TriggersTab({ authHeaders }) {
           <div className="text-center py-12 text-gray-400">
             <Zap size={40} className="mx-auto mb-3 opacity-30" />
             <p>No triggers configured yet</p>
+            <p className="text-xs mt-1">Default triggers are seeded by the system — they'll appear here once active.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -1070,43 +1042,12 @@ function TriggersTab({ authHeaders }) {
                       <p className="text-xs text-gray-500">{ttype?.desc || ""} • Template: {tr.template_name}</p>
                     </div>
                   </div>
-                  <button onClick={() => deleteTrigger(tr.id)} className="text-red-400 hover:text-red-600">
-                    <Trash2 size={16} />
-                  </button>
                 </div>
               );
             })}
           </div>
         )
       }
-
-      {/* Create Trigger Dialog */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle className="text-[#0B1C3D]">Create System Trigger</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Event Type</Label>
-              <Select value={form.trigger_type} onValueChange={v => setForm(p => ({ ...p, trigger_type: v }))}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select event..." /></SelectTrigger>
-                <SelectContent>
-                  {TRIGGER_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>WhatsApp Template</Label>
-              <Select value={form.template_id} onValueChange={v => setForm(p => ({ ...p, template_id: v }))}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="Select template..." /></SelectTrigger>
-                <SelectContent>
-                  {templates.filter(t => t.status === "approved").map(t => <SelectItem key={t.id} value={t.id}>{t.display_name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button onClick={createTrigger} className="w-full bg-[#0B1C3D] text-white">Create Trigger</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
@@ -1492,162 +1433,152 @@ function OTPLogsTab({ authHeaders }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════ */
-/*                    WHATSAPP FLOWS TAB                          */
+/*                     AUTO RESPONSE TAB                          */
 /* ═══════════════════════════════════════════════════════════════ */
-function FlowsTab({ authHeaders }) {
-  const [flows, setFlows] = useState([]);
-  const [events, setEvents] = useState([]);
+function AutoResponseTab({ authHeaders }) {
+  const [rules, setRules] = useState([]);
+  const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreate, setShowCreate] = useState(false);
-  const [showEvents, setShowEvents] = useState(false);
-  const [editFlow, setEditFlow] = useState(null);
+  const [showEditor, setShowEditor] = useState(false);
+  const [editRule, setEditRule] = useState(null);
   const [form, setForm] = useState({
-    flow_name: "", flow_id: "", flow_token: "", description: "",
-    trigger_keywords: "",
+    trigger_phrase: "",
+    match_type: "exact", // exact | contains
+    description: "",
+    steps: [{ template_id: "", delay_seconds: 0 }],
   });
 
-  const ENDPOINT_URL = `${process.env.REACT_APP_BACKEND_URL}/api/webhooks/wa-flow`;
-
   const fetchData = useCallback(async () => {
+    setLoading(true);
     try {
-      const { data } = await axios.get(`${API}/admin/wa-flows`, { headers: authHeaders() });
-      setFlows(data || []);
-    } catch {}
+      const [rRes, tRes] = await Promise.all([
+        axios.get(`${API}/admin/wa-auto-responses`, { headers: authHeaders() }),
+        axios.get(`${API}/admin/wa-templates`, { headers: authHeaders() }),
+      ]);
+      setRules(rRes.data || []);
+      setTemplates(tRes.data || []);
+    } catch { /* silent */ }
     finally { setLoading(false); }
   }, [authHeaders]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const fetchEvents = async () => {
-    try {
-      const { data } = await axios.get(`${API}/admin/wa-flow-events`, { headers: authHeaders() });
-      setEvents(data.data || []);
-      setShowEvents(true);
-    } catch { toast.error("Failed to load events"); }
+  const resetForm = () => setForm({
+    trigger_phrase: "", match_type: "exact", description: "",
+    steps: [{ template_id: "", delay_seconds: 0 }],
+  });
+
+  const openCreate = () => { resetForm(); setEditRule(null); setShowEditor(true); };
+
+  const openEdit = (r) => {
+    setEditRule(r);
+    setForm({
+      trigger_phrase: r.trigger_phrase || "",
+      match_type: r.match_type || "exact",
+      description: r.description || "",
+      steps: (r.steps && r.steps.length) ? r.steps : [{ template_id: "", delay_seconds: 0 }],
+    });
+    setShowEditor(true);
   };
 
-  const resetForm = () => setForm({ flow_name: "", flow_id: "", flow_token: "", description: "", trigger_keywords: "" });
+  const addStep = () => setForm(p => ({ ...p, steps: [...p.steps, { template_id: "", delay_seconds: 2 }] }));
+  const removeStep = (i) => setForm(p => ({ ...p, steps: p.steps.filter((_, idx) => idx !== i) }));
+  const updateStep = (i, field, value) =>
+    setForm(p => ({ ...p, steps: p.steps.map((s, idx) => idx === i ? { ...s, [field]: value } : s) }));
 
-  const saveFlow = async () => {
-    if (!form.flow_name.trim()) { toast.error("Flow name is required"); return; }
+  const saveRule = async () => {
+    if (!form.trigger_phrase.trim()) { toast.error("Trigger phrase is required"); return; }
+    const cleanSteps = form.steps.filter(s => s.template_id);
+    if (cleanSteps.length === 0) { toast.error("At least one step with a template is required"); return; }
     const payload = {
-      ...form,
-      trigger_keywords: form.trigger_keywords ? form.trigger_keywords.split(",").map(k => k.trim()).filter(Boolean) : [],
+      trigger_phrase: form.trigger_phrase.trim(),
+      match_type: form.match_type,
+      description: form.description.trim(),
+      steps: cleanSteps.map(s => ({ template_id: s.template_id, delay_seconds: Number(s.delay_seconds) || 0 })),
     };
     try {
-      if (editFlow) {
-        await axios.put(`${API}/admin/wa-flows/${editFlow.id}`, payload, { headers: authHeaders() });
-        toast.success("Flow updated");
+      if (editRule) {
+        await axios.put(`${API}/admin/wa-auto-responses/${editRule.id}`, payload, { headers: authHeaders() });
+        toast.success("Rule updated");
       } else {
-        await axios.post(`${API}/admin/wa-flows`, payload, { headers: authHeaders() });
-        toast.success("Flow created");
+        await axios.post(`${API}/admin/wa-auto-responses`, payload, { headers: authHeaders() });
+        toast.success("Rule created");
       }
-      setShowCreate(false);
-      setEditFlow(null);
-      resetForm();
-      fetchData();
-    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+      setShowEditor(false); fetchData();
+    } catch (e) { toast.error(e.response?.data?.detail || "Save failed"); }
   };
 
-  const deleteFlow = async (id) => {
-    if (!window.confirm("Delete this flow configuration?")) return;
+  const toggleRule = async (r) => {
     try {
-      await axios.delete(`${API}/admin/wa-flows/${id}`, { headers: authHeaders() });
-      toast.success("Deleted");
+      await axios.put(`${API}/admin/wa-auto-responses/${r.id}`, { is_active: !r.is_active }, { headers: authHeaders() });
       fetchData();
-    } catch {}
+    } catch { /* silent */ }
   };
 
-  const toggleFlow = async (f) => {
+  const deleteRule = async (id) => {
+    if (!window.confirm("Delete this auto-response rule?")) return;
     try {
-      await axios.put(`${API}/admin/wa-flows/${f.id}`, { is_active: !f.is_active }, { headers: authHeaders() });
-      fetchData();
-    } catch {}
+      await axios.delete(`${API}/admin/wa-auto-responses/${id}`, { headers: authHeaders() });
+      toast.success("Deleted"); fetchData();
+    } catch { /* silent */ }
   };
 
-  const copyEndpoint = () => {
-    navigator.clipboard.writeText(ENDPOINT_URL);
-    toast.success("Endpoint URL copied to clipboard!");
-  };
+  const templateName = (id) => templates.find(t => t.id === id)?.display_name || templates.find(t => t.id === id)?.meta_template_name || id;
 
   return (
-    <div className="space-y-4" data-testid="wa-flows">
-      {/* Endpoint Info Card */}
+    <div className="space-y-4" data-testid="auto-response-tab">
       <div className="bg-gradient-to-r from-[#0B1C3D] to-[#1a3a6b] rounded-xl p-5 text-white">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="font-bold text-lg flex items-center gap-2"><GitBranch size={18} /> WhatsApp Flows</h2>
-            <p className="text-white/70 text-xs mt-1">Configure WhatsApp Flow Builder data exchange. Use the endpoint below in Meta's Flow Builder.</p>
+            <h2 className="font-bold text-lg flex items-center gap-2"><Zap size={18} /> Auto Response</h2>
+            <p className="text-white/70 text-xs mt-1">
+              When a user sends a matching phrase on WhatsApp, fire a chain of templates — each with its own delay.
+            </p>
           </div>
-          <button onClick={fetchEvents} className="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-xs flex items-center gap-1">
-            <Eye size={12} /> View Events
-          </button>
+          <Button onClick={openCreate} className="bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90" data-testid="new-auto-response">
+            <Plus size={13} className="mr-1" /> New Rule
+          </Button>
         </div>
-        <div className="mt-4 bg-white/10 rounded-lg p-3">
-          <p className="text-[10px] text-white/60 uppercase font-bold mb-1">Data Exchange Endpoint (paste in Meta Flow Builder)</p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-sm font-mono bg-black/20 rounded px-3 py-2 truncate select-all">{ENDPOINT_URL}</code>
-            <button onClick={copyEndpoint} className="bg-[#D4AF37] text-[#0B1C3D] px-3 py-2 rounded-lg text-xs font-bold hover:bg-[#D4AF37]/90 whitespace-nowrap">
-              Copy URL
-            </button>
-          </div>
-        </div>
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-white/70">
-          <div className="bg-white/5 rounded-lg p-2.5">
-            <p className="font-bold text-white/90 mb-0.5">Step 1</p>
-            <p>Create a Flow in Meta Business Manager → WhatsApp → Flows</p>
-          </div>
-          <div className="bg-white/5 rounded-lg p-2.5">
-            <p className="font-bold text-white/90 mb-0.5">Step 2</p>
-            <p>Set the Data Exchange URL to the endpoint above</p>
-          </div>
-          <div className="bg-white/5 rounded-lg p-2.5">
-            <p className="font-bold text-white/90 mb-0.5">Step 3</p>
-            <p>Register the flow config here to handle screen data</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Flow Configurations */}
-      <div className="flex justify-between items-center">
-        <p className="text-sm font-semibold text-[#0B1C3D]">Flow Configurations ({flows.length})</p>
-        <Button onClick={() => { resetForm(); setEditFlow(null); setShowCreate(true); }} className="bg-[#0B1C3D] text-white" size="sm">
-          <Plus size={13} className="mr-1" /> Add Flow
-        </Button>
       </div>
 
       {loading ? <p className="text-gray-400 text-center py-8">Loading...</p> :
-        flows.length === 0 ? (
-          <div className="text-center py-8 text-gray-400 bg-white rounded-xl border p-6">
-            <GitBranch size={36} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">No flow configurations yet</p>
-            <p className="text-xs mt-1">Create your first flow to handle WhatsApp Flow Builder interactions</p>
+        rules.length === 0 ? (
+          <div className="text-center py-10 text-gray-400 bg-white rounded-xl border">
+            <Zap size={36} className="mx-auto mb-3 opacity-30" />
+            <p className="text-sm">No auto-response rules yet</p>
+            <p className="text-xs mt-1">Click "New Rule" to create your first keyword → template chain.</p>
           </div>
         ) : (
           <div className="space-y-2">
-            {flows.map(f => (
-              <div key={f.id} className="bg-white rounded-xl p-4 border">
+            {rules.map(r => (
+              <div key={r.id} className="bg-white rounded-xl p-4 border" data-testid={`auto-rule-${r.id}`}>
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <button onClick={() => toggleFlow(f)} className={f.is_active ? "text-green-500" : "text-gray-300"}>
-                      {f.is_active ? <ToggleRight size={24} /> : <ToggleLeft size={24} />}
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <button onClick={() => toggleRule(r)} className={r.is_active ? "text-green-500" : "text-gray-300"} data-testid={`toggle-rule-${r.id}`}>
+                      {r.is_active ? <ToggleRight size={24} /> : <ToggleLeft size={24} />}
                     </button>
-                    <div>
-                      <p className="font-semibold text-[#0B1C3D] text-sm">{f.flow_name}</p>
-                      {f.description && <p className="text-xs text-gray-500 mt-0.5">{f.description}</p>}
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {f.flow_id && <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">Flow ID: {f.flow_id}</span>}
-                        {f.flow_token && <span className="text-[10px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded">Token: {f.flow_token.substring(0, 12)}...</span>}
-                        {(f.trigger_keywords || []).map((k, i) => (
-                          <span key={i} className="text-[10px] bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded">#{k}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <code className="text-sm font-mono bg-amber-50 text-amber-800 px-2 py-0.5 rounded">{r.trigger_phrase}</code>
+                        <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded uppercase">{r.match_type}</span>
+                      </div>
+                      {r.description && <p className="text-xs text-gray-500 mt-1">{r.description}</p>}
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {(r.steps || []).map((s, i) => (
+                          <React.Fragment key={i}>
+                            {i > 0 && <ArrowDown size={10} className="text-gray-400" />}
+                            <span className="text-[11px] bg-blue-50 text-blue-700 rounded px-2 py-0.5 inline-flex items-center gap-1">
+                              {templateName(s.template_id)}
+                              {s.delay_seconds > 0 && <span className="text-blue-500 flex items-center gap-0.5"><Timer size={9} />{s.delay_seconds}s</span>}
+                            </span>
+                          </React.Fragment>
                         ))}
                       </div>
                     </div>
                   </div>
                   <div className="flex gap-1 shrink-0">
-                    <button onClick={() => { setEditFlow(f); setForm({ flow_name: f.flow_name, flow_id: f.flow_id || "", flow_token: f.flow_token || "", description: f.description || "", trigger_keywords: (f.trigger_keywords || []).join(", ") }); setShowCreate(true); }}
-                      className="text-blue-500 hover:text-blue-700 p-1"><Edit2 size={14} /></button>
-                    <button onClick={() => deleteFlow(f.id)} className="text-red-400 hover:text-red-600 p-1"><Trash2 size={14} /></button>
+                    <button onClick={() => openEdit(r)} className="text-blue-500 hover:text-blue-700 p-1" data-testid={`edit-rule-${r.id}`}><Edit2 size={14} /></button>
+                    <button onClick={() => deleteRule(r.id)} className="text-red-400 hover:text-red-600 p-1" data-testid={`delete-rule-${r.id}`}><Trash2 size={14} /></button>
                   </div>
                 </div>
               </div>
@@ -1656,71 +1587,87 @@ function FlowsTab({ authHeaders }) {
         )
       }
 
-      {/* Create/Edit Flow Dialog */}
-      <Dialog open={showCreate} onOpenChange={() => { setShowCreate(false); setEditFlow(null); resetForm(); }}>
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+      <Dialog open={showEditor} onOpenChange={(v) => { if (!v) { setShowEditor(false); setEditRule(null); } }}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-[#0B1C3D]">{editFlow ? "Edit Flow" : "Register WhatsApp Flow"}</DialogTitle>
+            <DialogTitle className="text-[#0B1C3D]">{editRule ? "Edit Rule" : "New Auto-Response Rule"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Flow Name <span className="text-red-500">*</span></Label>
-              <Input value={form.flow_name} onChange={e => setForm(p => ({ ...p, flow_name: e.target.value }))}
-                placeholder="e.g. Registration Flow" className="mt-1" />
+              <Label>Trigger Phrase <span className="text-red-500">*</span></Label>
+              <Input value={form.trigger_phrase}
+                onChange={e => setForm(p => ({ ...p, trigger_phrase: e.target.value }))}
+                placeholder="e.g. help, hi, menu" className="mt-1" data-testid="rule-phrase-input" />
             </div>
             <div>
-              <Label>Meta Flow ID</Label>
-              <Input value={form.flow_id} onChange={e => setForm(p => ({ ...p, flow_id: e.target.value }))}
-                placeholder="From Meta Business Manager" className="mt-1" />
-              <p className="text-[10px] text-gray-400 mt-1">Found in Meta → WhatsApp → Flows → Flow Details</p>
+              <Label>Match Type</Label>
+              <div className="flex gap-2 mt-1">
+                {[
+                  { id: "exact", label: "Exact match" },
+                  { id: "contains", label: "Contains" },
+                ].map(m => (
+                  <button key={m.id} type="button"
+                    onClick={() => setForm(p => ({ ...p, match_type: m.id }))}
+                    data-testid={`match-${m.id}`}
+                    className={`flex-1 py-2 rounded-lg text-xs font-medium border ${form.match_type === m.id ? "bg-[#0B1C3D] text-white border-[#0B1C3D]" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-1">Matching is case-insensitive. Whitespace trimmed on both sides.</p>
             </div>
             <div>
-              <Label>Flow Token</Label>
-              <Input value={form.flow_token} onChange={e => setForm(p => ({ ...p, flow_token: e.target.value }))}
-                placeholder="Unique token for this flow" className="mt-1" />
-              <p className="text-[10px] text-gray-400 mt-1">Used to identify which flow config to use when Meta calls our endpoint</p>
-            </div>
-            <div>
-              <Label>Description</Label>
+              <Label>Description (optional)</Label>
               <Textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
-                placeholder="What does this flow do?" className="mt-1" rows={2} />
+                rows={2} className="mt-1" placeholder="Internal note, e.g. welcome flow" />
             </div>
-            <div>
-              <Label>Trigger Keywords (comma-separated)</Label>
-              <Input value={form.trigger_keywords} onChange={e => setForm(p => ({ ...p, trigger_keywords: e.target.value }))}
-                placeholder="e.g. register, book, help" className="mt-1" />
-              <p className="text-[10px] text-gray-400 mt-1">When users send these keywords, this flow can be triggered</p>
-            </div>
-            <Button onClick={saveFlow} className="w-full bg-[#0B1C3D] text-white">
-              {editFlow ? "Update Flow" : "Register Flow"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Flow Events Dialog */}
-      <Dialog open={showEvents} onOpenChange={setShowEvents}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-[#0B1C3D]">Recent Flow Events</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-2 max-h-[500px] overflow-y-auto">
-            {events.length === 0 ? <p className="text-gray-400 text-center py-8 text-sm">No flow events received yet</p> :
-              events.map((ev, i) => (
-                <div key={ev.id || i} className="bg-gray-50 rounded-lg p-3 border text-xs">
-                  <div className="flex justify-between items-center mb-1">
-                    <div className="flex gap-2">
-                      <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{ev.action}</span>
-                      {ev.screen && <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{ev.screen}</span>}
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-sm">Template Chain</Label>
+                <Button size="sm" type="button" onClick={addStep} className="bg-gray-100 text-[#0B1C3D] hover:bg-gray-200 h-7 px-2" data-testid="add-step-btn">
+                  <Plus size={12} className="mr-1" /> Add step
+                </Button>
+              </div>
+              <div className="space-y-2">
+                {form.steps.map((s, i) => (
+                  <div key={i} className="bg-gray-50 rounded-lg p-3 border space-y-2" data-testid={`step-row-${i}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-[#0B1C3D] w-5">{i + 1}</span>
+                      <Select value={s.template_id} onValueChange={(v) => updateStep(i, "template_id", v)}>
+                        <SelectTrigger className="flex-1 h-9" data-testid={`step-template-${i}`}>
+                          <SelectValue placeholder="Select template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.filter(t => (t.status || "").toLowerCase() === "approved" || !t.status).map(t => (
+                            <SelectItem key={t.id} value={t.id}>{t.display_name || t.meta_template_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {form.steps.length > 1 && (
+                        <button type="button" onClick={() => removeStep(i)} className="text-red-400 hover:text-red-600 p-1" data-testid={`remove-step-${i}`}>
+                          <X size={14} />
+                        </button>
+                      )}
                     </div>
-                    <span className="text-gray-400">{new Date(ev.received_at).toLocaleString()}</span>
+                    <div className="flex items-center gap-2 pl-7">
+                      <Timer size={12} className="text-gray-400" />
+                      <span className="text-xs text-gray-500">Delay before this step:</span>
+                      <Input type="number" min="0" value={s.delay_seconds}
+                        onChange={e => updateStep(i, "delay_seconds", e.target.value)}
+                        className="w-20 h-7 text-xs" data-testid={`step-delay-${i}`} />
+                      <span className="text-xs text-gray-500">seconds</span>
+                    </div>
                   </div>
-                  {ev.flow_token && <p className="text-gray-500">Token: {ev.flow_token}</p>}
-                  {ev.data && Object.keys(ev.data).length > 0 && (
-                    <pre className="bg-white p-2 rounded mt-1 text-[10px] overflow-x-auto border">{JSON.stringify(ev.data, null, 2)}</pre>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2">
+                Step 1 fires immediately on match (use delay 0). Each subsequent step waits the specified seconds after the previous one is sent.
+              </p>
+            </div>
+            <Button onClick={saveRule} className="w-full bg-[#0B1C3D] text-white" data-testid="save-rule-btn">
+              {editRule ? "Update Rule" : "Create Rule"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

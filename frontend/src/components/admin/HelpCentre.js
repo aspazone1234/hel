@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { Headphones, Plus, Search, Clock, AlertTriangle, CheckCircle, Eye, UserPlus } from "lucide-react";
+import { Headphones, Plus, Search, Clock, AlertTriangle, CheckCircle, Eye, UserPlus, GitBranch } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import WAFlowSettings from "./WAFlowSettings";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -19,6 +20,7 @@ export default function HelpCentre({ user }) {
   const [categories, setCategories] = useState([]);
   const [admins, setAdmins] = useState([]);
   const [resolveNote, setResolveNote] = useState("");
+  const [hcTab, setHcTab] = useState("tickets"); // "tickets" | "flow"
   const isSuper = user?.role === "superadmin";
 
   const authHeaders = useCallback(() => ({
@@ -134,12 +136,38 @@ export default function HelpCentre({ user }) {
           <Headphones className="text-[#B8860B]" size={24} />
           <h1 className="text-xl font-bold text-[#0B1C3D]">Help Centre</h1>
         </div>
-        <button onClick={() => setShowCreate(true)} data-testid="create-ticket-btn"
-          className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1">
-          <Plus size={14} /> New Ticket
-        </button>
+        {hcTab === "tickets" && (
+          <button onClick={() => setShowCreate(true)} data-testid="create-ticket-btn"
+            className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1">
+            <Plus size={14} /> New Ticket
+          </button>
+        )}
       </div>
 
+      {/* Admin-only sub-tabs */}
+      {isSuper && (
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit" data-testid="hc-subtabs">
+          <button
+            onClick={() => setHcTab("tickets")}
+            data-testid="hc-tab-tickets"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "tickets" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+          >
+            <Headphones size={14} /> Tickets
+          </button>
+          <button
+            onClick={() => setHcTab("flow")}
+            data-testid="hc-tab-flow"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "flow" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+          >
+            <GitBranch size={14} /> WA Flow Settings
+          </button>
+        </div>
+      )}
+
+      {hcTab === "flow" && isSuper ? (
+        <WAFlowSettings />
+      ) : (
+        <>
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="ticket-stats">
@@ -320,6 +348,8 @@ export default function HelpCentre({ user }) {
           )}
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 }

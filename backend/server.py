@@ -3157,6 +3157,97 @@ async def send_conversation_bundle(
 
     return {"message": "Bundle sent", "count": len(sent_msg_docs), "messages": sent_msg_docs}
 
+# ─── Auto Response Rules (keyword → template chain with delays) ───
+@api_router.get("/admin/wa-auto-responses")
+async def list_auto_responses(request: Request):
+    await require_superadmin(request)
+    rules = await db.wa_auto_responses.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return rules
+
+@api_router.post("/admin/wa-auto-responses")
+async def create_auto_response(request: Request):
+    user = await require_superadmin(request)
+    body = await request.json()
+    phrase = (body.get("trigger_phrase") or "").strip()
+    if not phrase:
+        raise HTTPException(status_code=400, detail="trigger_phrase is required")
+    steps = body.get("steps") or []
+    if not steps or not isinstance(steps, list):
+        raise HTTPException(status_code=400, detail="At least one step is required")
+    cleaned_steps = []
+    for s in steps:
+        tid = (s or {}).get("template_id", "")
+        if not tid:
+            continue
+        try:
+            delay = max(0, int(s.get("delay_seconds", 0)))
+        except Exception:
+            delay = 0
+        cleaned_steps.append({"template_id": tid, "delay_seconds": delay})
+    if not cleaned_steps:
+        raise HTTPException(status_code=400, detail="At least one step with a template is required")
+    match_type = body.get("match_type", "exact")
+    if match_type not in ("exact", "contains"):
+        match_type = "exact"
+    doc = {
+        "id": str(uuid.uuid4()),
+        "trigger_phrase": phrase,
+        "match_type": match_type,
+        "description": (body.get("description") or "").strip(),
+        "steps": cleaned_steps,
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user["name"],
+    }
+    await db.wa_auto_responses.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.put("/admin/wa-auto-responses/{rule_id}")
+async def update_auto_response(rule_id: str, request: Request):
+    await require_superadmin(request)
+    body = await request.json()
+    updates: Dict[str, Any] = {}
+    if "trigger_phrase" in body:
+        p = (body["trigger_phrase"] or "").strip()
+        if not p:
+            raise HTTPException(status_code=400, detail="trigger_phrase cannot be empty")
+        updates["trigger_phrase"] = p
+    if "match_type" in body and body["match_type"] in ("exact", "contains"):
+        updates["match_type"] = body["match_type"]
+    if "description" in body:
+        updates["description"] = (body["description"] or "").strip()
+    if "is_active" in body:
+        updates["is_active"] = bool(body["is_active"])
+    if "steps" in body:
+        cleaned = []
+        for s in (body["steps"] or []):
+            tid = (s or {}).get("template_id", "")
+            if not tid:
+                continue
+            try:
+                delay = max(0, int(s.get("delay_seconds", 0)))
+            except Exception:
+                delay = 0
+            cleaned.append({"template_id": tid, "delay_seconds": delay})
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="At least one step with a template is required")
+        updates["steps"] = cleaned
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    result = await db.wa_auto_responses.update_one({"id": rule_id}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Updated"}
+
+@api_router.delete("/admin/wa-auto-responses/{rule_id}")
+async def delete_auto_response(rule_id: str, request: Request):
+    await require_superadmin(request)
+    result = await db.wa_auto_responses.delete_one({"id": rule_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Deleted"}
+
 # ─── WhatsApp Flows Data Exchange Endpoint ───
 @api_router.get("/webhooks/wa-flow")
 async def wa_flow_health():
