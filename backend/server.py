@@ -2484,7 +2484,7 @@ async def whatsapp_webhook_verify(request: Request):
     mode = request.query_params.get("hub.mode")
     token = request.query_params.get("hub.verify_token")
     challenge = request.query_params.get("hub.challenge")
-    logger.info(f"[WA Webhook Verify] mode={mode}, token_match={token == WA_WEBHOOK_VERIFY}, challenge={challenge}")
+    logger.info(f"[WA Webhook Verify] mode={mode!r} token_received={token!r} expected={WA_WEBHOOK_VERIFY!r} match={token == WA_WEBHOOK_VERIFY} challenge={challenge!r} UA={request.headers.get('user-agent','')[:80]}")
     if mode == "subscribe" and token == WA_WEBHOOK_VERIFY:
         return PlainTextResponse(content=str(challenge), status_code=200)
     # If no verification params, return 200 for health checks
