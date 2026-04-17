@@ -1,0 +1,148 @@
+{
+  "theme": "Light",
+  "archetype": "Archetype 5 (Jewel & Luxury - Spiritual Variant)",
+  "typography": {
+    "fonts": [
+      {
+        "family": "Cormorant Garamond",
+        "category": "Heading",
+        "weights": ["400", "500", "600", "700"],
+        "usage": "All headings, majestic titles, hero text"
+      },
+      {
+        "family": "Outfit",
+        "category": "Body",
+        "weights": ["300", "400", "500", "600"],
+        "usage": "Paragraphs, UI elements, form fields, dense text"
+      }
+    ],
+    "hierarchy": {
+      "h1": "text-5xl sm:text-6xl+ tracking-tight font-serif",
+      "h2": "text-4xl sm:text-5xl tracking-tight font-serif",
+      "h3": "text-2xl sm:text-3xl font-serif",
+      "body": "text-base sm:text-lg font-sans leading-relaxed",
+      "caption": "text-sm tracking-widest uppercase font-sans"
+    }
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#0B1C3D",
+      "foreground": "#F8F1E5",
+      "description": "Deep Royal Blue - Used for hero background, primary buttons, footer"
+    },
+    "secondary": {
+      "DEFAULT": "#D4AF37",
+      "foreground": "#0B1C3D",
+      "description": "Warm Gold - Used for borders, highlights, active states, premium accents"
+    },
+    "background": {
+      "DEFAULT": "#F8F1E5",
+      "foreground": "#0B1C3D",
+      "description": "Soft Cream - Main background for content sections"
+    },
+    "accent": {
+      "DEFAULT": "#E67E22",
+      "foreground": "#FFFFFF",
+      "description": "Saffron - Used for devotional highlights, special tags, hover states"
+    },
+    "highlight": {
+      "DEFAULT": "#F1948A",
+      "foreground": "#0B1C3D",
+      "description": "Lotus Pink - Used for subtle glowing effects, secondary buttons, soft accents"
+    },
+    "surface": {
+      "card": "#FFFFFF",
+      "glass": "bg-[#0B1C3D]/80 backdrop-blur-xl border border-[#D4AF37]/20"
+    }
+  },
+  "spacing_and_layout": {
+    "section_padding": "py-24 sm:py-32",
+    "container": "max-w-7xl mx-auto px-6 sm:px-8",
+    "grid_bento": "grid grid-cols-1 md:grid-cols-12 gap-8",
+    "border_radius": "rounded-2xl sm:rounded-3xl",
+    "card_padding": "p-8 sm:p-12"
+  },
+  "animations_and_effects": {
+    "hover": "transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-[#D4AF37]/10",
+    "glow": "drop-shadow-[0_0_15px_rgba(212,175,55,0.4)]",
+    "particles": "Framer motion floating dust or CSS keyframe slow drifting particles to simulate divine aura",
+    "flame_flicker": "CSS keyframe animation for opacity and scale to simulate a diya flame",
+    "fade_in": "Framer motion staggered fade-in up for lists and cards"
+  },
+  "components": {
+    "navigation": {
+      "style": "Glassmorphism sticky header. Deep blue glass background with warm gold text/borders. Sound toggle button present.",
+      "behavior": "Sticky at top, z-50."
+    },
+    "hero": {
+      "layout": "Min-h-[90vh] flex items-center relative overflow-hidden bg-primary text-primary-foreground",
+      "visuals": "Mandala texture background (opacity-10). Krishna image on one side, large serif typography. Glowing gold and pink aura behind Krishna.",
+      "overlay": "bg-gradient-to-b from-transparent to-[#0B1C3D]"
+    },
+    "cards": {
+      "style": "Soft cream or pure white backgrounds. 1px solid border in warm gold (opacity 20%). Subtle shadows.",
+      "hover": "Border opacity increases, subtle lift."
+    },
+    "buttons": {
+      "primary": "bg-secondary text-secondary-foreground font-semibold px-8 py-4 rounded-full hover:bg-secondary/90 transition-all shadow-lg",
+      "secondary": "bg-transparent border border-secondary text-secondary hover:bg-secondary/10 px-8 py-4 rounded-full transition-all"
+    },
+    "form": {
+      "style": "Multi-step registration. Clean white inputs with gold focus rings. Generous padding. Progress indicator."
+    }
+  },
+  "media": {
+    "images": [
+      {
+        "category": "hero",
+        "url": "https://images.unsplash.com/photo-1750752606237-81362e344170?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwxfHxoaW5kdSUyMGdvZCUyMGtyaXNobmElMjBmbHV0ZXxlbnwwfHx8fDE3NzQ3NzYwOTV8MA&ixlib=rb-4.1.0&q=85",
+        "description": "A statue is reflected in a dark space (Krishna/Divine representation)",
+        "alt": "Divine Krishna representation"
+      },
+      {
+        "category": "texture_background",
+        "url": "https://static.prod-images.emergentagent.com/jobs/5bf2bda2-8412-46a4-8b32-53f8647e4ca2/images/35e418be769cfa52cd10a59ae3b385a4d13d9f3b25966ee85e423a509366becc.png",
+        "description": "Mandala Jaali Texture, soft cream/gold lines",
+        "alt": "Mandala Pattern Background"
+      },
+      {
+        "category": "venue",
+        "url": "https://images.unsplash.com/photo-1715168931029-2949161ee406?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwxfHxQdXNoa2FyJTIwbGFrZSUyMHJhamFzdGhhbnxlbnwwfHx8fDE3NzQ3NzYwODF8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Pushkar lake rajasthan",
+        "alt": "Pushkar Lake"
+      },
+      {
+        "category": "decorative_diya",
+        "url": "https://images.unsplash.com/photo-1676354672676-8c150e31bfe1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHwxfHxkaXlhJTIwbGFtcCUyMGxpZ2h0fGVufDB8fHx8MTc3NDc3NjA4Mnww&ixlib=rb-4.1.0&q=85",
+        "description": "Lit diya lamp",
+        "alt": "Diya Lamp"
+      },
+      {
+        "category": "decorative_peacock",
+        "url": "https://images.unsplash.com/photo-1578885564199-db62248858cf?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNzl8MHwxfHNlYXJjaHwxfHxwZWFjb2NrJTIwZmVhdGhlcnxlbnwwfHx8fDE3NzQ3NzYwODJ8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Peacock feather",
+        "alt": "Peacock Feather"
+      },
+      {
+        "category": "decorative_lotus",
+        "url": "https://images.unsplash.com/photo-1717680452605-de1b707a9bf2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2MDV8MHwxfHNlYXJjaHwxfHxwaW5rJTIwbG90dXMlMjBmbG93ZXIlMjB3YXRlcnxlbnwwfHx8fDE3NzQ3NzYwOTZ8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Pink Lotus in water",
+        "alt": "Pink Lotus Flower"
+      }
+    ],
+    "icons": "lucide-react"
+  },
+  "instructions_to_main_agent": [
+    "Use pure HTML/Tailwind for structural layout of marketing sections. Use Shadcn ONLY for interactive elements like the multi-step form, dialogs, and select dropdowns.",
+    "Implement bilingual support subtly: Devotional labels in Hindi, core headings English, form English.",
+    "All headings MUST use Cormorant Garamond. Body text uses Outfit. Ensure you import these from Google Fonts.",
+    "Implement the sticky nav with a 'Glassmorphism' style (#0B1C3D with blur). Include the 'Sound Toggle' icon (visual only).",
+    "Hero section: Use the deep royal blue background, layer the mandala texture over it with low opacity. Apply a warm gold glow effect around the text and image.",
+    "Ensure generous spacing: Use py-24 or py-32 for main sections.",
+    "Cards (for Katha themes/Schedule): Soft cream background, border border-[#D4AF37]/20, rounded-2xl.",
+    "Add to Calendar & Registration Form logic requires proper state management. Registration form is 8 steps, build a responsive wizard UI.",
+    "Include a Countdown Timer to 28 May 2026.",
+    "Admin Dashboard: Build a simple, clean table to view registrations using pure Shadcn.",
+    "CRITICAL: All interactive and key informational elements MUST include a data-testid attribute to facilitate robust automated testing (e.g., data-testid='register-btn')."
+  ]
+}

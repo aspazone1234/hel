@@ -1,0 +1,89 @@
+{
+  "summary": "Iteration 19 - Testing 18-task batch for Katha 2026. Backend: 28/28 tests passed (100%). Frontend: All major features verified. One critical backend bug found in Task #15 (My Day special needs filter), one minor data note for old custom fields without target_scope.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/admin/swamsevak-dashboard",
+        "issue": "Task #15 BUG: Volunteer's 'My Day' special needs section shows ALL guests' needs instead of only their assigned guests' needs. Root cause: In swamsevak_dashboard, `{**special_query, '$or': [...]}` causes key collision where volunteer's $or filter is overwritten by the special_needs $or condition. Fix: Use $and to combine conditions: `{'$and': [swamsevak_query], '$or': [special_needs_condition], 'approval_status': 'approved'}` OR use separate query variables.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/api/admin/custom-fields",
+        "issue": "Pre-existing custom fields in DB (created before this batch) don't have 'target_scope' field. Backend GET endpoint returns raw DB data without adding default values for missing fields. Fix: In get_custom_fields(), add default: `field.setdefault('target_scope', 'all')` for each field before returning.",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Room Management - Occupied Room Cards",
+        "issues": ["Room 102 shows 'Occupied' but no occupant name/contact - happens when the occupant is in 'arrived' bucket. AdminRoomManagement.js only fetches `/api/admin/guests/expected`, missing arrived guests' room assignments from occupant display."]
+      }
+    ]
+  },
+  "features_verified": {
+    "task_1_qr_rescan_popup": "Not directly tested (no QR data in test environment)",
+    "task_2_customer_confirmation": "Not tested",
+    "task_3_head_of_family_mandatory": "Not tested (registration form)",
+    "task_4_toast_fix": "PASS - No toast undefined error when creating swamsevak. Backend returns string detail, frontend properly handles it.",
+    "task_5_edit_permissions": "PASS - Edit button visible for all roles. Super admin sees full form (Stay Dates, Reference Person, etc). Volunteers see Admin Notes + Custom Fields only with restriction notice.",
+    "task_6_ticket_notification_top": "PASS - Active tickets notification appears ABOVE My Day section in DOM order. Shows '5 active help tickets need attention'.",
+    "task_7_room_transfer": "PASS - Transfer button visible on occupied room cards for super admin only. Transfer dialog opens correctly.",
+    "task_8_dashboard_3blocks": "PASS - Dashboard shows exactly 3 blocks: Expected Guests (with Not Coming), Arrival Status (Arrived/Not Arrived/Departed), Rooms. Old 4th Departed block gone.",
+    "task_9_room_cards": "PASS - Room cards show occupant name (Ashwiniii, 1p), contact/swamsevak, departure date, 'Vacant in 52 days' vacancy label.",
+    "task_10_custom_fields_redesign": "PASS - target_scope selector with Expected/Arrived/All options. No visibility field. Guest selector present. Admin-only info banner shown.",
+    "task_11_activity_log": "PASS - AdminAuditLog.js component used. Shows proper timestamps (no 'Invalid Date'). Columns: Timestamp, Action, Type, Target, Details, Admin.",
+    "task_12_guest_assignment": "PASS - Guest Assignment section visible at top of TodoModule. Shows 8 volunteer buttons. Clicking volunteer shows their assigned guests.",
+    "task_13_recurring_tasks": "PASS - Recurring tasks created by super admin. is_recurring=True persists. Volunteer cannot delete recurring task (403). Complete marks 'done for today'. Daily label shows.",
+    "task_14_top_geographies": "PASS - Dashboard API returns top_countries, top_states, top_cities. Frontend shows 'Top Geographies' section with Countries/States/Cities.",
+    "task_15_my_day_special_needs": "FAIL - Volunteer sees ALL guests' special needs instead of only assigned guests' needs. Backend bug (see critical issues).",
+    "task_16_flute_sound": "Not tested (requires audio interaction)",
+    "task_17_mobile_sidebar": "PASS - Mobile (390px): sidebar is 56px (icon-only) by default. Desktop (1920px): sidebar is 240px (expanded) by default. Blinking expand cue visible. Toggle works correctly.",
+    "task_18_regression": "PASS - Login, dashboard, guest lists, rooms, custom fields, audit log, todos, admin management all functional."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_19.py",
+    "/app/test_reports/pytest/pytest_results_iteration_19.xml"
+  ],
+  "action_items": [
+    "CRITICAL: Fix Task #15 - My Day special needs for volunteers: In `swamsevak_dashboard()`, the `{**special_query, '$or': [...]}` spread causes $or key collision. Use $and to properly combine swamsevak_query with special_needs_filter instead of spreading.",
+    "LOW: Fix Task #10 - Existing custom fields in DB lack 'target_scope'. In `get_custom_fields()`, add `field.setdefault('target_scope', 'all')` for backward compatibility.",
+    "LOW: Room Management occupant display only fetches expected guests, not arrived guests. Consider fetching both to show occupant info for rooms occupied by arrived guests."
+  ],
+  "critical_code_review_comments": [
+    "CRITICAL BUG in swamsevak_dashboard (server.py ~line 2471-2476): `{**special_query, 'approval_status': 'approved', '$or': [...]}` - when special_query contains '$or', Python dict update causes the volunteer's $or filter to be silently overwritten by the special_needs $or. This makes ALL guests' special needs visible to every volunteer.",
+    "DATA MIGRATION NEEDED: Old custom_fields documents in MongoDB don't have 'target_scope' field. Need either DB migration script or defensive code in get_custom_fields() to add default value.",
+    "Room cards in AdminRoomManagement.js only load `guests/expected` endpoint for occupant mapping - missed arrived guests. Should also fetch arrived list or use a combined endpoint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_19.py - Created comprehensive test suite for 18-task batch"
+  ],
+  "success_rate": {
+    "backend": "100% (28/28 tests passed)",
+    "frontend": "94% (15/16 features verified, Task #15 has backend bug, Task #16 flute sound not testable)"
+  },
+  "test_credentials": {
+    "super_admin": {"username": "superashwini", "password": "supersebhiupper123"},
+    "swamsevak": {"username": "arunpanchariya", "password": "arunlondon123"}
+  },
+  "seed_data_creation": "Test todos and swamsevaks created and cleaned up during testing",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 19 tested 18-task batch. 27/28 features working correctly. One critical bug: Task #15 My Day special needs shows ALL guests for volunteers (not just assigned). Root cause is $or key collision in `swamsevak_dashboard()` in server.py. Activity Log date display bug from iteration 17 is now FIXED. All other features (3-block dashboard, recurring tasks, Guest Assignment section, room transfer/vacancy labels, custom fields target_scope, edit permissions, mobile sidebar, swamsevak creation) working correctly.",
+  "rca_of_issue": {
+    "bug": "Task #15 - My Day special needs shows ALL guests for volunteers",
+    "file": "/app/backend/server.py - swamsevak_dashboard() function",
+    "root_cause": "In Python, `{**special_query, 'approval_status': 'approved', '$or': [...]}` spreads special_query first, then adds approval_status and $or. When special_query = {'$or': [swamsevak filter]}, the volunteer's $or is overwritten by the second $or. The final MongoDB query has only the special_needs $or filter, no swamsevak filter.",
+    "reproduction": "Login as volunteer with 0 assigned guests, check My Day panel - shows special needs from all guests",
+    "fix": "Use $and to combine: `{'$and': [swamsevak_query, {'$or': [special_needs_conditions]}], 'approval_status': 'approved'}` OR build query separately with swamsevak_query as $and[0]"
+  },
+  "mocked_apis": {
+    "WhatsApp SMS": "MOCKED",
+    "OTP delivery": "MOCKED"
+  }
+}
