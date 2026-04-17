@@ -26,6 +26,7 @@ export default function WAFlowSettings() {
   const [editFlow, setEditFlow] = useState(null);
   const [form, setForm] = useState({
     flow_name: "", flow_id: "", flow_token: "", description: "", trigger_keywords: "",
+    keyword_template_name: "", keyword_template_language: "en",
   });
 
   const ENDPOINT_URL = `${process.env.REACT_APP_BACKEND_URL}/api/webhooks/wa-flow`;
@@ -48,7 +49,7 @@ export default function WAFlowSettings() {
     } catch { toast.error("Failed to load events"); }
   };
 
-  const resetForm = () => setForm({ flow_name: "", flow_id: "", flow_token: "", description: "", trigger_keywords: "" });
+  const resetForm = () => setForm({ flow_name: "", flow_id: "", flow_token: "", description: "", trigger_keywords: "", keyword_template_name: "", keyword_template_language: "en" });
 
   const saveFlow = async () => {
     if (!form.flow_name.trim()) { toast.error("Flow name is required"); return; }
@@ -156,7 +157,7 @@ export default function WAFlowSettings() {
                     </div>
                   </div>
                   <div className="flex gap-1 shrink-0">
-                    <button onClick={() => { setEditFlow(f); setForm({ flow_name: f.flow_name, flow_id: f.flow_id || "", flow_token: f.flow_token || "", description: f.description || "", trigger_keywords: (f.trigger_keywords || []).join(", ") }); setShowCreate(true); }}
+                    <button onClick={() => { setEditFlow(f); setForm({ flow_name: f.flow_name, flow_id: f.flow_id || "", flow_token: f.flow_token || "", description: f.description || "", trigger_keywords: (f.trigger_keywords || []).join(", "), keyword_template_name: f.keyword_template_name || "", keyword_template_language: f.keyword_template_language || "en" }); setShowCreate(true); }}
                       className="text-blue-500 hover:text-blue-700 p-1" data-testid={`edit-flow-${f.id}`}><Edit2 size={14} /></button>
                     <button onClick={() => deleteFlow(f.id)} className="text-red-400 hover:text-red-600 p-1" data-testid={`delete-flow-${f.id}`}><Trash2 size={14} /></button>
                   </div>
@@ -205,6 +206,33 @@ export default function WAFlowSettings() {
             <Button onClick={saveFlow} className="w-full bg-[#0B1C3D] text-white" data-testid="save-flow-btn">
               {editFlow ? "Update Flow" : "Register Flow"}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Flow Events Dialog */}
+      <Dialog open={showEvents} onOpenChange={setShowEvents}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-[#0B1C3D]">Recent Flow Events</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-[500px] overflow-y-auto">
+            {events.length === 0 ? <p className="text-gray-400 text-center py-8 text-sm">No flow events received yet</p> :
+              events.map((ev, i) => (
+                <div key={ev.id || i} className="bg-gray-50 rounded-lg p-3 border text-xs">
+                  <div className="flex justify-between items-center mb-1">
+                    <div className="flex gap-2">
+                      <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">{ev.action}</span>
+                      {ev.screen && <span className="bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">{ev.screen}</span>}
+                    </div>
+                    <span className="text-gray-400">{new Date(ev.received_at).toLocaleString()}</span>
+                  </div>
+                  {ev.flow_token && <p className="text-gray-500">Token: {ev.flow_token}</p>}
+                  {ev.data && Object.keys(ev.data).length > 0 && (
+                    <pre className="bg-white p-2 rounded mt-1 text-[10px] overflow-x-auto border">{JSON.stringify(ev.data, null, 2)}</pre>
+                  )}
+                </div>
+              ))}
           </div>
         </DialogContent>
       </Dialog>

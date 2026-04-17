@@ -2396,6 +2396,60 @@ async def get_campaigns(request: Request, page: int = 1, per_page: int = 20):
 # ─── Webhook Endpoints ───
 # Meta sends GET to verify, POST for events. Also handle HEAD for infra probes.
 
+async def run_flow_keyword_matcher(from_number: str, text: str):
+    """Match incoming WhatsApp text against active wa_flow_configs trigger_keywords.
+    If matched, send the configured template (with Flow CTA) to the user, minting a fresh
+    flow_token bound to their phone so the Flow submission can resolve who they are."""
+    try:
+        incoming = (text or "").strip().lower()
+        if not incoming:
+            return
+        flows = await db.wa_flow_configs.find({"is_active": True}, {"_id": 0}).to_list(200)
+        matched = None
+        matched_kw = ""
+        for f in flows:
+            keywords = [str(k).strip().lower() for k in (f.get("trigger_keywords") or []) if str(k).strip()]
+            for kw in keywords:
+                if incoming == kw or kw in incoming.split():
+                    matched = f
+                    matched_kw = kw
+                    break
+            if matched:
+                break
+        if not matched:
+            return
+        tmpl_name = (matched.get("keyword_template_name") or "").strip()
+        if not tmpl_name:
+            logger.warning(f"[FlowKeyword] keyword '{matched_kw}' matched flow '{matched.get('flow_name')}' but no keyword_template_name configured — nothing to send")
+            return
+        lang = (matched.get("keyword_template_language") or "en").strip() or "en"
+        flow_id = str(matched.get("flow_id") or "").strip()
+        logger.info(f"[FlowKeyword] matched '{matched_kw}' → sending template '{tmpl_name}' with flow CTA to {from_number}")
+        ok, result, flow_token = await send_wa_flow_template(
+            phone=from_number, template_name=tmpl_name, language=lang,
+            flow_id=flow_id, flow_cta_text="Open",
+        )
+        try:
+            await ensure_conversation(from_number, "", "flow_keyword")
+            conv_phone = normalize_phone_for_wa(from_number)
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await db.wa_conversations.update_one({"phone": conv_phone}, {
+                "$push": {"messages": {
+                    "id": str(uuid.uuid4()), "direction": "outgoing",
+                    "text": f"[Flow CTA · keyword='{matched_kw}' · template={tmpl_name}]",
+                    "msg_type": "template_flow",
+                    "wa_message_id": result if ok else "",
+                    "flow_token": flow_token,
+                    "timestamp": now_iso, "status": "sent" if ok else "failed",
+                    "error_message": "" if ok else str(result),
+                }},
+                "$set": {"last_message": f"[Flow CTA · {tmpl_name}]", "last_message_at": now_iso}
+            })
+        except Exception as e:
+            logger.warning(f"[FlowKeyword] conv persist failed: {e}")
+    except Exception as e:
+        logger.exception(f"[FlowKeyword] matcher crashed: {e}")
+
 async def run_auto_response_matcher(from_number: str, text: str):
     """Match incoming WhatsApp text against active auto-response rules and fire the step chain."""
     try:
@@ -2619,6 +2673,8 @@ async def whatsapp_webhook_receive(request: Request):
 
                 # ─── Auto Response: match incoming text against active rules ───
                 if text_body and msg_type in ("text", "button", "interactive"):
+                    # Fire both matchers in parallel — auto_response (free-form chains) + flow_keyword (open Flow CTA)
+                    asyncio.create_task(run_flow_keyword_matcher(from_number, text_body))
                     asyncio.create_task(run_auto_response_matcher(from_number, text_body))
 
             # ─── Handle status updates ───
@@ -3912,12 +3968,20 @@ async def wa_flow_data_exchange(request: Request):
             if not phone:
                 phone = flow_data.get("phone", "") or flow_data.get("wa_phone", "")
 
+            # Flow Builder test mode: token starts with 'flows-builder-' → allow ticket creation
+            # with a placeholder mobile so admins can verify flow end-to-end without WhatsApp.
+            is_builder_test = (flow_token or "").startswith("flows-builder-")
+            if not phone and is_builder_test:
+                phone = "+00-flow-builder-test"
+                logger.info(f"[WA Flow] Builder-test submission detected (token={flow_token}); using placeholder phone")
+
             service_type = (flow_data.get("service_type") or "").strip()
             category_group = (flow_data.get("category") or "").strip()
             room_location = (flow_data.get("room_or_location") or "").strip()
             description = (flow_data.get("description") or "").strip()
 
             if not phone:
+                logger.warning(f"[WA Flow] Submission but phone not resolved — token={flow_token} data_keys={list(flow_data.keys())}")
                 return _respond({
                     "version": version, "screen": "SUCCESS",
                     "data": {
@@ -4004,6 +4068,8 @@ async def create_flow(request: Request):
         "flow_token": body.get("flow_token", ""),
         "description": body.get("description", ""),
         "trigger_keywords": body.get("trigger_keywords", []),
+        "keyword_template_name": body.get("keyword_template_name", ""),
+        "keyword_template_language": body.get("keyword_template_language", "en"),
         "is_active": True,
         "init_response": body.get("init_response", {}),
         "screens": body.get("screens", {}),
@@ -4019,7 +4085,7 @@ async def create_flow(request: Request):
 async def update_flow(flow_id: str, request: Request):
     await require_superadmin(request)
     body = await request.json()
-    updates = {k: v for k, v in body.items() if k in ("flow_name", "flow_id", "flow_token", "description", "trigger_keywords", "is_active", "init_response", "screens")}
+    updates = {k: v for k, v in body.items() if k in ("flow_name", "flow_id", "flow_token", "description", "trigger_keywords", "keyword_template_name", "keyword_template_language", "is_active", "init_response", "screens")}
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.wa_flow_configs.update_one({"id": flow_id}, {"$set": updates})
     return {"message": "Updated"}
