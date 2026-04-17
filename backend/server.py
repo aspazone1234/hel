@@ -530,6 +530,28 @@ async def create_registration(reg: RegistrationCreateV2):
     await db.registrations.insert_one(doc)
     doc.pop("_id", None)
 
+    # ─── System trigger: registration_submitted (fire to guest's registered mobile) ───
+    try:
+        _group_head_name = ""
+        for a in attendees_data:
+            if a.get("id") == resolved_head_id:
+                _group_head_name = a.get("name", "")
+                break
+        if not _group_head_name and attendees_data:
+            _group_head_name = attendees_data[0].get("name", "")
+        _trigger_vars = {
+            "name": _group_head_name, "guest_name": _group_head_name,
+            "shraddhalu_name": _group_head_name, "full_name": _group_head_name,
+            "mobile": reg.primary_mobile, "phone": reg.primary_mobile,
+            "num_people": str(reg.num_people), "members": str(reg.num_people),
+            "arrival_date": arrival_date, "departure_date": departure_date,
+            "registration_id": doc["id"][:8].upper(), "reg_id": doc["id"][:8].upper(),
+            "_positional": [_group_head_name, str(reg.num_people), arrival_date],
+        }
+        await fire_system_trigger("registration_submitted", reg.primary_mobile, _trigger_vars)
+    except Exception as e:
+        logger.warning(f"[Trigger] registration_submitted failed: {e}")
+
     # Mock WhatsApp confirmation after form submission
     logger.info(f"[MOCK WHATSAPP] Sending registration confirmation to {reg.primary_mobile}")
     whatsapp_conf = {
@@ -965,6 +987,41 @@ async def mark_arrival(reg_id: str, body: ArrivalUpdateBody, request: Request):
         if att.get("id") == reg.get("group_head_id"):
             head_name = att.get("name", "")
     await log_audit("mark_arrival", "registration", reg_id, head_name or reg.get("primary_mobile", ""), f"Arrival: {old_status} → {body.arrival_status}", user["name"])
+
+    # ─── System triggers on arrival/departure transitions ───
+    try:
+        _primary_phone = reg.get("primary_mobile", "")
+        _room = ""
+        ra = reg.get("room_assignments") or []
+        if ra:
+            _room = (ra[0].get("room_code") if isinstance(ra[0], dict) else str(ra[0])) or ""
+        _base_vars = {
+            "name": head_name, "guest_name": head_name, "shraddhalu_name": head_name,
+            "mobile": _primary_phone, "phone": _primary_phone,
+            "room": _room, "room_code": _room, "room_no": _room,
+            "_positional": [head_name, _room],
+        }
+        # arrival transitions → arrival_confirmed + guest_arrived (POC notify)
+        if body.arrival_status in ("arrived", "partially_arrived") and old_status not in ("arrived", "partially_arrived"):
+            await fire_system_trigger("arrival_confirmed", _primary_phone, _base_vars)
+            _assigned_username = reg.get("assigned_swamsevak", "")
+            if _assigned_username:
+                _swam = await db.custom_admins.find_one({"username": _assigned_username}, {"_id": 0})
+                if _swam and _swam.get("phone"):
+                    _admin_vars = {
+                        "swamsevak_name": _swam.get("name", ""), "sevak_name": _swam.get("name", ""),
+                        "guest_name": head_name, "name": head_name,
+                        "room": _room, "room_code": _room,
+                        "mobile": _primary_phone, "guest_mobile": _primary_phone,
+                        "_positional": [_swam.get("name", ""), head_name, _room],
+                    }
+                    await fire_system_trigger("guest_arrived", _swam["phone"], _admin_vars)
+        # departure transition → departure_marked
+        if body.arrival_status == "departed" and old_status != "departed":
+            await fire_system_trigger("departure_marked", _primary_phone, _base_vars)
+    except Exception as e:
+        logger.warning(f"[Trigger] arrival/departure trigger failed: {e}")
+
     return {"message": "Arrival updated", "id": reg_id}
 
 # ─── Admin: Mark Not Coming ───
@@ -2093,6 +2150,26 @@ async def update_ticket(ticket_id: str, body: TicketUpdate, request: Request):
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.tickets.update_one({"id": ticket_id}, {"$set": updates})
     await log_audit("ticket_update", "ticket", ticket_id, ticket.get("title", ""), f"Updated: {', '.join(updates.keys())}", user["name"])
+
+    # ─── System trigger: help_ticket_response (when a note/response was added) ───
+    try:
+        _new_notes = (updates.get("notes") or "").strip()
+        _old_notes = (ticket.get("notes") or "").strip()
+        if _new_notes and _new_notes != _old_notes:
+            _phone = ticket.get("guest_mobile", "")
+            if _phone:
+                _vars = {
+                    "name": ticket.get("guest_name", ""), "guest_name": ticket.get("guest_name", ""),
+                    "ticket_id": ticket_id[:8].upper(),
+                    "response": _new_notes[:300], "reply": _new_notes[:300], "message": _new_notes[:300],
+                    "service": ticket.get("category_label") or ticket.get("category", ""),
+                    "responder_name": user.get("name", ""), "sevak_name": user.get("name", ""),
+                    "_positional": [ticket.get("guest_name", ""), ticket_id[:8].upper(), _new_notes[:300]],
+                }
+                await fire_system_trigger("help_ticket_response", _phone, _vars)
+    except Exception as e:
+        logger.warning(f"[Trigger] help_ticket_response failed: {e}")
+
     return {"message": "Ticket updated"}
 
 @api_router.put("/admin/tickets/{ticket_id}/assign")
@@ -4107,14 +4184,7 @@ async def list_flow_events(request: Request, page: int = 1, per_page: int = 50):
 # ─── System Message Triggers ───
 SYSTEM_TRIGGERS = [
     {"key": "registration_submitted", "type": "user", "label": "Registration Submitted", "description": "When a guest submits registration form", "recipient_logic": "registrant_mobile"},
-    {"key": "registration_approved", "type": "user", "label": "Registration Approved", "description": "When admin approves a registration", "recipient_logic": "registrant_mobile"},
-    {"key": "registration_rejected", "type": "user", "label": "Registration Rejected", "description": "When admin rejects a registration", "recipient_logic": "registrant_mobile"},
-    {"key": "qr_generated", "type": "user", "label": "QR Code Generated", "description": "When QR code is generated for guest", "recipient_logic": "registrant_mobile"},
-    {"key": "room_assigned", "type": "user", "label": "Room Assigned", "description": "When a room is assigned to a guest", "recipient_logic": "registrant_mobile"},
-    {"key": "swamsevak_assigned", "type": "user", "label": "Swayamsevak Assigned", "description": "When a volunteer is assigned as point of contact", "recipient_logic": "registrant_mobile"},
     {"key": "arrival_confirmed", "type": "user", "label": "Arrival Confirmed", "description": "When guest is checked in via QR scan", "recipient_logic": "registrant_mobile"},
-    {"key": "marked_not_coming", "type": "user", "label": "Marked Not Coming", "description": "When guest is marked as not attending", "recipient_logic": "registrant_mobile"},
-    {"key": "room_transferred", "type": "user", "label": "Room Transferred", "description": "When guest's room is changed", "recipient_logic": "registrant_mobile"},
     {"key": "help_ticket_response", "type": "user", "label": "Help Ticket Response", "description": "When admin responds to a help request", "recipient_logic": "registrant_mobile"},
     {"key": "departure_marked", "type": "user", "label": "Departure Marked", "description": "When guest is marked as departed", "recipient_logic": "registrant_mobile"},
     # ── Help Centre / WA Flow triggers (Session 4B) ──
@@ -4124,7 +4194,6 @@ SYSTEM_TRIGGERS = [
     # ── Admin / Swayamsevak triggers ──
     {"key": "help_ticket_created", "type": "admin", "label": "Help Ticket Created", "description": "When a guest raises a help request — notifies assigned Swayamsevak (POC)", "recipient_logic": "assigned_swamsevak_mobile"},
     {"key": "hc_ticket_escalated_all", "type": "admin", "label": "HC: Ticket Escalated (All Swayamsevaks)", "description": "When SLA breached — broadcasts to ALL swayamsevaks", "recipient_logic": "all_swamsevaks_mobile"},
-    {"key": "new_registration", "type": "admin", "label": "New Registration", "description": "When a new guest registers", "recipient_logic": "superadmin_mobile"},
     {"key": "guest_arrived", "type": "admin", "label": "Guest Arrived", "description": "When assigned guest checks in", "recipient_logic": "assigned_swamsevak_mobile"},
 ]
 
@@ -4170,17 +4239,46 @@ async def update_wa_trigger(trigger_key: str, request: Request):
     return {"message": "Updated"}
 
 async def fire_system_trigger(trigger_key: str, phone: str, variables: dict = None):
-    """Fire a system message trigger if enabled"""
+    """Fire a system message trigger if enabled.
+    The `variables` dict should include MULTIPLE alias keys (e.g., 'name', 'guest_name',
+    'shraddhalu_name') so the trigger resolves regardless of which variable label the admin
+    used when they configured the Meta template."""
     config = await db.wa_triggers.find_one({"trigger_key": trigger_key, "enabled": True})
     if not config or not config.get("template_id"):
+        logger.info(f"[Trigger] {trigger_key}: skipped (not enabled or no template set)")
         return
     tmpl = await db.wa_templates.find_one({"id": config["template_id"]}, {"_id": 0})
     if not tmpl:
+        logger.warning(f"[Trigger] {trigger_key}: template_id {config['template_id']} not found in wa_templates — cannot send")
         return
     body_params = []
-    if variables and tmpl.get("variable_labels"):
+    # Build a case-insensitive alias map of the passed variables, so labels like "Name",
+    # "guest_name", "GUEST_NAME", "shraddhalu_name" all resolve to the same value.
+    vmap = {}
+    for k, v in (variables or {}).items():
+        if v is None:
+            v = ""
+        key = str(k).strip().lower().replace(" ", "_")
+        vmap[key] = str(v)
+    def _resolve(label):
+        key = str(label).strip().lower().replace(" ", "_").lstrip("{").rstrip("}")
+        # strip leading numeric sign ($, #) and "var_" prefix
+        if key.startswith("var_"):
+            key = key[4:]
+        return vmap.get(key, "")
+    if tmpl.get("variable_labels"):
         for label in tmpl["variable_labels"]:
-            body_params.append(str(variables.get(label, "")))
+            body_params.append(_resolve(label))
+    elif tmpl.get("variable_count"):
+        # Template uses positional {{1}}, {{2}} placeholders only (no labels).
+        # Use passed-in list in `variables["_positional"]` if any, else fallback to alias keys named var_1, var_2...
+        positional = (variables or {}).get("_positional") or []
+        for i in range(int(tmpl.get("variable_count") or 0)):
+            if i < len(positional):
+                body_params.append(str(positional[i]))
+            else:
+                body_params.append(vmap.get(f"var_{i+1}", vmap.get(str(i+1), "")))
+    logger.info(f"[Trigger] {trigger_key}: firing template='{tmpl.get('meta_template_name')}' to {phone} params={body_params}")
     # Queue the message
     queue_doc = {
         "id": str(uuid.uuid4()),
@@ -5076,6 +5174,12 @@ async def startup():
     # Indexes for Flow + auto-response
     await db.wa_flow_sessions.create_index("flow_token", unique=True, sparse=True)
     await db.wa_auto_responses.create_index("id", unique=True, sparse=True)
+
+    # Purge wa_triggers rows for triggers that have been removed from SYSTEM_TRIGGERS
+    _valid_trigger_keys = [t["key"] for t in SYSTEM_TRIGGERS]
+    _removed = await db.wa_triggers.delete_many({"trigger_key": {"$nin": _valid_trigger_keys}})
+    if _removed.deleted_count:
+        logger.info(f"[Cleanup] Removed {_removed.deleted_count} obsolete wa_triggers rows")
 
     # Session 4B: kick off SLA escalation scanner (runs every 60s)
     asyncio.create_task(sla_escalation_scanner())
