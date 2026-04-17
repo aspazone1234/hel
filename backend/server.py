@@ -1891,23 +1891,103 @@ class TicketResolve(BaseModel):
     closing_note: str
 
 TICKET_CATEGORIES = [
-    {"id": "water", "label": "Water / Beverages", "priority": "low", "sla_minutes": 30},
-    {"id": "wheelchair", "label": "Wheelchair Arrangement", "priority": "medium", "sla_minutes": 20},
-    {"id": "medical", "label": "Medical Help", "priority": "high", "sla_minutes": 10},
-    {"id": "medical_emergency", "label": "Medical Emergency", "priority": "high", "sla_minutes": 5},
-    {"id": "lost_found", "label": "Lost & Found", "priority": "medium", "sla_minutes": 60},
-    {"id": "support", "label": "Support Services", "priority": "low", "sla_minutes": 45},
-    {"id": "report", "label": "Report Something", "priority": "medium", "sla_minutes": 30},
-    {"id": "room_issue", "label": "Room Issue", "priority": "medium", "sla_minutes": 30},
-    {"id": "food", "label": "Food / Dining", "priority": "low", "sla_minutes": 30},
-    {"id": "transport", "label": "Transport Assistance", "priority": "low", "sla_minutes": 45},
-    {"id": "other", "label": "Other Assistance", "priority": "low", "sla_minutes": 30},
+    # 15 services from the WA Flow JSON — category IDs MUST match Flow's service_type IDs
+    {"id": "drinking_water", "label": "Drinking Water", "group": "stay_essentials", "priority": "medium", "sla_minutes": 15},
+    {"id": "tea_coffee", "label": "Tea / Coffee (On Availability)", "group": "food_beverages", "priority": "low", "sla_minutes": 30},
+    {"id": "daily_items", "label": "Daily Items (Soap, Shampoo)", "group": "stay_essentials", "priority": "low", "sla_minutes": 30},
+    {"id": "first_aid", "label": "First Aid Box", "group": "medical", "priority": "high", "sla_minutes": 10},
+    {"id": "medicines", "label": "Medicines (Headache / Cold / Fever)", "group": "medical", "priority": "high", "sla_minutes": 15},
+    {"id": "medical_emergency", "label": "Medical Emergency", "group": "medical", "priority": "high", "sla_minutes": 5},
+    {"id": "extra_meal", "label": "Extra Meal Request", "group": "food_beverages", "priority": "low", "sla_minutes": 45},
+    {"id": "room_cleaning", "label": "Room Cleaning", "group": "housekeeping", "priority": "medium", "sla_minutes": 30},
+    {"id": "washroom_cleaning", "label": "Washroom Cleaning", "group": "housekeeping", "priority": "medium", "sla_minutes": 30},
+    {"id": "garbage_pickup", "label": "Garbage Pickup", "group": "housekeeping", "priority": "low", "sla_minutes": 45},
+    {"id": "room_issue", "label": "Room Issue (Electricity / Water)", "group": "housekeeping", "priority": "high", "sla_minutes": 20},
+    {"id": "bedding", "label": "Bedding / Blanket / Pillow", "group": "stay_essentials", "priority": "medium", "sla_minutes": 30},
+    {"id": "mosquito_pest", "label": "Mosquito / Pest Control", "group": "stay_essentials", "priority": "medium", "sla_minutes": 30},
+    {"id": "lost_found", "label": "Lost & Found", "group": "other", "priority": "medium", "sla_minutes": 60},
+    {"id": "other_request", "label": "Other Request", "group": "other", "priority": "low", "sla_minutes": 45},
 ]
+
+async def seed_ticket_categories():
+    """Seed default categories on startup if the collection is empty."""
+    if await db.ticket_categories.count_documents({}) == 0:
+        for c in TICKET_CATEGORIES:
+            await db.ticket_categories.insert_one({**c, "is_active": True, "is_default": True})
+        logger.info(f"Seeded {len(TICKET_CATEGORIES)} ticket categories")
+
+async def get_categories():
+    """Read categories from DB, fall back to hardcoded defaults if empty."""
+    rows = await db.ticket_categories.find({"is_active": True}, {"_id": 0}).sort("label", 1).to_list(200)
+    return rows or TICKET_CATEGORIES
 
 @api_router.get("/admin/tickets/categories")
 async def get_ticket_categories(request: Request):
     await get_current_user(request)
-    return TICKET_CATEGORIES
+    return await get_categories()
+
+class CategoryCreate(BaseModel):
+    id: str
+    label: str
+    group: Optional[str] = "other"
+    priority: str = "low"
+    sla_minutes: int = 30
+    is_active: Optional[bool] = True
+
+class CategoryUpdate(BaseModel):
+    label: Optional[str] = None
+    group: Optional[str] = None
+    priority: Optional[str] = None
+    sla_minutes: Optional[int] = None
+    is_active: Optional[bool] = None
+
+@api_router.post("/admin/tickets/categories")
+async def create_category(body: CategoryCreate, request: Request):
+    user = await require_superadmin(request)
+    cid = body.id.strip().lower().replace(" ", "_")
+    if not cid:
+        raise HTTPException(status_code=400, detail="id is required")
+    if body.priority not in ("low", "medium", "high"):
+        raise HTTPException(status_code=400, detail="priority must be low/medium/high")
+    existing = await db.ticket_categories.find_one({"id": cid})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Category '{cid}' already exists")
+    doc = {
+        "id": cid, "label": body.label.strip(), "group": (body.group or "other").strip() or "other",
+        "priority": body.priority, "sla_minutes": max(1, int(body.sla_minutes)),
+        "is_active": bool(body.is_active), "is_default": False,
+    }
+    await db.ticket_categories.insert_one(doc)
+    await log_audit("category_create", "ticket_category", cid, body.label, "Category created", user["name"])
+    return doc
+
+@api_router.put("/admin/tickets/categories/{cid}")
+async def update_category(cid: str, body: CategoryUpdate, request: Request):
+    user = await require_superadmin(request)
+    updates = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    if "priority" in updates and updates["priority"] not in ("low", "medium", "high"):
+        raise HTTPException(status_code=400, detail="priority must be low/medium/high")
+    if "sla_minutes" in updates:
+        updates["sla_minutes"] = max(1, int(updates["sla_minutes"]))
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    result = await db.ticket_categories.update_one({"id": cid}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Category not found")
+    await log_audit("category_update", "ticket_category", cid, "", f"Updated: {list(updates.keys())}", user["name"])
+    return {"message": "Updated"}
+
+@api_router.delete("/admin/tickets/categories/{cid}")
+async def delete_category(cid: str, request: Request):
+    user = await require_superadmin(request)
+    existing = await db.ticket_categories.find_one({"id": cid})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Category not found")
+    if existing.get("is_default"):
+        raise HTTPException(status_code=400, detail="Cannot delete a default seeded category. Disable it instead.")
+    await db.ticket_categories.delete_one({"id": cid})
+    await log_audit("category_delete", "ticket_category", cid, existing.get("label", ""), "Category deleted", user["name"])
+    return {"message": "Deleted"}
 
 @api_router.get("/admin/tickets/stats")
 async def get_ticket_stats(request: Request):
@@ -1958,7 +2038,8 @@ async def get_ticket_detail(ticket_id: str, request: Request):
 @api_router.post("/admin/tickets")
 async def create_ticket(body: TicketCreate, request: Request):
     user = await get_current_user(request)
-    cat = next((c for c in TICKET_CATEGORIES if c["id"] == body.category), None)
+    cats = await get_categories()
+    cat = next((c for c in cats if c["id"] == body.category), None)
     sla = body.resolution_time_minutes or (cat["sla_minutes"] if cat else 30)
     # Auto-generate title from guest_name + category if title not provided
     title = body.title.strip() if body.title.strip() else f"{body.guest_name or 'Guest'} — {cat['label'] if cat else body.category}"
@@ -3373,64 +3454,284 @@ async def test_auto_response(request: Request):
     run = await db.wa_auto_response_runs.find_one({"phone": phone}, {"_id": 0}, sort=[("started_at", -1)])
     return {"matched": run is not None, "run": run}
 
-# ─── WhatsApp Flows Data Exchange Endpoint ───
+# ─── WhatsApp Flows Data Exchange Endpoint (with RSA+AES encryption) ───
+# Protocol: https://developers.facebook.com/docs/whatsapp/flows/reference/implementingyourflowendpoint
+# Request JSON: { encrypted_flow_data, encrypted_aes_key, initial_vector }
+# Response: base64(AES-GCM(flipped_iv, aes_key, plaintext_json))
+
+_FLOW_PRIVATE_KEY_CACHE: Any = None
+
+def _load_flow_private_key():
+    global _FLOW_PRIVATE_KEY_CACHE
+    if _FLOW_PRIVATE_KEY_CACHE is not None:
+        return _FLOW_PRIVATE_KEY_CACHE
+    from cryptography.hazmat.primitives import serialization
+    key_path = os.environ.get("WA_FLOW_PRIVATE_KEY_PATH", "")
+    passphrase = os.environ.get("WA_FLOW_PRIVATE_KEY_PASSPHRASE", "")
+    if not key_path or not os.path.exists(key_path):
+        return None
+    with open(key_path, "rb") as f:
+        pem = f.read()
+    _FLOW_PRIVATE_KEY_CACHE = serialization.load_pem_private_key(
+        pem, password=passphrase.encode("utf-8") if passphrase else None
+    )
+    return _FLOW_PRIVATE_KEY_CACHE
+
+def _decrypt_flow_request(encrypted_flow_data_b64: str, encrypted_aes_key_b64: str, iv_b64: str) -> (dict, bytes, bytes):
+    """Returns (decrypted_body, aes_key_bytes, iv_bytes). Raises on failure."""
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    pk = _load_flow_private_key()
+    if pk is None:
+        raise RuntimeError("Flow private key not configured")
+    encrypted_aes_key = base64.b64decode(encrypted_aes_key_b64)
+    aes_key = pk.decrypt(
+        encrypted_aes_key,
+        padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None),
+    )
+    iv = base64.b64decode(iv_b64)
+    blob = base64.b64decode(encrypted_flow_data_b64)
+    # Per Meta spec, last 16 bytes of blob are the GCM tag; AESGCM().decrypt handles both combined
+    plaintext = AESGCM(aes_key).decrypt(iv, blob, None)
+    return json.loads(plaintext.decode("utf-8")), aes_key, iv
+
+def _encrypt_flow_response(response_obj: dict, aes_key: bytes, iv: bytes) -> str:
+    """Encrypts response with the SAME aes_key, using FLIPPED iv. Returns base64 string."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    flipped_iv = bytes(b ^ 0xFF for b in iv)
+    ct = AESGCM(aes_key).encrypt(flipped_iv, json.dumps(response_obj).encode("utf-8"), None)
+    return base64.b64encode(ct).decode("utf-8")
+
+async def _find_arrived_guest_by_phone(phone: str):
+    """Locate a registration record where the head is 'arrived' (or partially arrived/departed) by phone.
+    Phone is normalized: strip +, leading 91 removed when comparing to stored primary_mobile."""
+    raw = (phone or "").lstrip("+").strip()
+    candidates = {raw}
+    if raw.startswith("91") and len(raw) > 10:
+        candidates.add(raw[2:])
+    candidates.add("91" + raw if not raw.startswith("91") else raw)
+    reg = await db.registrations.find_one(
+        {
+            "primary_mobile": {"$in": list(candidates)},
+            "approval_status": {"$ne": "deleted"},
+        },
+        {"_id": 0},
+    )
+    if not reg:
+        return None, "not_found"
+    arrival = reg.get("arrival_status", "not_arrived")
+    is_onsite = arrival in ("arrived", "partially_arrived", "departed")
+    return reg, ("on_site" if is_onsite else "not_arrived")
+
+async def _create_ticket_from_flow(phone: str, service_type: str, category_group: str, room_location: str, description: str):
+    """Create a help-centre ticket from a Flow submission. Returns (ticket_doc, reg_doc_or_none, arrived_status)."""
+    reg, arrived_status = await _find_arrived_guest_by_phone(phone)
+
+    # Look up category (service_type) from DB
+    cats = await get_categories()
+    cat = next((c for c in cats if c["id"] == service_type), None)
+    if not cat:
+        # Fallback generic
+        cat = {"id": "other_request", "label": service_type or "Other Request", "priority": "low", "sla_minutes": 45}
+
+    sla = int(cat.get("sla_minutes", 30))
+    priority = cat.get("priority", "low")
+
+    assigned_to = ""
+    assigned_to_name = ""
+    guest_name = ""
+    guest_mobile = phone
+
+    if reg:
+        guest_name = reg.get("primary_guest_name", "") or reg.get("head_name", "") or ""
+        guest_mobile = reg.get("primary_mobile", phone)
+        # Point-of-contact = assigned swamsevak on the registration
+        if reg.get("assigned_swamsevak"):
+            assigned_to_name = reg["assigned_swamsevak"]
+            # Attempt to resolve to username
+            swam = await db.custom_admins.find_one({"name": reg["assigned_swamsevak"]})
+            if swam:
+                assigned_to = swam.get("username", "")
+
+    title = f"{guest_name or 'Guest'} — {cat['label']}" if guest_name else cat["label"]
+    description_full = description or ""
+    if room_location:
+        description_full = f"Location: {room_location}\n\n{description_full}".strip()
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "title": title,
+        "description": description_full,
+        "category": cat["id"],
+        "category_label": cat["label"],
+        "priority": priority,
+        "status": "open",
+        "source_type": "wa_flow",
+        "source_registration_id": reg.get("id", "") if reg else "",
+        "guest_name": guest_name,
+        "guest_mobile": guest_mobile,
+        "room_or_location": room_location,
+        "created_by": "wa_flow",
+        "created_by_name": "WhatsApp Flow",
+        "assigned_to": assigned_to,
+        "assigned_to_name": assigned_to_name,
+        "resolution_time_minutes": sla,
+        "notes": "",
+        "closing_note": "",
+        "resolved_at": "",
+        "resolved_by": "",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    await db.tickets.insert_one(doc)
+    doc.pop("_id", None)
+    await log_audit("ticket_create", "ticket", doc["id"], title, f"Ticket auto-created from WA Flow: {cat['id']} ({priority})", "WhatsApp Flow")
+    return doc, reg, arrived_status
+
 @api_router.get("/webhooks/wa-flow")
 async def wa_flow_health():
-    """Health check for WhatsApp Flow endpoint."""
+    """Health check for WhatsApp Flow endpoint (browser only)."""
     return {"status": "ok", "service": "wa-flow-data-exchange"}
 
 @api_router.post("/webhooks/wa-flow")
 async def wa_flow_data_exchange(request: Request):
     """
-    WhatsApp Flows Data Exchange endpoint.
-    Meta calls this to get/submit flow screen data.
-    See: https://developers.facebook.com/docs/whatsapp/flows/guides/implementingyourflowendpoint
+    WhatsApp Flows Data Exchange endpoint — encrypted per Meta spec.
+    Accepts both encrypted (production) and plaintext (local test) payloads.
     """
     try:
         body = await request.json()
     except Exception:
-        return {"version": "3.0", "screen": "SUCCESS", "data": {}}
-    
+        return PlainTextResponse(content="Bad Request", status_code=400)
+
+    aes_key = None
+    iv = None
+    is_encrypted = all(k in body for k in ("encrypted_flow_data", "encrypted_aes_key", "initial_vector"))
+    if is_encrypted:
+        try:
+            decrypted, aes_key, iv = _decrypt_flow_request(
+                body["encrypted_flow_data"], body["encrypted_aes_key"], body["initial_vector"]
+            )
+            body = decrypted
+        except Exception as e:
+            logger.exception(f"[WA Flow] Decryption failed: {e}")
+            return PlainTextResponse(content="Decryption error", status_code=421)
+
     action = body.get("action", "")
     flow_token = body.get("flow_token", "")
     screen = body.get("screen", "")
-    flow_data = body.get("data", {})
-    
-    logger.info(f"[WA Flow] action={action} screen={screen} flow_token={flow_token}")
-    
-    # Store flow event
+    flow_data = body.get("data", {}) or {}
+    version = body.get("version", "3.0")
+
+    logger.info(f"[WA Flow] action={action} screen={screen} flow_token={flow_token} encrypted={is_encrypted}")
+
+    # Store event (plaintext for debugging, but mask sensitive keys)
     await db.wa_flow_events.insert_one({
         "id": str(uuid.uuid4()),
-        "action": action,
-        "screen": screen,
-        "flow_token": flow_token,
-        "data": flow_data,
-        "raw_body": body,
+        "action": action, "screen": screen, "flow_token": flow_token,
+        "data": flow_data, "encrypted": is_encrypted,
         "received_at": datetime.now(timezone.utc).isoformat(),
     })
-    
-    # Look up flow config
-    flow_config = await db.wa_flow_configs.find_one({"flow_token": flow_token}, {"_id": 0})
-    
+
+    def _respond(payload: dict):
+        if is_encrypted:
+            encrypted = _encrypt_flow_response(payload, aes_key, iv)
+            return PlainTextResponse(content=encrypted, status_code=200)
+        return payload
+
+    # Ping — used by Meta health check
     if action == "ping":
-        return {"version": "3.0", "data": {"status": "active"}}
-    
+        return _respond({"version": version, "data": {"status": "active"}})
+
+    # INIT — first screen after user opens the Flow
     if action == "INIT":
-        # Return initial screen data
-        if flow_config and flow_config.get("init_response"):
-            return flow_config["init_response"]
-        return {"version": "3.0", "screen": screen or "WELCOME", "data": {}}
-    
-    if action == "data_exchange":
-        # Process screen submissions
-        if flow_config and flow_config.get("screens", {}).get(screen):
-            return flow_config["screens"][screen]
-        return {"version": "3.0", "screen": "SUCCESS", "data": {"message": "Thank you!"}}
-    
+        return _respond({"version": version, "screen": "WELCOME", "data": {}})
+
+    # BACK — return to previous logical screen
     if action == "BACK":
-        return {"version": "3.0", "screen": screen or "WELCOME", "data": {}}
-    
-    return {"version": "3.0", "screen": "SUCCESS", "data": {}}
+        return _respond({"version": version, "screen": screen or "WELCOME", "data": {}})
+
+    # data_exchange — screen transitions / final submit
+    if action == "data_exchange":
+        # Determine if this is the FINAL submission (REVIEW → SUCCESS) or an intermediate screen
+        if screen == "REVIEW" or (flow_data.get("service_type") and flow_data.get("description")):
+            # Resolve phone: look up flow_token → phone mapping, or accept explicit in payload
+            phone = ""
+            session = await db.wa_flow_sessions.find_one({"flow_token": flow_token}, {"_id": 0}) if flow_token else None
+            if session:
+                phone = session.get("phone", "")
+            if not phone:
+                phone = flow_data.get("phone", "") or flow_data.get("wa_phone", "")
+
+            service_type = (flow_data.get("service_type") or "").strip()
+            category_group = (flow_data.get("category") or "").strip()
+            room_location = (flow_data.get("room_or_location") or "").strip()
+            description = (flow_data.get("description") or "").strip()
+
+            if not phone:
+                return _respond({
+                    "version": version, "screen": "SUCCESS",
+                    "data": {
+                        "ticket_id": "",
+                        "sla_minutes": 0,
+                        "extension_message_response": {
+                            "params": {"flow_token": flow_token, "error": "phone_missing"}
+                        }
+                    }
+                })
+
+            ticket, reg, arrived_status = await _create_ticket_from_flow(phone, service_type, category_group, room_location, description)
+
+            # Mark flow session with outcome (so Session 4B system-messages can act on it)
+            if session:
+                await db.wa_flow_sessions.update_one(
+                    {"flow_token": flow_token},
+                    {"$set": {
+                        "status": "submitted",
+                        "ticket_id": ticket["id"],
+                        "arrived_status": arrived_status,
+                        "submitted_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+
+            return _respond({
+                "version": version, "screen": "SUCCESS",
+                "data": {
+                    "ticket_id": ticket["id"][:8].upper(),
+                    "sla_minutes": ticket["resolution_time_minutes"],
+                    "extension_message_response": {
+                        "params": {
+                            "flow_token": flow_token,
+                            "ticket_id": ticket["id"],
+                            "arrived_status": arrived_status,
+                            "priority": ticket["priority"],
+                        }
+                    }
+                }
+            })
+        # Intermediate screen navigation — echo back
+        return _respond({"version": version, "screen": screen or "SUCCESS", "data": flow_data})
+
+    return _respond({"version": version, "screen": "SUCCESS", "data": {}})
+
+# ─── Flow Session CRUD (for testing / manual flow_token→phone mapping) ───
+@api_router.post("/admin/wa-flow-sessions")
+async def create_flow_session(request: Request):
+    """Manually bind a flow_token to a phone number. Normally done when sending the template with Flow CTA (Session 4B)."""
+    await require_superadmin(request)
+    body = await request.json()
+    flow_token = (body.get("flow_token") or "").strip()
+    phone = (body.get("phone") or "").strip().lstrip("+")
+    if not flow_token or not phone:
+        raise HTTPException(status_code=400, detail="flow_token and phone are required")
+    doc = {
+        "id": str(uuid.uuid4()), "flow_token": flow_token, "phone": phone,
+        "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.wa_flow_sessions.update_one({"flow_token": flow_token}, {"$set": doc}, upsert=True)
+    return doc
 
 # ─── Flow Configuration CRUD ───
 @api_router.get("/admin/wa-flows")
@@ -4249,6 +4550,14 @@ async def startup():
         for t in DEFAULT_TEMPLATES:
             await db.message_templates.insert_one({"id": str(uuid.uuid4()), **t, "enabled": True, "created_at": datetime.now(timezone.utc).isoformat(), "created_by": "System"})
         logger.info(f"Seeded {len(DEFAULT_TEMPLATES)} default message templates")
+
+    # Seed default ticket categories (matching WA Flow service IDs) if empty
+    await db.ticket_categories.create_index("id", unique=True, sparse=True)
+    await seed_ticket_categories()
+
+    # Indexes for Flow + auto-response
+    await db.wa_flow_sessions.create_index("flow_token", unique=True, sparse=True)
+    await db.wa_auto_responses.create_index("id", unique=True, sparse=True)
 
     logger.info("V2 startup complete")
 

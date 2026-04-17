@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { Headphones, Plus, Search, Clock, AlertTriangle, CheckCircle, Eye, UserPlus, GitBranch } from "lucide-react";
+import { Headphones, Plus, Search, Clock, AlertTriangle, CheckCircle, Eye, UserPlus, GitBranch, LayoutGrid } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import WAFlowSettings from "./WAFlowSettings";
+import HelpCategoryManager from "./HelpCategoryManager";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -155,6 +156,13 @@ export default function HelpCentre({ user }) {
             <Headphones size={14} /> Tickets
           </button>
           <button
+            onClick={() => setHcTab("categories")}
+            data-testid="hc-tab-categories"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "categories" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+          >
+            <LayoutGrid size={14} /> Services / SLA
+          </button>
+          <button
             onClick={() => setHcTab("flow")}
             data-testid="hc-tab-flow"
             className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "flow" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
@@ -166,6 +174,8 @@ export default function HelpCentre({ user }) {
 
       {hcTab === "flow" && isSuper ? (
         <WAFlowSettings />
+      ) : hcTab === "categories" && isSuper ? (
+        <HelpCategoryManager />
       ) : (
         <>
       {/* Stats */}
