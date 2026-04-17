@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, APIRouter, Request, HTTPException, Query, UploadFile, File
+from fastapi import FastAPI, APIRouter, Request, HTTPException, Query, UploadFile, File, Form
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi.responses import StreamingResponse, Response, PlainTextResponse
@@ -3018,6 +3018,144 @@ async def send_conversation_media(phone: str, request: Request, file: UploadFile
         })
     
     return {"message": "Media sent", "wa_message_id": wa_msg_id, "media_url": file_url}
+
+# ─── Bundled send: text + multi-media (grouped like mobile WhatsApp) ───
+@api_router.post("/admin/wa-conversations/{phone}/send-bundle")
+async def send_conversation_bundle(
+    phone: str,
+    request: Request,
+    text: str = Form(default=""),
+    files: List[UploadFile] = File(default=[]),
+):
+    """
+    Send a bundle of text + multiple media in one action.
+    Strategy: If N>=1 media, text becomes the caption on the FIRST media; remaining
+    media are sent plain, sequentially, so mobile WhatsApp groups them visually.
+    If no media, send a single text message.
+    """
+    user = await require_superadmin(request)
+    text = (text or "").strip()
+    if not text and not files:
+        raise HTTPException(status_code=400, detail="Provide text or at least one file")
+    if not WA_PHONE_ID or not WA_TOKEN:
+        raise HTTPException(status_code=500, detail="WhatsApp API not configured")
+
+    clean_phone = phone.strip().replace(" ", "").replace("-", "").lstrip("+")
+    if not clean_phone.startswith("91"):
+        clean_phone = "91" + clean_phone
+
+    import os as _os
+    static_dir = _os.path.join(_os.path.dirname(__file__), "static", "uploads")
+    _os.makedirs(static_dir, exist_ok=True)
+    app_url = os.environ.get("APP_URL", "") or str(request.base_url).rstrip("/")
+
+    sent_msg_docs = []
+    headers = {"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"}
+
+    async def _send(payload: dict):
+        async with httpx.AsyncClient(timeout=30) as client_http:
+            resp = await client_http.post(f"{WA_API_BASE}/{WA_PHONE_ID}/messages", headers=headers, json=payload)
+            data = resp.json()
+            if resp.status_code == 200 and data.get("messages"):
+                return data["messages"][0]["id"], ""
+            return "", data.get("error", {}).get("message", str(data))
+
+    # Case A: text only (no media)
+    if not files:
+        wa_msg_id, err = await _send({
+            "messaging_product": "whatsapp", "to": clean_phone,
+            "type": "text", "text": {"body": text}
+        })
+        if err:
+            raise HTTPException(status_code=500, detail=f"WhatsApp API error: {err}")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        sent_msg_docs.append({
+            "id": str(uuid.uuid4()), "direction": "outgoing",
+            "text": text, "msg_type": "text",
+            "wa_message_id": wa_msg_id, "timestamp": now_iso,
+            "status": "sent", "sent_by": user["name"],
+        })
+    else:
+        # Case B: 1..N media, optionally text as caption on first
+        for idx, file in enumerate(files):
+            safe_name = f"{uuid.uuid4().hex[:8]}_{(file.filename or 'file').replace(' ', '_')}"
+            file_path = _os.path.join(static_dir, safe_name)
+            content = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
+            file_url = f"{app_url}/api/static/uploads/{safe_name}"
+
+            ct = (file.content_type or "").lower()
+            if "image" in ct:
+                media_type = "image"
+            elif "video" in ct:
+                media_type = "video"
+            elif "audio" in ct:
+                media_type = "audio"
+            else:
+                media_type = "document"
+
+            media_body: Dict[str, Any] = {"link": file_url}
+            if media_type == "document":
+                media_body["filename"] = file.filename or safe_name
+            # Attach text as caption on FIRST media (audio doesn't support captions)
+            if idx == 0 and text and media_type != "audio":
+                media_body["caption"] = text
+
+            wa_msg_id, err = await _send({
+                "messaging_product": "whatsapp", "to": clean_phone,
+                "type": media_type, media_type: media_body
+            })
+            if err:
+                raise HTTPException(status_code=500, detail=f"WhatsApp API error on file '{file.filename}': {err}")
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            caption = media_body.get("caption", "")
+            sent_msg_docs.append({
+                "id": str(uuid.uuid4()), "direction": "outgoing",
+                "text": caption or f"[{media_type}: {file.filename}]",
+                "msg_type": media_type,
+                "wa_message_id": wa_msg_id, "timestamp": now_iso,
+                "status": "sent", "sent_by": user["name"],
+                "media_url": file_url, "media_type": media_type,
+                "filename": file.filename or safe_name,
+            })
+        # If text was provided but got rolled into first media, don't re-send.
+        # If ALL files were audio (no caption support), send text as separate message.
+        if text and all(d.get("msg_type") == "audio" for d in sent_msg_docs):
+            wa_msg_id, err = await _send({
+                "messaging_product": "whatsapp", "to": clean_phone,
+                "type": "text", "text": {"body": text}
+            })
+            if not err:
+                sent_msg_docs.insert(0, {
+                    "id": str(uuid.uuid4()), "direction": "outgoing",
+                    "text": text, "msg_type": "text",
+                    "wa_message_id": wa_msg_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "status": "sent", "sent_by": user["name"],
+                })
+
+    # Persist in conversation
+    if sent_msg_docs:
+        last = sent_msg_docs[-1]
+        last_text = last.get("text") or (f"📎 {last.get('filename','')}" if last.get("filename") else "")
+        conv = await db.wa_conversations.find_one({"phone": phone})
+        if conv:
+            await db.wa_conversations.update_one({"phone": phone}, {
+                "$push": {"messages": {"$each": sent_msg_docs}},
+                "$set": {"last_message": last_text, "last_message_at": last["timestamp"]}
+            })
+        else:
+            await db.wa_conversations.insert_one({
+                "id": str(uuid.uuid4()), "phone": phone,
+                "contact_name": "", "unread_count": 0,
+                "last_message": last_text, "last_message_at": last["timestamp"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "messages": sent_msg_docs,
+            })
+
+    return {"message": "Bundle sent", "count": len(sent_msg_docs), "messages": sent_msg_docs}
 
 # ─── WhatsApp Flows Data Exchange Endpoint ───
 @api_router.get("/webhooks/wa-flow")

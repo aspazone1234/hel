@@ -65,6 +65,7 @@ function ConversationsTab({ authHeaders, initialPhone }) {
   const [activeConvo, setActiveConvo] = useState(null); // phone number of open convo
   const [convoDetail, setConvoDetail] = useState(null); // full convo with messages
   const [msgText, setMsgText] = useState("");
+  const [pendingFiles, setPendingFiles] = useState([]); // File[] staged for bundle send
   const [sending, setSending] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -107,13 +108,22 @@ function ConversationsTab({ authHeaders, initialPhone }) {
     } catch (e) { toast.error("Failed to load conversation"); }
   };
 
-  const sendMessage = async () => {
-    if (!msgText.trim() || !activeConvo) return;
+  const sendBundle = async () => {
+    if (!activeConvo) return;
+    const hasText = msgText.trim().length > 0;
+    const hasFiles = pendingFiles.length > 0;
+    if (!hasText && !hasFiles) return;
     setSending(true);
     setSendError("");
     try {
-      await axios.post(`${API}/admin/wa-conversations/${activeConvo}/send`, { text: msgText }, { headers: authHeaders() });
+      const fd = new FormData();
+      if (hasText) fd.append("text", msgText);
+      pendingFiles.forEach(f => fd.append("files", f));
+      await axios.post(`${API}/admin/wa-conversations/${activeConvo}/send-bundle`, fd, {
+        headers: { ...authHeaders(), "Content-Type": "multipart/form-data" },
+      });
       setMsgText("");
+      setPendingFiles([]);
       const { data } = await axios.get(`${API}/admin/wa-conversations/${activeConvo}`, { headers: authHeaders() });
       setConvoDetail(data);
     } catch (e) {
@@ -123,24 +133,21 @@ function ConversationsTab({ authHeaders, initialPhone }) {
     } finally { setSending(false); }
   };
 
-  const sendMediaFile = async (file) => {
-    if (!file || !activeConvo) return;
-    setSendingMedia(true);
-    setSendError("");
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      await axios.post(`${API}/admin/wa-conversations/${activeConvo}/send-media`, fd, {
-        headers: { ...authHeaders(), "Content-Type": "multipart/form-data" },
-      });
-      const { data } = await axios.get(`${API}/admin/wa-conversations/${activeConvo}`, { headers: authHeaders() });
-      setConvoDetail(data);
-      toast.success("Media sent!");
-    } catch (e) {
-      const detail = e.response?.data?.detail || "Failed to send media";
-      setSendError(detail);
-      toast.error(detail);
-    } finally { setSendingMedia(false); }
+  const addPendingFiles = (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+    const arr = Array.from(fileList);
+    // WhatsApp Cloud API limits: image 5MB, video 16MB, doc 100MB; keep conservative 20MB default
+    const MAX = 20 * 1024 * 1024;
+    const tooBig = arr.filter(f => f.size > MAX);
+    if (tooBig.length) {
+      toast.error(`${tooBig.length} file(s) exceed 20MB limit`);
+    }
+    const ok = arr.filter(f => f.size <= MAX);
+    setPendingFiles(prev => [...prev, ...ok].slice(0, 10)); // cap at 10
+  };
+
+  const removePendingFile = (idx) => {
+    setPendingFiles(prev => prev.filter((_, i) => i !== idx));
   };
 
   useEffect(() => {
@@ -260,29 +267,66 @@ function ConversationsTab({ authHeaders, initialPhone }) {
               <button onClick={() => setSendError("")} className="text-red-400 hover:text-red-600"><X size={12} /></button>
             </div>
           )}
-          {sendingMedia && (
-            <div className="mb-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700 animate-pulse">
-              📤 Uploading and sending media file...
+
+          {/* Pending media chips (preview before send) */}
+          {pendingFiles.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2 p-2 bg-gray-50 rounded-lg border border-dashed border-gray-300" data-testid="pending-media-chips">
+              {pendingFiles.map((f, i) => {
+                const isImage = f.type.startsWith("image/");
+                const isVideo = f.type.startsWith("video/");
+                const url = URL.createObjectURL(f);
+                return (
+                  <div key={i} className="relative group" data-testid={`pending-chip-${i}`}>
+                    {isImage ? (
+                      <img src={url} alt="" className="w-16 h-16 object-cover rounded-lg border" />
+                    ) : isVideo ? (
+                      <video src={url} className="w-16 h-16 object-cover rounded-lg border bg-black" />
+                    ) : (
+                      <div className="w-16 h-16 rounded-lg border bg-white flex flex-col items-center justify-center px-1">
+                        <FileText size={18} className="text-blue-600" />
+                        <span className="text-[8px] text-gray-600 truncate w-full text-center mt-1">{f.name}</span>
+                      </div>
+                    )}
+                    <button onClick={() => removePendingFile(i)} data-testid={`remove-chip-${i}`}
+                      className="absolute -top-1.5 -right-1.5 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow hover:bg-red-600">
+                      <X size={10} />
+                    </button>
+                  </div>
+                );
+              })}
+              <p className="text-[10px] text-gray-500 w-full mt-1">
+                {pendingFiles.length}/10 files · text (if typed) will be attached as caption on the first media
+              </p>
             </div>
           )}
-          <div className="flex gap-2">
-            <input ref={fileInputRef} type="file" className="hidden"
+
+          <div className="flex gap-2 items-end">
+            <input ref={fileInputRef} type="file" className="hidden" multiple
               accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv"
-              onChange={e => { if (e.target.files[0]) sendMediaFile(e.target.files[0]); e.target.value = ""; }} />
-            <button onClick={() => fileInputRef.current?.click()} disabled={sendingMedia}
-              className="p-2.5 hover:bg-gray-100 rounded-full text-gray-500 disabled:opacity-40" title="Send media file">
+              onChange={e => { addPendingFiles(e.target.files); e.target.value = ""; }}
+              data-testid="convo-file-input" />
+            <button onClick={() => fileInputRef.current?.click()} disabled={sending || pendingFiles.length >= 10}
+              className="p-2.5 hover:bg-gray-100 rounded-full text-gray-500 disabled:opacity-40" title="Attach files"
+              data-testid="convo-attach-btn">
               <Paperclip size={18} />
             </button>
-            <input value={msgText} onChange={e => setMsgText(e.target.value)} placeholder="Type a message..."
-              className="flex-1 border rounded-full px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B1C3D]/20"
-              onKeyDown={e => e.key === "Enter" && !e.shiftKey && sendMessage()}
+            <textarea value={msgText} onChange={e => setMsgText(e.target.value)}
+              placeholder={pendingFiles.length > 0 ? "Add a caption (optional)..." : "Type a message..."}
+              rows={1}
+              className="flex-1 border rounded-2xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#0B1C3D]/20 resize-none max-h-32"
+              onKeyDown={e => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendBundle(); }
+              }}
               data-testid="convo-msg-input" />
-            <button onClick={sendMessage} disabled={sending || !msgText.trim()} data-testid="convo-send-btn"
+            <button onClick={sendBundle}
+              disabled={sending || (!msgText.trim() && pendingFiles.length === 0)} data-testid="convo-send-btn"
               className="bg-[#0B1C3D] text-white px-4 py-2.5 rounded-full hover:bg-[#0B1C3D]/90 disabled:opacity-40 flex items-center gap-1 text-sm">
               <Send size={14} /> {sending ? "..." : "Send"}
             </button>
           </div>
-          <p className="text-[10px] text-gray-400 mt-1 ml-12">Free-form messages only work within 24h of user's last reply (WhatsApp policy)</p>
+          <p className="text-[10px] text-gray-400 mt-1 ml-12">
+            Tip: attach multiple files + type text — all send together in one action. Free-form messages only work within 24h of user's last reply (WhatsApp policy). Header/footer not supported by Meta for session messages.
+          </p>
         </div>
       </div>
     );
