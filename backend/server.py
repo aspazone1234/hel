@@ -2360,6 +2360,8 @@ async def run_auto_response_matcher(from_number: str, text: str):
                 template_name=meta_name,
                 language=language,
                 body_params=None,
+                header_media_url=tmpl.get("header_media_url") or None,
+                header_type=tmpl.get("header_type") or None,
             )
             await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
                 "step_index": idx, "template_id": tid, "meta_template_name": meta_name,
