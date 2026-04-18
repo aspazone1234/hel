@@ -2777,12 +2777,22 @@ async def _handle_flow_completion(from_number: str, response_json_str: str, nfm_
             # Fire ONLY the not-on-premise template. No ticket, no swayamsevak ping.
             try:
                 guest_name_reject = (reg.get("primary_guest_name") if reg else "") or "Guest"
+                _cat_hr = category_title or category or "-"
+                _req_hr = request_type_title or request_type or "-"
                 await fire_system_trigger(
                     "hc_flow_not_on_premise",
                     from_number,
                     {
                         "guest_name": guest_name_reject,
-                        "service_type": request_type_title or category_title or category or request_type,
+                        "name": guest_name_reject,
+                        "service_type": _req_hr or _cat_hr,
+                        "category": _cat_hr,
+                        "category_title": _cat_hr,
+                        "request_type": _req_hr,
+                        "request_type_title": _req_hr,
+                        "additional_details": additional_details or "-",
+                        "details": additional_details or "-",
+                        "description": additional_details or "-",
                         "arrived_status": arrived_status,
                     },
                 )
@@ -2832,6 +2842,12 @@ async def _handle_flow_completion(from_number: str, response_json_str: str, nfm_
             f"[FlowComplete] Ticket created: id={ticket['id']} cat={service_type} "
             f"guest={guest_name} room={room_location or '-'} phone={from_number}"
         )
+
+        # Enrich the ticket object (in-memory only) with the friendly titles so that
+        # the confirmation template can show readable labels instead of raw ids.
+        ticket["_category_title"] = category_title or category
+        ticket["_request_type_title"] = request_type_title or request_type
+        ticket["_additional_details"] = additional_details
 
         # Fire HC system triggers (captured + POC)
         try:
@@ -2919,7 +2935,10 @@ async def whatsapp_webhook_receive(request: Request):
                     if ir_type == "nfm_reply":
                         nfm_data = ir.get("nfm_reply", {})
                         flow_response = nfm_data.get("response_json", "") or nfm_data.get("body", "")
-                        text_body = f"[Flow submission received]"
+                        text_body = "[Flow submission received]"
+                        # Mark this so the fallback router below does NOT treat a completed
+                        # flow as a "user typed something" event and re-send the template.
+                        msg_type = "flow_submission"
                         # Process flow completion in background
                         asyncio.create_task(_handle_flow_completion(from_number, flow_response, nfm_data))
                     else:
@@ -4624,10 +4643,30 @@ async def fire_hc_flow_outcome(phone: str, arrived_status: str, ticket: dict):
     hc_flow_captured (on-premise) or hc_flow_not_on_premise (off-premise)."""
     sla_minutes = int(ticket.get("resolution_time_minutes") or 0)
     sla_human = f"{sla_minutes} minutes" if sla_minutes and sla_minutes < 60 else (f"{sla_minutes // 60} hour(s)" if sla_minutes else "")
+    # Friendly titles (injected by _handle_flow_completion into the in-memory ticket dict)
+    _cat_title = ticket.get("_category_title") or ticket.get("category_label") or ticket.get("category", "")
+    _req_title = ticket.get("_request_type_title") or ticket.get("category_label") or ""
+    _addl = ticket.get("_additional_details") or ""
+    _room = ticket.get("room_or_location", "") or "-"
     variables = {
+        # Guest identity
         "guest_name": ticket.get("guest_name", ""),
+        "name": ticket.get("guest_name", ""),
+        # Ticket identity
         "ticket_id": (ticket.get("id") or "")[:8].upper(),
-        "service_type": ticket.get("category_label") or ticket.get("category", ""),
+        # What was requested (multiple aliases so any template labeling works)
+        "service_type": _req_title or _cat_title,
+        "category": _cat_title,
+        "category_title": _cat_title,
+        "request_type": _req_title,
+        "request_type_title": _req_title,
+        "additional_details": _addl or "-",
+        "details": _addl or "-",
+        "description": _addl or "-",
+        # Room (all aliases)
+        "room": _room, "room_no": _room, "room_number": _room,
+        "room_or_location": _room, "location": _room,
+        # SLA / priority
         "priority": ticket.get("priority", ""),
         "sla_minutes": str(sla_minutes),
         "sla": sla_human,
@@ -4644,22 +4683,20 @@ async def fire_hc_flow_outcome(phone: str, arrived_status: str, ticket: dict):
             swam = await db.custom_admins.find_one({"name": ticket.get("assigned_to_name", "")}, {"_id": 0})
         swam_phone = (swam.get("phone") or swam.get("mobile") or "") if swam else ""
         if swam and swam_phone:
-            # Provide multiple alias keys for the room so any template labeling works:
-            #   {{room}}, {{room_no}}, {{room_number}}, {{room_or_location}}, {{location}}
-            _room_val = ticket.get("room_or_location", "") or "-"
             poc_vars = {
                 "swamsevak_name": swam.get("name", ""),
                 "guest_name": ticket.get("guest_name", ""),
                 "guest_mobile": ticket.get("guest_mobile", ""),
                 "ticket_id": (ticket.get("id") or "")[:8].upper(),
-                "service_type": ticket.get("category_label") or ticket.get("category", ""),
+                "service_type": _req_title or _cat_title,
+                "category": _cat_title,
+                "request_type": _req_title,
                 "priority": ticket.get("priority", ""),
-                "room_or_location": _room_val,
-                "room": _room_val,
-                "room_no": _room_val,
-                "room_number": _room_val,
-                "location": _room_val,
-                "description": (ticket.get("description", "") or "")[:200],
+                "room_or_location": _room, "room": _room,
+                "room_no": _room, "room_number": _room, "location": _room,
+                "description": (_addl or ticket.get("description", "") or "")[:200],
+                "details": (_addl or ticket.get("description", "") or "")[:200],
+                "additional_details": (_addl or ticket.get("description", "") or "")[:200],
             }
             await fire_system_trigger("help_ticket_created", swam_phone, poc_vars)
 

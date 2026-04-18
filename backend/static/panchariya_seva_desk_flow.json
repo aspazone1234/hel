@@ -706,11 +706,11 @@
         "children": [
           {
             "type": "TextHeading",
-            "text": "Request Summary"
+            "text": "Request Submit Karein"
           },
           {
             "type": "TextBody",
-            "text": "Bas ek final check ✅\n\nCategory: ${data.category_title}\nRequest Type: ${data.request_type_title}\nAdditional Details: ${data.additional_details}"
+            "text": "Aapki request humare paas pahunch gayi hai ✅\n\nNeeche *Request Submit Karein* button dabate hi humari seva team aapke paas poori detail ke saath WhatsApp par confirmation bhejegi aur turant aapki sahayata ke liye ready hogi.\n\n🙏 Jay Shri Krishna"
           },
           {
             "type": "Footer",
