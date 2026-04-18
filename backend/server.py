@@ -4149,12 +4149,19 @@ async def get_flow_json(request: Request):
 async def wa_flow_data_exchange(request: Request):
     """
     WhatsApp Flows Data Exchange — Panchariya Seva Desk (Help Center).
-    Mapped to user's final JSON v7.1:
-      INTRO → GUEST_DETAILS → CATEGORY_SELECTION → ISSUE_* → SUMMARY_SUBMIT
-    Backend interactions:
-      1. INIT → returns GUEST_DETAILS with auto-fetched guest data
-      2. data_exchange from CATEGORY_SELECTION → routes to correct ISSUE screen
-      3. Flow completion (nfm_reply) handled in webhook handler
+    Aligned EXACTLY with the current /static/panchariya_seva_desk_flow.json (v7.1, data_api 3.0):
+
+        INTRO (static) → CATEGORY_SELECTION → [data_exchange] → ISSUE_* (static) → [navigate] → SUMMARY_SUBMIT (terminal)
+
+    Only two actions actually require the backend:
+      • INIT            → open the flow at INTRO (first screen is static, no data required).
+      • data_exchange   → from CATEGORY_SELECTION only: route to the correct ISSUE_* screen,
+                          forwarding the chosen `category` id so the ISSUE_* screen's
+                          data-schema (`data.category`) is populated and can later be carried
+                          into SUMMARY_SUBMIT by the client-side `navigate` payload.
+
+    (The client-side navigate from ISSUE_* → SUMMARY_SUBMIT carries `category`, `request_type`
+     and `additional_details` directly — the backend is NOT involved there.)
     """
     try:
         body = await request.json()
@@ -4178,6 +4185,7 @@ async def wa_flow_data_exchange(request: Request):
     flow_token = body.get("flow_token", "")
     screen = body.get("screen", "")
     flow_data = body.get("data", {}) or {}
+    # Always echo the request's data_api version back, per Meta spec.
     version = body.get("version", "3.0")
 
     logger.info(f"[WA Flow] action={action} screen={screen} flow_token={flow_token} encrypted={is_encrypted} data_keys={list(flow_data.keys())}")
@@ -4196,127 +4204,52 @@ async def wa_flow_data_exchange(request: Request):
             return PlainTextResponse(content=encrypted, status_code=200)
         return payload
 
-    # ── Helper: resolve phone from flow_token ──
-    async def _resolve_phone():
-        phone = ""
-        session = await db.wa_flow_sessions.find_one({"flow_token": flow_token}, {"_id": 0}) if flow_token else None
-        if session:
-            phone = session.get("phone", "")
-        if not phone:
-            phone = flow_data.get("phone", "") or flow_data.get("wa_phone", "")
-        is_builder_test = (flow_token or "").startswith("flows-builder-")
-        if not phone and is_builder_test:
-            phone = "+00-flow-builder-test"
-        return phone, session
-
-    # ── Helper: get guest details matching the Flow JSON field names ──
-    async def _get_guest_data(reg):
-        head_name = reg.get("primary_guest_name", "") or ""
-        if not head_name:
-            for att in reg.get("attendees", []):
-                if att.get("id") == reg.get("group_head_id"):
-                    head_name = att.get("name", "")
-                    break
-        room = ""
-        ra = reg.get("room_assignments") or []
-        if ra:
-            room = (ra[0].get("room_code") if isinstance(ra[0], dict) else str(ra[0])) if ra else ""
-        swamsevak_name = reg.get("assigned_swamsevak", "") or "-"
-        swamsevak_contact = "-"
-        if swamsevak_name and swamsevak_name != "-":
-            swam = await db.custom_admins.find_one({"username": swamsevak_name}, {"_id": 0})
-            if not swam:
-                swam = await db.custom_admins.find_one({"name": swamsevak_name}, {"_id": 0})
-            if swam:
-                swamsevak_contact = swam.get("mobile", "") or swam.get("phone", "") or "-"
-                swamsevak_name = swam.get("name", swamsevak_name)
-        attendees = reg.get("attendees", [])
-        family_count = str(len(attendees))
-        mobile = reg.get("primary_mobile", "")
-        return {
-            "guest_name": head_name or "Guest",
-            "room_number": room or "-",
-            "assigned_swayamsevak": swamsevak_name,
-            "swayamsevak_contact": swamsevak_contact,
-            "family_members": family_count,
-            "mobile_number": mobile,
-        }
-
-    # ── Category → Issue Screen ID mapping (matches user's JSON) ──
+    # Category id (as set in CATEGORY_SELECTION Dropdown) → target ISSUE_* screen id.
+    # Keys MUST match the Dropdown ids in panchariya_seva_desk_flow.json.
     CATEGORY_TO_ISSUE_SCREEN = {
-        "paani_chai_coffee": "ISSUE_WATER",
-        "daily_use_items": "ISSUE_DAILY",
-        "medical_sahayata": "ISSUE_MEDICAL",
-        "meal_request": "ISSUE_MEAL",
-        "safai_hygiene": "ISSUE_CLEANING",
-        "room_utility_issue": "ISSUE_ROOM",
-        "bedding_comfort": "ISSUE_BEDDING",
+        "paani_chai_coffee":     "ISSUE_WATER",
+        "daily_use_items":       "ISSUE_DAILY",
+        "medical_sahayata":      "ISSUE_MEDICAL",
+        "meal_request":          "ISSUE_MEAL",
+        "safai_hygiene":         "ISSUE_CLEANING",
+        "room_utility_issue":    "ISSUE_ROOM",
+        "bedding_comfort":       "ISSUE_BEDDING",
         "lost_found_other_help": "ISSUE_OTHER",
     }
 
-    # ── Ping — Meta health check ──
+    # ── ping — Meta periodic health check ──
     if action == "ping":
         return _respond({"version": version, "data": {"status": "active"}})
 
-    # ══════════════════════════════════════════════════════
-    # INIT — Return GUEST_DETAILS with auto-fetched data
-    # (INTRO is static, navigates here. We populate the data.)
-    # ══════════════════════════════════════════════════════
+    # ── INIT — user just opened the Flow. First screen is static INTRO. ──
     if action == "INIT":
-        phone, session = await _resolve_phone()
-        guest_data = {
-            "guest_name": "Guest", "room_number": "-",
-            "assigned_swayamsevak": "-", "swayamsevak_contact": "-",
-            "family_members": "0", "mobile_number": phone or "-",
-        }
-        if phone and phone != "+00-flow-builder-test":
-            reg, arrived_status = await _find_arrived_guest_by_phone(phone)
-            if reg:
-                guest_data = await _get_guest_data(reg)
-                logger.info(f"[WA Flow] INIT: guest found — {guest_data['guest_name']} (room {guest_data['room_number']}, status={arrived_status})")
-            else:
-                logger.info(f"[WA Flow] INIT: guest not found for phone {phone}")
-        # Return GUEST_DETAILS directly so the dynamic data is populated
-        # (INTRO is static and uses navigate, so it can't fetch data from backend)
-        return _respond({
-            "version": version,
-            "screen": "GUEST_DETAILS",
-            "data": guest_data
-        })
+        return _respond({"version": version, "screen": "INTRO", "data": {}})
 
-    # ── BACK ──
+    # ── BACK — echo current screen & data ──
     if action == "BACK":
-        return _respond({"version": version, "screen": screen or "INTRO", "data": flow_data})
+        return _respond({"version": version, "screen": screen or "INTRO", "data": flow_data or {}})
 
-    # ══════════════════════════════════════════════════════
-    # data_exchange from CATEGORY_SELECTION
-    # Routes to the correct ISSUE screen based on category
-    # ══════════════════════════════════════════════════════
+    # ── data_exchange — only used from CATEGORY_SELECTION in this flow ──
     if action == "data_exchange":
         if screen == "CATEGORY_SELECTION":
-            category = flow_data.get("category", "")
+            category = (flow_data.get("category") or "").strip()
             target_screen = CATEGORY_TO_ISSUE_SCREEN.get(category, "ISSUE_OTHER")
-            # Pass through all guest data + category to the issue screen
-            response_data = {
-                "guest_name": flow_data.get("guest_name", "Guest"),
-                "room_number": flow_data.get("room_number", "-"),
-                "assigned_swayamsevak": flow_data.get("assigned_swayamsevak", "-"),
-                "swayamsevak_contact": flow_data.get("swayamsevak_contact", "-"),
-                "family_members": flow_data.get("family_members", "0"),
-                "mobile_number": flow_data.get("mobile_number", "-"),
-                "category": category,
-            }
             logger.info(f"[WA Flow] CATEGORY_SELECTION → {target_screen} (category={category})")
+            # ISSUE_* screens declare ONLY `data.category`. Send exactly that key so
+            # Meta binds it cleanly; the ISSUE_* form adds request_type + additional_details
+            # client-side and the client-side navigate forwards all three to SUMMARY_SUBMIT.
             return _respond({
                 "version": version,
                 "screen": target_screen,
-                "data": response_data
+                "data": {"category": category},
             })
 
-        # Fallback for any unexpected data_exchange
-        logger.warning(f"[WA Flow] Unexpected data_exchange screen: {screen}")
-        return _respond({"version": version, "screen": screen or "INTRO", "data": flow_data})
+        # Any other data_exchange is unexpected — just acknowledge without changing screen.
+        logger.warning(f"[WA Flow] Unexpected data_exchange from screen={screen!r}, data={flow_data}")
+        return _respond({"version": version, "screen": screen or "INTRO", "data": flow_data or {}})
 
+    # Unknown action — safe fallback.
+    logger.warning(f"[WA Flow] Unknown action={action!r} — falling back to INTRO")
     return _respond({"version": version, "screen": "INTRO", "data": {}})
 
 # ─── Flow Session CRUD (for testing / manual flow_token→phone mapping) ───
