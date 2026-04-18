@@ -93,6 +93,34 @@ export default function WAFlowSettings() {
     toast.success("Endpoint URL copied to clipboard!");
   };
 
+  const downloadFlowJson = async () => {
+    try {
+      const res = await axios.get(`${API}/admin/wa-flow-json`, { headers: authHeaders() });
+      const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "panchariya_seva_desk_flow.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Flow JSON downloaded — paste it into Meta Flow Builder");
+    } catch (e) {
+      toast.error("Failed to download Flow JSON");
+    }
+  };
+
+  const copyFlowJson = async () => {
+    try {
+      const res = await axios.get(`${API}/admin/wa-flow-json`, { headers: authHeaders() });
+      await navigator.clipboard.writeText(JSON.stringify(res.data, null, 2));
+      toast.success("Flow JSON copied to clipboard!");
+    } catch (e) {
+      toast.error("Failed to copy Flow JSON");
+    }
+  };
+
   return (
     <div className="space-y-4" data-testid="wa-flow-settings">
       {/* Endpoint Info Card */}
@@ -117,6 +145,22 @@ export default function WAFlowSettings() {
         </div>
         <div className="mt-3 flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/30 rounded-lg p-2.5 text-xs text-emerald-100">
           <ShieldCheck size={14} /> Public key uploaded to Meta (signature VALID). Keep Flow in <b className="mx-1">Draft</b> until Help Centre integration is live.
+        </div>
+        {/* Latest Flow JSON — paste this into Meta Flow Builder when anything on the backend changes */}
+        <div className="mt-3 bg-amber-500/15 border border-amber-400/40 rounded-lg p-3 text-xs text-amber-100">
+          <p className="font-semibold mb-2">Latest Flow JSON (panchariya_seva_desk)</p>
+          <p className="opacity-90 mb-2">
+            After any backend change, download this JSON, paste it into <b>Meta Flow Builder → JSON editor</b>, save, and click <b>Publish</b>.
+            If your Summary screen shows literal <code>${'${data.category}'}</code> text, it means Meta is still on the old JSON.
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={downloadFlowJson} className="bg-amber-400 text-[#0B1C3D] px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-amber-300" data-testid="download-flow-json">
+              Download JSON
+            </button>
+            <button onClick={copyFlowJson} className="bg-white/10 border border-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-white/20" data-testid="copy-flow-json">
+              Copy JSON
+            </button>
+          </div>
         </div>
       </div>
 
