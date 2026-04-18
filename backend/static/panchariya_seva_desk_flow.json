@@ -29,19 +29,16 @@
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
+          { "type": "TextHeading", "text": "Panchariya Seva Desk" },
           {
-            "type": "TextHeading",
-            "text": "Panchariya Seva Desk"
+            "type": "Image",
+            "src": "https://res.cloudinary.com/ds0jyd7oj/image/upload/q_auto/f_auto/v1776504643/Your_paragraph_text_2_pl7x5l.png",
+            "width": 320,
+            "height": 120,
+            "scale-type": "contain",
+            "aspect-ratio": 3,
+            "alt-text": "Panchariya Seva Desk intro banner"
           },
-          {
-  "type": "Image",
-  "src": "https://res.cloudinary.com/ds0jyd7oj/image/upload/q_auto/f_auto/v1776504643/Your_paragraph_text_2_pl7x5l.png",
-  "width": 320,
-  "height": 120,
-  "scale-type": "contain",
-  "aspect-ratio": 3,
-  "alt-text": "Panchariya Seva Desk intro banner"
-},
           {
             "type": "TextBody",
             "text": "Jay Shri Krishna,\nShrimad Bhagavad Katha 2026 mein aapka hardik swagat hai.\nYeh Panchariya Seva Desk aapki suvidha aur sahayata ke liye tayyar hai.\n\nAgar aapko paani, bhojan, safai, medical ya kisi bhi prakaar ki madad chahiye ho, toh yahan se aasani se apni request bhej sakte hain.\n\nHumari seva team aap tak jaldi se jaldi pahunchne ka poora prayas karegi."
@@ -51,10 +48,8 @@
             "label": "Aage Badhein",
             "on-click-action": {
               "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "CATEGORY_SELECTION"
-              }
+              "next": { "type": "screen", "name": "CATEGORY_SELECTION" },
+              "payload": {}
             }
           }
         ]
@@ -66,52 +61,22 @@
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Category Chuniye"
-          },
-          {
-            "type": "TextBody",
-            "text": "Aapko kis prakaar ki sahayata chahiye?"
-          },
+          { "type": "TextHeading", "text": "Category Chuniye" },
+          { "type": "TextBody", "text": "Aapko kis prakaar ki sahayata chahiye?" },
           {
             "type": "Dropdown",
             "name": "category",
             "label": "Category",
             "required": true,
             "data-source": [
-              {
-                "id": "paani_chai_coffee",
-                "title": "Paani / Chai / Coffee"
-              },
-              {
-                "id": "daily_use_items",
-                "title": "Daily Use Items"
-              },
-              {
-                "id": "medical_sahayata",
-                "title": "Medical Sahayata"
-              },
-              {
-                "id": "meal_request",
-                "title": "Meal Request"
-              },
-              {
-                "id": "safai_hygiene",
-                "title": "Safai & Hygiene"
-              },
-              {
-                "id": "room_utility_issue",
-                "title": "Room / Utility Issue"
-              },
-              {
-                "id": "bedding_comfort",
-                "title": "Bedding / Comfort"
-              },
-              {
-                "id": "lost_found_other_help",
-                "title": "Lost & Found / Other Help"
-              }
+              { "id": "paani_chai_coffee", "title": "Paani / Chai / Coffee" },
+              { "id": "daily_use_items", "title": "Daily Use Items" },
+              { "id": "medical_sahayata", "title": "Medical Sahayata" },
+              { "id": "meal_request", "title": "Meal Request" },
+              { "id": "safai_hygiene", "title": "Safai & Hygiene" },
+              { "id": "room_utility_issue", "title": "Room / Utility Issue" },
+              { "id": "bedding_comfort", "title": "Bedding / Comfort" },
+              { "id": "lost_found_other_help", "title": "Lost & Found / Other Help" }
             ]
           },
           {
@@ -131,40 +96,22 @@
       "id": "ISSUE_WATER",
       "title": "Issue Details",
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "paani_chai_coffee"
-        }
+        "category": { "type": "string", "__example__": "paani_chai_coffee" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Issue Details"
-          },
-          {
-            "type": "TextBody",
-            "text": "Apni request select kijiye."
-          },
+          { "type": "TextHeading", "text": "Issue Details" },
+          { "type": "TextBody", "text": "Apni request select kijiye." },
           {
             "type": "Dropdown",
             "name": "request_type",
             "label": "Request Type",
             "required": true,
             "data-source": [
-              {
-                "id": "drinking_water_request",
-                "title": "Drinking Water Request"
-              },
-              {
-                "id": "tea_request",
-                "title": "Tea Request"
-              },
-              {
-                "id": "coffee_request",
-                "title": "Coffee Request"
-              }
+              { "id": "drinking_water_request", "title": "Drinking Water Request" },
+              { "id": "tea_request", "title": "Tea Request" },
+              { "id": "coffee_request", "title": "Coffee Request" }
             ]
           },
           {
@@ -178,11 +125,7 @@
             "type": "Footer",
             "label": "Summary Dekhein",
             "on-click-action": {
-              "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "SUMMARY_SUBMIT"
-              },
+              "name": "data_exchange",
               "payload": {
                 "category": "${data.category}",
                 "request_type": "${form.request_type}",
@@ -197,52 +140,25 @@
       "id": "ISSUE_DAILY",
       "title": "Issue Details",
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "daily_use_items"
-        }
+        "category": { "type": "string", "__example__": "daily_use_items" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Issue Details"
-          },
-          {
-            "type": "TextBody",
-            "text": "Apni request select kijiye."
-          },
+          { "type": "TextHeading", "text": "Issue Details" },
+          { "type": "TextBody", "text": "Apni request select kijiye." },
           {
             "type": "Dropdown",
             "name": "request_type",
             "label": "Request Type",
             "required": true,
             "data-source": [
-              {
-                "id": "soap_request",
-                "title": "Soap"
-              },
-              {
-                "id": "shampoo_request",
-                "title": "Shampoo"
-              },
-              {
-                "id": "toothpaste_request",
-                "title": "Toothpaste"
-              },
-              {
-                "id": "towel_request",
-                "title": "Towel"
-              },
-              {
-                "id": "other_daily_item",
-                "title": "Other Daily Use Item"
-              },
-              {
-                "id": "essential_kit_all_items",
-                "title": "Essential Kit (All Items)"
-              }
+              { "id": "soap_request", "title": "Soap" },
+              { "id": "shampoo_request", "title": "Shampoo" },
+              { "id": "toothpaste_request", "title": "Toothpaste" },
+              { "id": "towel_request", "title": "Towel" },
+              { "id": "other_daily_item", "title": "Other Daily Use Item" },
+              { "id": "essential_kit_all_items", "title": "Essential Kit (All Items)" }
             ]
           },
           {
@@ -256,11 +172,7 @@
             "type": "Footer",
             "label": "Summary Dekhein",
             "on-click-action": {
-              "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "SUMMARY_SUBMIT"
-              },
+              "name": "data_exchange",
               "payload": {
                 "category": "${data.category}",
                 "request_type": "${form.request_type}",
@@ -275,48 +187,24 @@
       "id": "ISSUE_MEDICAL",
       "title": "Issue Details",
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "medical_sahayata"
-        }
+        "category": { "type": "string", "__example__": "medical_sahayata" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Issue Details"
-          },
-          {
-            "type": "TextBody",
-            "text": "Apni request select kijiye."
-          },
+          { "type": "TextHeading", "text": "Issue Details" },
+          { "type": "TextBody", "text": "Apni request select kijiye." },
           {
             "type": "Dropdown",
             "name": "request_type",
             "label": "Request Type",
             "required": true,
             "data-source": [
-              {
-                "id": "first_aid_box",
-                "title": "First Aid Box"
-              },
-              {
-                "id": "headache_medicine",
-                "title": "Medicine for Headache"
-              },
-              {
-                "id": "cold_medicine",
-                "title": "Medicine for Cold"
-              },
-              {
-                "id": "fever_medicine",
-                "title": "Medicine for Fever"
-              },
-              {
-                "id": "medical_emergency",
-                "title": "Medical Emergency"
-              }
+              { "id": "first_aid_box", "title": "First Aid Box" },
+              { "id": "headache_medicine", "title": "Medicine for Headache" },
+              { "id": "cold_medicine", "title": "Medicine for Cold" },
+              { "id": "fever_medicine", "title": "Medicine for Fever" },
+              { "id": "medical_emergency", "title": "Medical Emergency" }
             ]
           },
           {
@@ -330,11 +218,7 @@
             "type": "Footer",
             "label": "Summary Dekhein",
             "on-click-action": {
-              "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "SUMMARY_SUBMIT"
-              },
+              "name": "data_exchange",
               "payload": {
                 "category": "${data.category}",
                 "request_type": "${form.request_type}",
@@ -349,40 +233,22 @@
       "id": "ISSUE_MEAL",
       "title": "Issue Details",
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "meal_request"
-        }
+        "category": { "type": "string", "__example__": "meal_request" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Issue Details"
-          },
-          {
-            "type": "TextBody",
-            "text": "Apni request select kijiye."
-          },
+          { "type": "TextHeading", "text": "Issue Details" },
+          { "type": "TextBody", "text": "Apni request select kijiye." },
           {
             "type": "Dropdown",
             "name": "request_type",
             "label": "Request Type",
             "required": true,
             "data-source": [
-              {
-                "id": "extra_meal_request",
-                "title": "Extra Meal Request"
-              },
-              {
-                "id": "special_meal_request",
-                "title": "Special Meal Request"
-              },
-              {
-                "id": "meal_not_received",
-                "title": "Meal Not Received"
-              }
+              { "id": "extra_meal_request", "title": "Extra Meal Request" },
+              { "id": "special_meal_request", "title": "Special Meal Request" },
+              { "id": "meal_not_received", "title": "Meal Not Received" }
             ]
           },
           {
@@ -396,11 +262,7 @@
             "type": "Footer",
             "label": "Summary Dekhein",
             "on-click-action": {
-              "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "SUMMARY_SUBMIT"
-              },
+              "name": "data_exchange",
               "payload": {
                 "category": "${data.category}",
                 "request_type": "${form.request_type}",
@@ -415,44 +277,23 @@
       "id": "ISSUE_CLEANING",
       "title": "Issue Details",
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "safai_hygiene"
-        }
+        "category": { "type": "string", "__example__": "safai_hygiene" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Issue Details"
-          },
-          {
-            "type": "TextBody",
-            "text": "Apni request select kijiye."
-          },
+          { "type": "TextHeading", "text": "Issue Details" },
+          { "type": "TextBody", "text": "Apni request select kijiye." },
           {
             "type": "Dropdown",
             "name": "request_type",
             "label": "Request Type",
             "required": true,
             "data-source": [
-              {
-                "id": "room_cleaning",
-                "title": "Room Cleaning"
-              },
-              {
-                "id": "washroom_cleaning",
-                "title": "Washroom Cleaning"
-              },
-              {
-                "id": "garbage_pickup",
-                "title": "Garbage Pickup"
-              },
-              {
-                "id": "mosquito_pest_control",
-                "title": "Mosquito / Pest Control"
-              }
+              { "id": "room_cleaning", "title": "Room Cleaning" },
+              { "id": "washroom_cleaning", "title": "Washroom Cleaning" },
+              { "id": "garbage_pickup", "title": "Garbage Pickup" },
+              { "id": "mosquito_pest_control", "title": "Mosquito / Pest Control" }
             ]
           },
           {
@@ -466,11 +307,7 @@
             "type": "Footer",
             "label": "Summary Dekhein",
             "on-click-action": {
-              "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "SUMMARY_SUBMIT"
-              },
+              "name": "data_exchange",
               "payload": {
                 "category": "${data.category}",
                 "request_type": "${form.request_type}",
@@ -485,44 +322,23 @@
       "id": "ISSUE_ROOM",
       "title": "Issue Details",
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "room_utility_issue"
-        }
+        "category": { "type": "string", "__example__": "room_utility_issue" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Issue Details"
-          },
-          {
-            "type": "TextBody",
-            "text": "Apni request select kijiye."
-          },
+          { "type": "TextHeading", "text": "Issue Details" },
+          { "type": "TextBody", "text": "Apni request select kijiye." },
           {
             "type": "Dropdown",
             "name": "request_type",
             "label": "Request Type",
             "required": true,
             "data-source": [
-              {
-                "id": "electricity_issue",
-                "title": "Electricity Issue"
-              },
-              {
-                "id": "water_supply_issue",
-                "title": "Water Supply Issue"
-              },
-              {
-                "id": "ac_fan_issue",
-                "title": "AC / Fan Issue"
-              },
-              {
-                "id": "other_room_utility_issue",
-                "title": "Other Room / Utility Issue"
-              }
+              { "id": "electricity_issue", "title": "Electricity Issue" },
+              { "id": "water_supply_issue", "title": "Water Supply Issue" },
+              { "id": "ac_fan_issue", "title": "AC / Fan Issue" },
+              { "id": "other_room_utility_issue", "title": "Other Room / Utility Issue" }
             ]
           },
           {
@@ -536,11 +352,7 @@
             "type": "Footer",
             "label": "Summary Dekhein",
             "on-click-action": {
-              "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "SUMMARY_SUBMIT"
-              },
+              "name": "data_exchange",
               "payload": {
                 "category": "${data.category}",
                 "request_type": "${form.request_type}",
@@ -555,44 +367,23 @@
       "id": "ISSUE_BEDDING",
       "title": "Issue Details",
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "bedding_comfort"
-        }
+        "category": { "type": "string", "__example__": "bedding_comfort" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Issue Details"
-          },
-          {
-            "type": "TextBody",
-            "text": "Apni request select kijiye."
-          },
+          { "type": "TextHeading", "text": "Issue Details" },
+          { "type": "TextBody", "text": "Apni request select kijiye." },
           {
             "type": "Dropdown",
             "name": "request_type",
             "label": "Request Type",
             "required": true,
             "data-source": [
-              {
-                "id": "blanket_request",
-                "title": "Blanket Request"
-              },
-              {
-                "id": "pillow_request",
-                "title": "Pillow Request"
-              },
-              {
-                "id": "bedsheet_request",
-                "title": "Bedsheet Request"
-              },
-              {
-                "id": "extra_bedding_request",
-                "title": "Extra Bedding Request"
-              }
+              { "id": "blanket_request", "title": "Blanket Request" },
+              { "id": "pillow_request", "title": "Pillow Request" },
+              { "id": "bedsheet_request", "title": "Bedsheet Request" },
+              { "id": "extra_bedding_request", "title": "Extra Bedding Request" }
             ]
           },
           {
@@ -606,11 +397,7 @@
             "type": "Footer",
             "label": "Summary Dekhein",
             "on-click-action": {
-              "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "SUMMARY_SUBMIT"
-              },
+              "name": "data_exchange",
               "payload": {
                 "category": "${data.category}",
                 "request_type": "${form.request_type}",
@@ -625,40 +412,22 @@
       "id": "ISSUE_OTHER",
       "title": "Issue Details",
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "lost_found_other_help"
-        }
+        "category": { "type": "string", "__example__": "lost_found_other_help" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Issue Details"
-          },
-          {
-            "type": "TextBody",
-            "text": "Apni request select kijiye."
-          },
+          { "type": "TextHeading", "text": "Issue Details" },
+          { "type": "TextBody", "text": "Apni request select kijiye." },
           {
             "type": "Dropdown",
             "name": "request_type",
             "label": "Request Type",
             "required": true,
             "data-source": [
-              {
-                "id": "lost_found",
-                "title": "Lost & Found"
-              },
-              {
-                "id": "general_help",
-                "title": "General Help"
-              },
-              {
-                "id": "other_request",
-                "title": "Other Request"
-              }
+              { "id": "lost_found", "title": "Lost & Found" },
+              { "id": "general_help", "title": "General Help" },
+              { "id": "other_request", "title": "Other Request" }
             ]
           },
           {
@@ -672,11 +441,7 @@
             "type": "Footer",
             "label": "Summary Dekhein",
             "on-click-action": {
-              "name": "navigate",
-              "next": {
-                "type": "screen",
-                "name": "SUMMARY_SUBMIT"
-              },
+              "name": "data_exchange",
               "payload": {
                 "category": "${data.category}",
                 "request_type": "${form.request_type}",
@@ -693,29 +458,19 @@
       "terminal": true,
       "success": true,
       "data": {
-        "category": {
-          "type": "string",
-          "__example__": "daily_use_items"
-        },
-        "request_type": {
-          "type": "string",
-          "__example__": "essential_kit_all_items"
-        },
-        "additional_details": {
-          "type": "string",
-          "__example__": "Urgent please"
-        }
+        "category_title": { "type": "string", "__example__": "Daily Use Items" },
+        "request_type_title": { "type": "string", "__example__": "Essential Kit (All Items)" },
+        "additional_details": { "type": "string", "__example__": "Urgent please" },
+        "category": { "type": "string", "__example__": "daily_use_items" },
+        "request_type": { "type": "string", "__example__": "essential_kit_all_items" }
       },
       "layout": {
         "type": "SingleColumnLayout",
         "children": [
-          {
-            "type": "TextHeading",
-            "text": "Request Summary"
-          },
+          { "type": "TextHeading", "text": "Request Summary" },
           {
             "type": "TextBody",
-            "text": "Bas ek final check ✅\n\nCategory: ${data.category}\nRequest Type: ${data.request_type}\nAdditional Details: ${data.additional_details}"
+            "text": "Bas ek final check ✅\n\nCategory: ${data.category_title}\nRequest Type: ${data.request_type_title}\nAdditional Details: ${data.additional_details}"
           },
           {
             "type": "Footer",
@@ -724,7 +479,9 @@
               "name": "complete",
               "payload": {
                 "category": "${data.category}",
+                "category_title": "${data.category_title}",
                 "request_type": "${data.request_type}",
+                "request_type_title": "${data.request_type_title}",
                 "additional_details": "${data.additional_details}",
                 "flow_name": "panchariya_seva_desk"
               }

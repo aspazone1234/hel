@@ -2710,15 +2710,20 @@ async def trigger_help_center_flow(from_number: str):
             await ensure_conversation(from_number, "", "help_center_flow")
             conv_phone = normalize_phone_for_wa(from_number)
             now_iso = datetime.now(timezone.utc).isoformat()
+            err_text = "" if ok else str(result)
             await db.wa_conversations.update_one({"phone": conv_phone}, {
                 "$push": {"messages": {
                     "id": str(uuid.uuid4()), "direction": "outgoing",
-                    "text": f"[Help Center Flow sent · template: {tmpl_name}]",
+                    "text": (
+                        f"[Help Center Flow sent · template: {tmpl_name}]"
+                        if ok
+                        else f"[Help Center Flow FAILED · template: {tmpl_name} · err: {err_text[:200]}]"
+                    ),
                     "msg_type": "template_flow",
                     "wa_message_id": result if ok else "",
                     "flow_token": flow_token,
                     "timestamp": now_iso, "status": "sent" if ok else "failed",
-                    "error_message": "" if ok else str(result),
+                    "error_message": err_text,
                 }},
                 "$set": {"last_message": f"[Help Center Flow · {tmpl_name}]", "last_message_at": now_iso}
             })
@@ -2733,7 +2738,12 @@ async def trigger_help_center_flow(from_number: str):
 
 async def _handle_flow_completion(from_number: str, response_json_str: str, nfm_data: dict):
     """Handle flow completion (nfm_reply) from SUMMARY_SUBMIT's complete action.
-    Extracts guest data, creates ticket, fires triggers."""
+    Extracts guest data, creates ticket, fires triggers.
+
+    IMPORTANT: If the submitter is NOT in the arrived-guest list, we REJECT the request
+    outright — we fire ONLY the `hc_flow_not_on_premise` template and do NOT create a
+    ticket and do NOT notify a swayamsevak.
+    """
     try:
         # Parse the response_json (it's a JSON string from Meta)
         if isinstance(response_json_str, str) and response_json_str.strip():
@@ -2746,31 +2756,86 @@ async def _handle_flow_completion(from_number: str, response_json_str: str, nfm_
 
         logger.info(f"[FlowComplete] Processing flow completion from {from_number}: keys={list(flow_payload.keys())}")
 
-        # Extract fields matching the user's SUMMARY_SUBMIT complete payload
-        guest_name = flow_payload.get("guest_name", "")
-        room_number = flow_payload.get("room_number", "")
-        category = flow_payload.get("category", "")
-        request_type = flow_payload.get("request_type", "")
-        additional_details = flow_payload.get("additional_details", "")
-        mobile_number = flow_payload.get("mobile_number", from_number)
+        # Extract fields (new JSON sends category, request_type, additional_details, *_title, flow_name)
+        category = (flow_payload.get("category") or "").strip()
+        category_title = (flow_payload.get("category_title") or "").strip()
+        request_type = (flow_payload.get("request_type") or "").strip()
+        request_type_title = (flow_payload.get("request_type_title") or "").strip()
+        additional_details = (flow_payload.get("additional_details") or "").strip()
 
         if not request_type and not category:
             logger.warning(f"[FlowComplete] No category/request_type in payload — skipping ticket creation")
             return
 
-        # Map the request_type to our ticket category system
+        # ── Arrived-guest gate (HARD REJECT when not on premise) ──
+        reg, arrived_status = await _find_arrived_guest_by_phone(from_number)
+        if arrived_status != "on_premise":
+            logger.info(
+                f"[FlowComplete] REJECT ticket — submitter {from_number} is not on premise "
+                f"(status={arrived_status}). Firing hc_flow_not_on_premise only, NO ticket created."
+            )
+            # Fire ONLY the not-on-premise template. No ticket, no swayamsevak ping.
+            try:
+                guest_name_reject = (reg.get("primary_guest_name") if reg else "") or "Guest"
+                await fire_system_trigger(
+                    "hc_flow_not_on_premise",
+                    from_number,
+                    {
+                        "guest_name": guest_name_reject,
+                        "service_type": request_type_title or category_title or category or request_type,
+                        "arrived_status": arrived_status,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"[FlowComplete] hc_flow_not_on_premise fire failed: {e}")
+            # Log the rejection in conversation so the admin view has a trace
+            try:
+                conv_phone = normalize_phone_for_wa(from_number)
+                now_iso = datetime.now(timezone.utc).isoformat()
+                await db.wa_conversations.update_one({"phone": conv_phone}, {
+                    "$push": {"messages": {
+                        "id": str(uuid.uuid4()), "direction": "incoming",
+                        "text": f"[Flow rejected — not on premise] {category_title or category}: {request_type_title or request_type}",
+                        "msg_type": "flow_submission_rejected",
+                        "timestamp": now_iso, "status": "received",
+                    }},
+                    "$set": {"last_message": "[Flow rejected — not on premise]", "last_message_at": now_iso},
+                })
+            except Exception as e:
+                logger.warning(f"[FlowComplete] reject-log persist failed: {e}")
+            return
+
+        # ── On-premise path: create the ticket, notify swayamsevak ──
+        # service_type is the category id used for SLA/priority lookup in _create_ticket_from_flow.
         service_type = request_type or category or "other_request"
         description = additional_details or ""
+        # room_or_location comes from the guest's registration, not from the Flow payload.
+        room_location = ""
+        if reg:
+            ra = reg.get("room_assignments") or []
+            if ra:
+                first = ra[0]
+                room_location = first.get("room_code") if isinstance(first, dict) else str(first)
+        guest_name = ""
+        if reg:
+            guest_name = reg.get("primary_guest_name", "") or reg.get("head_name", "") or ""
+            if not guest_name:
+                for att in reg.get("attendees", []):
+                    if att.get("id") == reg.get("group_head_id"):
+                        guest_name = att.get("name", "")
+                        break
 
-        # Create ticket
-        ticket, reg, arrived_status = await _create_ticket_from_flow(
-            from_number, service_type, category, room_number, description
+        ticket, _reg, arrived_status2 = await _create_ticket_from_flow(
+            from_number, service_type, category, room_location, description
         )
-        logger.info(f"[FlowComplete] Ticket created: id={ticket['id']} cat={service_type} guest={guest_name} phone={from_number}")
+        logger.info(
+            f"[FlowComplete] Ticket created: id={ticket['id']} cat={service_type} "
+            f"guest={guest_name} room={room_location or '-'} phone={from_number}"
+        )
 
-        # Fire HC system triggers
+        # Fire HC system triggers (captured + POC)
         try:
-            await fire_hc_flow_outcome(from_number, arrived_status, ticket)
+            await fire_hc_flow_outcome(from_number, arrived_status2, ticket)
         except Exception as e:
             logger.warning(f"[FlowComplete] fire_hc_flow_outcome failed: {e}")
 
@@ -2780,13 +2845,20 @@ async def _handle_flow_completion(from_number: str, response_json_str: str, nfm_
             now_iso = datetime.now(timezone.utc).isoformat()
             msg_doc = {
                 "id": str(uuid.uuid4()), "direction": "incoming",
-                "text": f"[Flow Submitted] {guest_name} — {category}: {request_type}. Details: {additional_details or '-'}",
+                "text": (
+                    f"[Flow Submitted] {guest_name or 'Guest'} — "
+                    f"{category_title or category}: {request_type_title or request_type}. "
+                    f"Details: {additional_details or '-'}"
+                ),
                 "msg_type": "flow_submission",
                 "timestamp": now_iso, "status": "received",
             }
             await db.wa_conversations.update_one({"phone": conv_phone}, {
                 "$push": {"messages": msg_doc},
-                "$set": {"last_message": f"[Flow: {request_type}]", "last_message_at": now_iso},
+                "$set": {
+                    "last_message": f"[Flow: {request_type_title or request_type}]",
+                    "last_message_at": now_iso,
+                },
             })
         except Exception as e:
             logger.warning(f"[FlowComplete] conv log failed: {e}")
@@ -2904,9 +2976,13 @@ async def whatsapp_webhook_receive(request: Request):
                 ts = status.get("timestamp", "")
                 errors = status.get("errors", [])
                 err_msg = errors[0].get("message", "") if errors else ""
+                err_code = errors[0].get("code", "") if errors else ""
+                err_title = errors[0].get("title", "") if errors else ""
+                full_err = " | ".join([x for x in [str(err_code) if err_code else "", err_title, err_msg] if x])
                 await db.wa_webhook_events.insert_one({
                     "id": str(uuid.uuid4()), "wa_message_id": wa_id,
                     "event_type": st, "timestamp": ts, "error_message": err_msg,
+                    "error_code": err_code, "error_title": err_title,
                     "raw": status, "received_at": datetime.now(timezone.utc).isoformat()
                 })
                 update_fields = {"status": st}
@@ -2918,16 +2994,22 @@ async def whatsapp_webhook_receive(request: Request):
                     update_fields["read_at"] = datetime.now(timezone.utc).isoformat()
                 elif st == "failed":
                     update_fields["error_message"] = err_msg
+                    update_fields["error_detail"] = full_err
                 await db.wa_campaign_recipients.update_one(
                     {"wa_message_id": wa_id}, {"$set": update_fields}
                 )
                 await db.wa_message_queue.update_one(
-                    {"wa_message_id": wa_id}, {"$set": {"status": st}}
+                    {"wa_message_id": wa_id},
+                    {"$set": {"status": st, "error_detail": full_err} if st == "failed" else {"status": st}}
                 )
-                # Update conversation message status
+                # Update conversation message status + surface the failure reason inline
+                conv_set = {"messages.$.status": st}
+                if st == "failed" and full_err:
+                    conv_set["messages.$.error_message"] = full_err
+                    conv_set["messages.$.text"] = f"[UNDELIVERED: {full_err[:140]}]"
                 await db.wa_conversations.update_one(
                     {"messages.wa_message_id": wa_id},
-                    {"$set": {"messages.$.status": st}}
+                    {"$set": conv_set}
                 )
     return {"status": "ok"}
 
@@ -4083,6 +4165,12 @@ async def _create_ticket_from_flow(phone: str, service_type: str, category_group
                     guest_name = att.get("name", "")
                     break
         guest_mobile = reg.get("primary_mobile", phone)
+        # Auto-derive room_or_location from the registration if caller didn't supply one.
+        if not room_location:
+            ra = reg.get("room_assignments") or []
+            if ra:
+                first = ra[0]
+                room_location = first.get("room_code") if isinstance(first, dict) else str(first)
         # Point-of-contact = assigned swamsevak on the registration
         _swam_val = reg.get("assigned_swamsevak", "")
         if _swam_val:
@@ -4204,6 +4292,65 @@ async def wa_flow_data_exchange(request: Request):
             return PlainTextResponse(content=encrypted, status_code=200)
         return payload
 
+    # Category id → human-readable title (for SUMMARY display + admin ticket/template)
+    CATEGORY_TITLES = {
+        "paani_chai_coffee":     "Paani / Chai / Coffee",
+        "daily_use_items":       "Daily Use Items",
+        "medical_sahayata":      "Medical Sahayata",
+        "meal_request":          "Meal Request",
+        "safai_hygiene":         "Safai & Hygiene",
+        "room_utility_issue":    "Room / Utility Issue",
+        "bedding_comfort":       "Bedding / Comfort",
+        "lost_found_other_help": "Lost & Found / Other Help",
+    }
+    # Request-type id → title (covers all ISSUE_* screens)
+    REQUEST_TYPE_TITLES = {
+        # ISSUE_WATER
+        "drinking_water_request":   "Drinking Water Request",
+        "tea_request":              "Tea Request",
+        "coffee_request":           "Coffee Request",
+        # ISSUE_DAILY
+        "soap_request":             "Soap",
+        "shampoo_request":          "Shampoo",
+        "toothpaste_request":       "Toothpaste",
+        "towel_request":            "Towel",
+        "other_daily_item":         "Other Daily Use Item",
+        "essential_kit_all_items":  "Essential Kit (All Items)",
+        # ISSUE_MEDICAL
+        "first_aid_box":            "First Aid Box",
+        "headache_medicine":        "Medicine for Headache",
+        "cold_medicine":            "Medicine for Cold",
+        "fever_medicine":           "Medicine for Fever",
+        "medical_emergency":        "Medical Emergency",
+        # ISSUE_MEAL
+        "extra_meal_request":       "Extra Meal Request",
+        "special_meal_request":     "Special Meal Request",
+        "meal_not_received":        "Meal Not Received",
+        # ISSUE_CLEANING
+        "room_cleaning":            "Room Cleaning",
+        "washroom_cleaning":        "Washroom Cleaning",
+        "garbage_pickup":           "Garbage Pickup",
+        "mosquito_pest_control":    "Mosquito / Pest Control",
+        # ISSUE_ROOM
+        "electricity_issue":        "Electricity Issue",
+        "water_supply_issue":       "Water Supply Issue",
+        "ac_fan_issue":             "AC / Fan Issue",
+        "other_room_utility_issue": "Other Room / Utility Issue",
+        # ISSUE_BEDDING
+        "blanket_request":          "Blanket Request",
+        "pillow_request":           "Pillow Request",
+        "bedsheet_request":         "Bedsheet Request",
+        "extra_bedding_request":    "Extra Bedding Request",
+        # ISSUE_OTHER
+        "lost_found":               "Lost & Found",
+        "general_help":             "General Help",
+        "other_request":            "Other Request",
+    }
+    ISSUE_SCREENS = {
+        "ISSUE_WATER", "ISSUE_DAILY", "ISSUE_MEDICAL", "ISSUE_MEAL",
+        "ISSUE_CLEANING", "ISSUE_ROOM", "ISSUE_BEDDING", "ISSUE_OTHER",
+    }
+
     # Category id (as set in CATEGORY_SELECTION Dropdown) → target ISSUE_* screen id.
     # Keys MUST match the Dropdown ids in panchariya_seva_desk_flow.json.
     CATEGORY_TO_ISSUE_SCREEN = {
@@ -4229,19 +4376,42 @@ async def wa_flow_data_exchange(request: Request):
     if action == "BACK":
         return _respond({"version": version, "screen": screen or "INTRO", "data": flow_data or {}})
 
-    # ── data_exchange — only used from CATEGORY_SELECTION in this flow ──
+    # ── data_exchange — two hops in this flow ──
     if action == "data_exchange":
+        # HOP 1 — CATEGORY_SELECTION → ISSUE_*
         if screen == "CATEGORY_SELECTION":
             category = (flow_data.get("category") or "").strip()
             target_screen = CATEGORY_TO_ISSUE_SCREEN.get(category, "ISSUE_OTHER")
             logger.info(f"[WA Flow] CATEGORY_SELECTION → {target_screen} (category={category})")
-            # ISSUE_* screens declare ONLY `data.category`. Send exactly that key so
-            # Meta binds it cleanly; the ISSUE_* form adds request_type + additional_details
-            # client-side and the client-side navigate forwards all three to SUMMARY_SUBMIT.
             return _respond({
                 "version": version,
                 "screen": target_screen,
                 "data": {"category": category},
+            })
+
+        # HOP 2 — ISSUE_* → SUMMARY_SUBMIT
+        # Backend binds category/request_type (ids + friendly titles) + additional_details
+        # onto SUMMARY_SUBMIT's data so the three text lines auto-populate reliably.
+        if screen in ISSUE_SCREENS:
+            category = (flow_data.get("category") or "").strip()
+            request_type = (flow_data.get("request_type") or "").strip()
+            additional_details = (flow_data.get("additional_details") or "").strip()
+            category_title = CATEGORY_TITLES.get(category, category or "-")
+            request_type_title = REQUEST_TYPE_TITLES.get(request_type, request_type or "-")
+            logger.info(
+                f"[WA Flow] {screen} → SUMMARY_SUBMIT "
+                f"(category={category}, request_type={request_type}, details_len={len(additional_details)})"
+            )
+            return _respond({
+                "version": version,
+                "screen": "SUMMARY_SUBMIT",
+                "data": {
+                    "category": category,
+                    "request_type": request_type,
+                    "additional_details": additional_details or "-",
+                    "category_title": category_title,
+                    "request_type_title": request_type_title,
+                },
             })
 
         # Any other data_exchange is unexpected — just acknowledge without changing screen.
@@ -4474,6 +4644,9 @@ async def fire_hc_flow_outcome(phone: str, arrived_status: str, ticket: dict):
             swam = await db.custom_admins.find_one({"name": ticket.get("assigned_to_name", "")}, {"_id": 0})
         swam_phone = (swam.get("phone") or swam.get("mobile") or "") if swam else ""
         if swam and swam_phone:
+            # Provide multiple alias keys for the room so any template labeling works:
+            #   {{room}}, {{room_no}}, {{room_number}}, {{room_or_location}}, {{location}}
+            _room_val = ticket.get("room_or_location", "") or "-"
             poc_vars = {
                 "swamsevak_name": swam.get("name", ""),
                 "guest_name": ticket.get("guest_name", ""),
@@ -4481,7 +4654,11 @@ async def fire_hc_flow_outcome(phone: str, arrived_status: str, ticket: dict):
                 "ticket_id": (ticket.get("id") or "")[:8].upper(),
                 "service_type": ticket.get("category_label") or ticket.get("category", ""),
                 "priority": ticket.get("priority", ""),
-                "room_or_location": ticket.get("room_or_location", ""),
+                "room_or_location": _room_val,
+                "room": _room_val,
+                "room_no": _room_val,
+                "room_number": _room_val,
+                "location": _room_val,
                 "description": (ticket.get("description", "") or "")[:200],
             }
             await fire_system_trigger("help_ticket_created", swam_phone, poc_vars)

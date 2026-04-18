@@ -247,13 +247,22 @@ export default function HelpCentre({ user }) {
             <div key={t.id} className="bg-white rounded-xl p-4 border hover:shadow-sm transition" data-testid={`ticket-${t.id}`}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
+                  {/* Guest name + Room shown prominently on top */}
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="font-semibold text-[#0B1C3D] text-sm" data-testid={`ticket-guest-${t.id}`}>
+                      {t.guest_name || "Guest"}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700" data-testid={`ticket-room-${t.id}`}>
+                      Room: {t.room_or_location || "—"}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[t.priority] || ""}`}>{t.priority}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[t.status] || ""}`}>{t.status}</span>
                     <span className={`text-xs font-medium ${getSLAColor(t)}`}><Clock size={10} className="inline" /> {getRemainingTime(t)}</span>
                   </div>
-                  <p className="font-medium text-[#0B1C3D] text-sm mt-1 truncate">{t.description || t.category}</p>
-                  <p className="text-xs text-gray-500">{t.guest_name || "Admin"} • Assigned: {t.assigned_to || "Unassigned"}</p>
+                  <p className="text-[#0B1C3D] text-sm mt-1 truncate">{t.category_label || t.category}{t.description ? ` — ${t.description}` : ""}</p>
+                  <p className="text-xs text-gray-500">Assigned: {t.assigned_to_name || t.assigned_to || "Unassigned"}</p>
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <button onClick={() => { setViewTicket(t); setResolveNote(""); }} data-testid={`view-ticket-${t.id}`}
@@ -315,6 +324,7 @@ export default function HelpCentre({ user }) {
                 <div className="flex justify-between"><span className="text-gray-500">Status</span><span className={`px-2 py-0.5 rounded-full text-xs ${statusColors[viewTicket.status]}`}>{viewTicket.status}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">SLA</span><span className={getSLAColor(viewTicket)}>{getRemainingTime(viewTicket)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Guest</span><span>{viewTicket.guest_name || "—"} {viewTicket.guest_mobile && `(${viewTicket.guest_mobile})`}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Room / Location</span><span className="font-medium" data-testid="detail-room">{viewTicket.room_or_location || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Created By</span><span>{viewTicket.created_by}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Assigned To</span><span>{viewTicket.assigned_to || "Unassigned"}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Created</span><span>{new Date(viewTicket.created_at).toLocaleString()}</span></div>
