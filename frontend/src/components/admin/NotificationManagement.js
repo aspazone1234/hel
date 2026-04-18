@@ -200,7 +200,30 @@ function ConversationsTab({ authHeaders, initialPhone }) {
             <p className="text-center text-gray-400 text-sm py-8">No messages yet</p>
           )}
           {(convoDetail.messages || []).map((msg, i) => (
-            <div key={msg.id || i} className={`flex ${msg.direction === "outgoing" ? "justify-end" : "justify-start"}`}>
+            <div key={msg.id || i} className={`flex ${
+              msg.msg_type === "system_notification" ? "justify-center"
+              : msg.direction === "outgoing" ? "justify-end" : "justify-start"
+            }`}>
+              {msg.msg_type === "system_notification" ? (
+                <div className="max-w-[85%] rounded-xl px-4 py-2 shadow-sm bg-amber-50 border border-amber-200 text-center">
+                  <p className="text-[10px] text-amber-700 font-semibold mb-0.5">System Notification</p>
+                  <p className="text-xs text-amber-900">{msg.text}</p>
+                  <span className="text-[10px] text-amber-500">{formatTime(msg.timestamp)}</span>
+                </div>
+              ) : msg.msg_type === "template_flow" ? (
+                <div className="max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm bg-blue-50 border border-blue-200 rounded-br-md">
+                  <p className="text-[10px] text-blue-700 font-medium mb-0.5">Flow Template</p>
+                  <p className="text-sm text-blue-900 whitespace-pre-wrap">{msg.text}</p>
+                  <div className="flex items-center justify-end gap-1 mt-1">
+                    <span className="text-[10px] text-gray-500">{formatTime(msg.timestamp)}</span>
+                    <span className="text-[10px]">
+                      {msg.status === "sent" ? <span className="text-gray-400">&#10003;</span>
+                        : msg.status === "failed" ? <span className="text-red-500">&#10007;</span>
+                        : <Clock size={10} className="text-gray-400" />}
+                    </span>
+                  </div>
+                </div>
+              ) : (
               <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm ${msg.direction === "outgoing"
                 ? "bg-[#DCF8C6] text-gray-900 rounded-br-md"
                 : "bg-white text-gray-900 rounded-bl-md border"}`}>
@@ -225,7 +248,7 @@ function ConversationsTab({ authHeaders, initialPhone }) {
                 )}
                 {/* Incoming media from WhatsApp */}
                 {msg.msg_type === "image" && !msg.media_url && (
-                  <p className="text-xs italic text-gray-500">[🖼 Image received]</p>
+                  <p className="text-xs italic text-gray-500">[Image received]</p>
                 )}
                 <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
                 {/* Error detail for failed outgoing */}
@@ -241,15 +264,16 @@ function ConversationsTab({ authHeaders, initialPhone }) {
                   <span className="text-[10px] text-gray-500">{formatTime(msg.timestamp)}</span>
                   {msg.direction === "outgoing" && (
                     <span className="text-[10px]">
-                      {msg.status === "read" ? <span className="text-blue-500">✓✓</span>
-                        : msg.status === "delivered" ? <span className="text-gray-500">✓✓</span>
-                        : msg.status === "sent" ? <span className="text-gray-400">✓</span>
-                        : msg.status === "failed" ? <span className="text-red-500">✗</span>
+                      {msg.status === "read" ? <span className="text-blue-500">&#10003;&#10003;</span>
+                        : msg.status === "delivered" ? <span className="text-gray-500">&#10003;&#10003;</span>
+                        : msg.status === "sent" ? <span className="text-gray-400">&#10003;</span>
+                        : msg.status === "failed" ? <span className="text-red-500">&#10007;</span>
                         : <Clock size={10} className="text-gray-400" />}
                     </span>
                   )}
                 </div>
               </div>
+              )}
             </div>
           ))}
           <div ref={messagesEndRef} />
