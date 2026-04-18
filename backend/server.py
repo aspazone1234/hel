@@ -4764,6 +4764,10 @@ async def send_wa_flow_template(phone: str, template_name: str, language: str, f
     """Send a WhatsApp template that contains a Flow CTA button.
     Mints a flow_token, binds it to the phone (so Flow submission knows the user), then sends
     the template with the flow parameters. Returns (success, wa_message_id_or_error, flow_token).
+
+    Automatically attaches the header media (image / video / document) from our wa_templates
+    record so that templates with a media header on Meta don't error with
+    (#132012) Parameter format does not match format in the created template.
     """
     if not WA_PHONE_ID or not WA_TOKEN:
         return False, "WhatsApp API not configured", ""
@@ -4780,22 +4784,44 @@ async def send_wa_flow_template(phone: str, template_name: str, language: str, f
         upsert=True
     )
     clean_phone = normalize_phone_for_wa(phone)
+
+    # Look up the template doc to figure out header media (if any) so we attach the
+    # header component when Meta's template requires one.
+    tmpl_doc = await db.wa_templates.find_one(
+        {"meta_template_name": template_name, "language": language}, {"_id": 0}
+    )
+    if not tmpl_doc:
+        tmpl_doc = await db.wa_templates.find_one({"meta_template_name": template_name}, {"_id": 0}) or {}
+
     components = []
+
+    # 1. Header media (only if the template has one)
+    header_type = (tmpl_doc.get("header_type") or "").lower()
+    header_url = tmpl_doc.get("header_media_url") or ""
+    if header_type in ("image", "video", "document") and header_url:
+        components.append({
+            "type": "header",
+            "parameters": [{"type": header_type, header_type: {"link": header_url}}],
+        })
+
+    # 2. Body params (only if template has variables)
     if body_params:
-        components.append({"type": "body", "parameters": [{"type": "text", "text": str(v)} for v in body_params]})
-    # Flow CTA button as a button component (index 0)
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": str(v)} for v in body_params],
+        })
+
+    # 3. Flow CTA button. For templates configured with action type = "Complete flow" +
+    # "Pre-defined screen", Meta does NOT accept flow_action_data — sending an empty
+    # object causes (#132012). Only include it when we actually have data to pass.
+    flow_action_obj = {"flow_token": flow_token}
     components.append({
         "type": "button",
         "sub_type": "flow",
         "index": "0",
-        "parameters": [{
-            "type": "action",
-            "action": {
-                "flow_token": flow_token,
-                "flow_action_data": {},
-            }
-        }]
+        "parameters": [{"type": "action", "action": flow_action_obj}],
     })
+
     payload = {
         "messaging_product": "whatsapp",
         "to": clean_phone,
@@ -4816,7 +4842,13 @@ async def send_wa_flow_template(phone: str, template_name: str, language: str, f
             data = resp.json()
             if resp.status_code == 200 and data.get("messages"):
                 return True, data["messages"][0]["id"], flow_token
-            return False, data.get("error", {}).get("message", str(data)), flow_token
+            err = data.get("error", {}).get("message", str(data))
+            err_code = data.get("error", {}).get("code", "")
+            logger.error(
+                f"[send_wa_flow_template] Meta rejected template={template_name} "
+                f"code={err_code} msg={err} payload_components={[c['type'] for c in components]}"
+            )
+            return False, f"({err_code}) {err}" if err_code else err, flow_token
     except Exception as e:
         return False, str(e), flow_token
 
