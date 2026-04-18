@@ -4063,6 +4063,16 @@ async def wa_flow_health():
     """Health check for WhatsApp Flow endpoint (browser only)."""
     return {"status": "ok", "service": "wa-flow-data-exchange"}
 
+@api_router.get("/admin/wa-flow-json")
+async def get_flow_json(request: Request):
+    """Download the Panchariya Seva Desk Flow JSON for Meta Flow Builder."""
+    await require_superadmin(request)
+    flow_path = ROOT_DIR / "static" / "panchariya_seva_desk_flow.json"
+    if not flow_path.exists():
+        raise HTTPException(status_code=404, detail="Flow JSON file not found")
+    with open(flow_path) as f:
+        return json.load(f)
+
 @api_router.post("/webhooks/wa-flow")
 async def wa_flow_data_exchange(request: Request):
     """
@@ -4303,6 +4313,7 @@ async def wa_flow_data_exchange(request: Request):
                 "data": {
                     "category_label": cat_label,
                     "issues": issue_data,
+                    "selected_category": selected_cat,
                 }
             })
 

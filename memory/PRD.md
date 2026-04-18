@@ -74,7 +74,7 @@ Import the GitHub repo `aspazone1234/hel@new3`, install deps, get it running end
 - All frontend UI tests passed (dashboard, notifications, conversations, triggers)
 
 ## In-flight / Awaiting User Decision
-- User needs to build matching Flow JSON in Meta Flow Builder with screen IDs: WELCOME, GUEST_DETAILS, CATEGORY, ISSUE_DETAILS, SUMMARY, SUCCESS, NOT_ELIGIBLE
+- User needs to upload the Flow JSON to Meta Flow Builder (available at `/api/admin/wa-flow-json` or `/app/backend/static/panchariya_seva_desk_flow.json`)
 - WA Flow private key needs to be configured for encrypted data exchange in production
 - `keyword_template_name` on the flow config needs to be set for auto-triggering flow on unmatched messages
 

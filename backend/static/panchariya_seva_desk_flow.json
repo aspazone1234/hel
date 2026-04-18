@@ -1,0 +1,375 @@
+{
+  "version": "6.0",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "NOT_ELIGIBLE": [],
+    "WELCOME": ["GUEST_DETAILS"],
+    "GUEST_DETAILS": ["CATEGORY"],
+    "CATEGORY": ["ISSUE_DETAILS"],
+    "ISSUE_DETAILS": ["SUMMARY"],
+    "SUMMARY": ["SUCCESS"],
+    "SUCCESS": []
+  },
+  "screens": [
+    {
+      "id": "NOT_ELIGIBLE",
+      "title": "Panchariya Seva Desk",
+      "terminal": true,
+      "data": {
+        "info_text": {
+          "type": "string",
+          "__example__": "Yeh seva sirf arrived guests ke liye hai. Kripya pehle check-in karein."
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "not_eligible_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Seva Uplabdh Nahi"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.info_text}"
+              },
+              {
+                "type": "Footer",
+                "label": "Band Karein",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {}
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "WELCOME",
+      "title": "Panchariya Seva Desk",
+      "data": {
+        "welcome_text": {
+          "type": "string",
+          "__example__": "Jay Shri Krishna!\n\nShrimad Bhagavad Katha 2026 mein aapka hardik swagat hai."
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "welcome_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Panchariya Seva Desk"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.welcome_text}"
+              },
+              {
+                "type": "Footer",
+                "label": "Aage Badhein",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {}
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "GUEST_DETAILS",
+      "title": "Aapki Details",
+      "data": {
+        "details_text": {
+          "type": "string",
+          "__example__": "Naam: Ashwini\nRoom Number: 101\nAssigned Swayamsevak: Tester\nSwayamsevak Contact: +91 7229900422\nFamily Members: 1\nMobile: +917229900422"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "details_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Aapki Details"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Kripya apni details verify kar lijiye:"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.details_text}"
+              },
+              {
+                "type": "TextCaption",
+                "text": "Agar sab sahi hai, toh aage badhein."
+              },
+              {
+                "type": "Footer",
+                "label": "Details Sahi Hain",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {}
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "CATEGORY",
+      "title": "Category Chuniye",
+      "data": {
+        "categories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "water_chai", "title": "Paani / Chai / Coffee" },
+            { "id": "daily_items", "title": "Daily Use Items" },
+            { "id": "medical", "title": "Medical Sahayata" },
+            { "id": "meal", "title": "Meal Request" },
+            { "id": "cleaning", "title": "Safai & Hygiene" },
+            { "id": "room_utility", "title": "Room / Utility Issue" },
+            { "id": "bedding", "title": "Bedding / Comfort" },
+            { "id": "other", "title": "Lost & Found / Other Help" }
+          ]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "category_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Category Chuniye"
+              },
+              {
+                "type": "TextBody",
+                "text": "Aapko kis prakaar ki sahayata chahiye?"
+              },
+              {
+                "type": "Dropdown",
+                "name": "selected_category",
+                "label": "Category",
+                "required": true,
+                "data-source": "${data.categories}"
+              },
+              {
+                "type": "Footer",
+                "label": "Agla Step",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "selected_category": "${form.selected_category}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ISSUE_DETAILS",
+      "title": "Issue Details",
+      "data": {
+        "category_label": {
+          "type": "string",
+          "__example__": "Medical Sahayata"
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" }
+            }
+          },
+          "__example__": [
+            { "id": "first_aid", "title": "First Aid Box" },
+            { "id": "medicines", "title": "Medicines (Headache, Cold, Fever)" },
+            { "id": "medical_emergency", "title": "Medical Emergency" }
+          ]
+        },
+        "selected_category": {
+          "type": "string",
+          "__example__": "medical"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "issue_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Issue Details"
+              },
+              {
+                "type": "TextBody",
+                "text": "Ab apni exact request select kijiye aur agar zaroori ho toh thodi aur detail bhi likh dijiye."
+              },
+              {
+                "type": "Dropdown",
+                "name": "selected_issue",
+                "label": "Request Type",
+                "required": true,
+                "data-source": "${data.issues}"
+              },
+              {
+                "type": "TextArea",
+                "name": "additional_details",
+                "label": "Additional Details (Optional)",
+                "required": false,
+                "helper-text": "Jaise quantity, urgency, room situation, ya koi khaas baat"
+              },
+              {
+                "type": "Footer",
+                "label": "Summary Dekhein",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "selected_category": "${data.selected_category}",
+                    "selected_issue": "${form.selected_issue}",
+                    "additional_details": "${form.additional_details}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUMMARY",
+      "title": "Request Summary",
+      "data": {
+        "summary_text": {
+          "type": "string",
+          "__example__": "Naam: Ashwini\nRoom Number: 101\nMobile: +917229900422\nCategory: Medical Sahayata\nRequest Type: First Aid Box\nAdditional Details: Need first aid"
+        },
+        "selected_category": {
+          "type": "string",
+          "__example__": "medical"
+        },
+        "selected_issue": {
+          "type": "string",
+          "__example__": "first_aid"
+        },
+        "additional_details": {
+          "type": "string",
+          "__example__": "Need first aid for minor cut"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "summary_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Request Summary"
+              },
+              {
+                "type": "TextSubheading",
+                "text": "Bas ek final check"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.summary_text}"
+              },
+              {
+                "type": "TextCaption",
+                "text": "Aapki request submit hote hi humari sahayata team ispar turant kaam shuru karegi. Dhanyavaad!"
+              },
+              {
+                "type": "Footer",
+                "label": "Request Submit Karein",
+                "on-click-action": {
+                  "name": "data_exchange",
+                  "payload": {
+                    "selected_category": "${data.selected_category}",
+                    "selected_issue": "${data.selected_issue}",
+                    "additional_details": "${data.additional_details}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUCCESS",
+      "title": "Request Submitted",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "success_text": {
+          "type": "string",
+          "__example__": "Aapki request successfully submit ho gayi hai!\n\nTicket ID: ABC12345\n\nHumari sahayata team ispar turant kaam shuru karegi.\n\nDhanyavaad!"
+        },
+        "ticket_id": {
+          "type": "string",
+          "__example__": "ABC12345"
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "Form",
+            "name": "success_form",
+            "children": [
+              {
+                "type": "TextHeading",
+                "text": "Request Submitted!"
+              },
+              {
+                "type": "TextBody",
+                "text": "${data.success_text}"
+              },
+              {
+                "type": "Footer",
+                "label": "Band Karein",
+                "on-click-action": {
+                  "name": "complete",
+                  "payload": {}
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
