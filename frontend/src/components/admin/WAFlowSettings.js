@@ -203,6 +203,18 @@ export default function WAFlowSettings() {
                 placeholder="e.g. help, seva, request" className="mt-1" data-testid="flow-keywords-input" />
               <p className="text-[10px] text-gray-400 mt-1">When users send these keywords on WhatsApp, the corresponding template with this Flow will open.</p>
             </div>
+            <div>
+              <Label>Auto-Trigger Template Name <span className="text-amber-600 text-[10px] font-normal">(critical for auto-trigger)</span></Label>
+              <Input value={form.keyword_template_name} onChange={e => setForm(p => ({ ...p, keyword_template_name: e.target.value }))}
+                placeholder="e.g. raise_a_seva_request" className="mt-1" data-testid="flow-template-name-input" />
+              <p className="text-[10px] text-gray-400 mt-1">Exact <b>meta_template_name</b> of the WhatsApp template that has the Flow CTA button. When a user sends any message that doesn't match auto-responses, this template will be sent to open the flow.</p>
+            </div>
+            <div>
+              <Label>Template Language</Label>
+              <Input value={form.keyword_template_language} onChange={e => setForm(p => ({ ...p, keyword_template_language: e.target.value }))}
+                placeholder="en" className="mt-1" data-testid="flow-template-lang-input" />
+              <p className="text-[10px] text-gray-400 mt-1">Language code of the template (e.g. en, hi)</p>
+            </div>
             <Button onClick={saveFlow} className="w-full bg-[#0B1C3D] text-white" data-testid="save-flow-btn">
               {editFlow ? "Update Flow" : "Register Flow"}
             </Button>
