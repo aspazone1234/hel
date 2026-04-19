@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"wa_message_id":{"$numberInt":"1"}},"name":"wa_message_id_1"}],"uuid":"cdc2bdaa8a864d47ae1fc865f20077aa","collectionName":"wa_webhook_events","type":"collection"}

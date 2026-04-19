@@ -1,0 +1,281 @@
+@keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+/* === Custom Animations === */
+html { scroll-behavior: smooth; }
+
+/* Floating Particles */
+@keyframes float-up {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  15% { opacity: 0.8; }
+  85% { opacity: 0.6; }
+  100% { transform: translateY(-100vh) translateX(30px); opacity: 0; }
+}
+@keyframes float-up-alt {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  15% { opacity: 0.6; }
+  85% { opacity: 0.4; }
+  100% { transform: translateY(-100vh) translateX(-25px); opacity: 0; }
+}
+
+/* Diya Flame Flicker */
+@keyframes flicker {
+  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  25% { opacity: 0.85; transform: scale(0.97) rotate(-1deg); }
+  50% { opacity: 0.7; transform: scale(0.95) rotate(1deg); }
+  75% { opacity: 0.9; transform: scale(0.98) rotate(-0.5deg); }
+}
+
+/* Gold Glow Pulse */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 20px rgba(212,175,55,0.3), 0 0 40px rgba(212,175,55,0.1); }
+  50% { box-shadow: 0 0 30px rgba(212,175,55,0.5), 0 0 60px rgba(212,175,55,0.2); }
+}
+@keyframes text-glow {
+  0%, 100% { text-shadow: 0 0 20px rgba(212,175,55,0.3); }
+  50% { text-shadow: 0 0 40px rgba(212,175,55,0.6), 0 0 80px rgba(212,175,55,0.3); }
+}
+
+/* Aura */
+@keyframes aura-wave {
+  0% { transform: scale(1); opacity: 0.3; }
+  50% { transform: scale(1.1); opacity: 0.15; }
+  100% { transform: scale(1); opacity: 0.3; }
+}
+
+/* Bell Swing */
+@keyframes bell-swing {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(3deg); }
+  75% { transform: rotate(-3deg); }
+}
+
+/* Shimmer */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Fade In Up */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Fade out */
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Scale In */
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Countdown pulse */
+@keyframes count-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+/* Utility Classes */
+.animate-flicker { animation: flicker 3s ease-in-out infinite; }
+.animate-glow-pulse { animation: glow-pulse 4s ease-in-out infinite; }
+.animate-text-glow { animation: text-glow 4s ease-in-out infinite; }
+.animate-aura { animation: aura-wave 6s ease-in-out infinite; }
+.animate-bell { animation: bell-swing 4s ease-in-out infinite; transform-origin: top center; }
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent, rgba(212,175,55,0.3), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+.animate-count-pulse { animation: count-pulse 2s ease-in-out infinite; }
+
+/* Particle */
+.particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(212,175,55,0.8), rgba(212,175,55,0));
+}
+
+/* Gold Divider */
+.gold-divider {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+}
+
+/* Mandala Overlay */
+.mandala-overlay {
+  background-size: cover;
+  background-position: center;
+  opacity: 0.06;
+  pointer-events: none;
+}
+
+/* Card hover glow */
+.card-glow { transition: all 0.4s ease; }
+.card-glow:hover {
+  box-shadow: 0 0 25px rgba(212,175,55,0.2), 0 8px 32px rgba(11,28,61,0.1);
+  border-color: rgba(212,175,55,0.5);
+  transform: translateY(-4px);
+}
+
+/* Sacred border */
+.sacred-border {
+  border: 1px solid rgba(212,175,55,0.2);
+  position: relative;
+}
+.sacred-border::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: 10%; right: 10%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #D4AF37, transparent);
+}
+
+/* Gradient text */
+.gradient-gold-text {
+  background: linear-gradient(135deg, #D4AF37, #E67E22, #D4AF37);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Sticky register button */
+.sticky-register {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 40;
+  animation: fade-in-up 0.5s ease;
+}
+
+/* Form styling */
+.form-sacred input:focus, .form-sacred textarea:focus, .form-sacred select:focus {
+  box-shadow: 0 0 0 2px rgba(212,175,55,0.3);
+}
+
+/* ====== GOLDEN DOOR OVERLAY ====== */
+.golden-door {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  background: linear-gradient(180deg, #1a1208, #231a0c, #1a1208);
+  border: 3px solid rgba(212,175,55,0.35);
+  z-index: 101;
+  overflow: hidden;
+}
+.golden-door::before {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border: 2px solid rgba(212,175,55,0.2);
+  border-radius: 4px;
+}
+.golden-door-left { left: 0; border-right: 1px solid rgba(212,175,55,0.4); }
+.golden-door-right { right: 0; border-left: 1px solid rgba(212,175,55,0.4); }
+
+/* Door ornaments */
+.door-ornament {
+  position: absolute;
+  inset: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-evenly;
+  pointer-events: none;
+}
+.door-mandala {
+  width: 60%;
+  aspect-ratio: 1;
+  border: 2px solid rgba(212,175,55,0.15);
+  border-radius: 50%;
+  position: relative;
+}
+.door-mandala::after {
+  content: '';
+  position: absolute;
+  inset: 15%;
+  border: 1px solid rgba(212,175,55,0.1);
+  border-radius: 50%;
+}
+
+/* Door handles */
+.door-handle-left, .door-handle-right {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid rgba(212,175,55,0.6);
+  box-shadow: 0 0 20px rgba(212,175,55,0.3), inset 0 0 8px rgba(212,175,55,0.2);
+}
+.door-handle-left { right: 18px; }
+.door-handle-right { left: 18px; }
+
+/* Door Opening Animation */
+@keyframes golden-door-open-left {
+  0% { transform: perspective(1200px) rotateY(0deg); }
+  100% { transform: perspective(1200px) rotateY(-100deg); }
+}
+@keyframes golden-door-open-right {
+  0% { transform: perspective(1200px) rotateY(0deg); }
+  100% { transform: perspective(1200px) rotateY(100deg); }
+}
+.door-opening-left {
+  transform-origin: left center;
+  animation: golden-door-open-left 1.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.door-opening-right {
+  transform-origin: right center;
+  animation: golden-door-open-right 1.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* ====== ANNOUNCEMENT STRIP ====== */
+.announcement-strip {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  z-index: 45;
+  background: linear-gradient(90deg, #D4AF37, #E67E22, #D4AF37);
+  overflow: hidden;
+  height: 32px;
+  display: flex;
+  align-items: center;
+}
+@media (min-width: 640px) {
+  .announcement-strip { top: 80px; height: 36px; }
+}
+.announcement-track {
+  display: flex;
+  white-space: nowrap;
+  animation: marquee 25s linear infinite;
+}
+.announcement-track span {
+  color: #0B1C3D;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 0 8px;
+}
+@media (min-width: 640px) {
+  .announcement-track span { font-size: 13px; }
+}
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-33.33%); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #F8F1E5; }
+::-webkit-scrollbar-thumb { background: #D4AF37; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #B8960F; }
+
+@keyframes pulse-slow { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+.animate-pulse-slow { animation: pulse-slow 3s ease-in-out infinite; }
+
