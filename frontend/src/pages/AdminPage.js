@@ -14,13 +14,13 @@ import ArrivedGuestList from "../components/admin/ArrivedGuestList";
 import AdminRoomManagement from "../components/admin/AdminRoomManagement";
 import ReferencePersonManager from "../components/admin/ReferencePersonManager";
 import QRScanner from "../components/admin/QRScanner";
-import HelpCentre from "../components/admin/HelpCentre";
-// MessageCenter removed - replaced by Notifications tab
+import HelpCentre from "../components/admin/HelpCentre";// MessageCenter removed - replaced by Notifications tab
 import TodoModule from "../components/admin/TodoModule";
 import CustomFieldsManager from "../components/admin/CustomFieldsManager";
 import AdminAuditLog from "../components/admin/AdminAuditLog";
 import AdminManagementView from "../components/admin/AdminManagement";
 import NotificationManagement from "../components/admin/NotificationManagement";
+import ViewOnly from "../components/admin/ViewOnly";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -90,16 +90,14 @@ function AdminShell({ user, onLogout }) {
     { id: "expected", label: "Expected Guests", icon: UserCheck },
     { id: "arrived", label: "Arrived Guests", icon: Plane },
     { id: "rooms", label: "Room Management", icon: Hotel },
-    { id: "references", label: "Reference Persons", icon: Users, superOnly: true },
+    { id: "references", label: "Reference Persons", icon: Users },
+    "divider",
+    { id: "notifications", label: "Notifications", icon: Bell },
+    { id: "customfields", label: "Custom Fields", icon: Settings },
     ...(isSuper ? [
-      "divider",
-      { id: "notifications", label: "Notifications", icon: Bell },
-      { id: "customfields", label: "Custom Fields", icon: Settings },
       { id: "admins", label: "Swayamsevak Mgmt", icon: Shield },
-      { id: "audit", label: "Activity Log", icon: FileText },
-    ] : [
-      { id: "audit", label: "Activity Log", icon: FileText },
-    ]),
+    ] : []),
+    { id: "audit", label: "Activity Log", icon: FileText },
   ];
 
   const handleNavClick = (id) => {
@@ -117,13 +115,13 @@ function AdminShell({ user, onLogout }) {
       case "expected": return <ExpectedGuestList user={user} />;
       case "arrived": return <ArrivedGuestList user={user} />;
       case "rooms": return <AdminRoomManagement user={user} />;
-      case "references": return isSuper ? <ReferencePersonManager user={user} /> : <NoAccess />;
+      case "references": return <ViewOnly active={!isSuper}><ReferencePersonManager user={user} /></ViewOnly>;
       case "qr": return <QRScanner user={user} />;
       case "help": return <HelpCentre user={user} />;
       case "messages": return null; // removed
-      case "notifications": return isSuper ? <NotificationManagement user={user} /> : <NoAccess />;
+      case "notifications": return <ViewOnly active={!isSuper}><NotificationManagement user={user} /></ViewOnly>;
       case "todos": return <TodoModule user={user} />;
-      case "customfields": return isSuper ? <CustomFieldsManager user={user} /> : <NoAccess />;
+      case "customfields": return <ViewOnly active={!isSuper}><CustomFieldsManager user={user} /></ViewOnly>;
       case "admins": return isSuper ? <AdminManagementView user={user} authHeaders={authHeaders} /> : <NoAccess />;
       case "audit": return <AdminAuditLog user={user} authHeaders={authHeaders} />;
       default: return <AdminDashboard user={user} />;

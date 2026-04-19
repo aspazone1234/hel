@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import WAFlowSettings from "./WAFlowSettings";
 import HelpCategoryManager from "./HelpCategoryManager";
+import ViewOnly from "./ViewOnly";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -145,37 +146,35 @@ export default function HelpCentre({ user }) {
         )}
       </div>
 
-      {/* Admin-only sub-tabs */}
-      {isSuper && (
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit" data-testid="hc-subtabs">
-          <button
-            onClick={() => setHcTab("tickets")}
-            data-testid="hc-tab-tickets"
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "tickets" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
-          >
-            <Headphones size={14} /> Tickets
-          </button>
-          <button
-            onClick={() => setHcTab("categories")}
-            data-testid="hc-tab-categories"
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "categories" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
-          >
-            <LayoutGrid size={14} /> Services / SLA
-          </button>
-          <button
-            onClick={() => setHcTab("flow")}
-            data-testid="hc-tab-flow"
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "flow" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
-          >
-            <GitBranch size={14} /> WA Flow Settings
-          </button>
-        </div>
-      )}
+      {/* Help Centre sub-tabs — visible to ALL admins; SLA + WA Flow Settings become view-only for non-super */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit" data-testid="hc-subtabs">
+        <button
+          onClick={() => setHcTab("tickets")}
+          data-testid="hc-tab-tickets"
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "tickets" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+        >
+          <Headphones size={14} /> Tickets
+        </button>
+        <button
+          onClick={() => setHcTab("categories")}
+          data-testid="hc-tab-categories"
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "categories" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+        >
+          <LayoutGrid size={14} /> Services / SLA
+        </button>
+        <button
+          onClick={() => setHcTab("flow")}
+          data-testid="hc-tab-flow"
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "flow" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+        >
+          <GitBranch size={14} /> WA Flow Settings
+        </button>
+      </div>
 
-      {hcTab === "flow" && isSuper ? (
-        <WAFlowSettings />
-      ) : hcTab === "categories" && isSuper ? (
-        <HelpCategoryManager />
+      {hcTab === "flow" ? (
+        <ViewOnly active={!isSuper}><WAFlowSettings /></ViewOnly>
+      ) : hcTab === "categories" ? (
+        <ViewOnly active={!isSuper}><HelpCategoryManager /></ViewOnly>
       ) : (
         <>
       {/* Stats */}

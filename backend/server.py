@@ -90,6 +90,11 @@ async def require_superadmin(request: Request):
         raise HTTPException(status_code=403, detail="Super Admin access required")
     return user
 
+async def require_admin_readable(request: Request):
+    """Any authenticated admin (superadmin OR custom admin / swamsevak) can read.
+    Use this on GET endpoints that should be visible in view-only mode to normal admins."""
+    return await get_current_user(request)
+
 # ─── Audit Helper ───
 async def log_audit(action_type: str, target_type: str, target_id: str, target_name: str, details: str, performed_by: str):
     await db.audit_logs.insert_one({
@@ -218,10 +223,12 @@ class RoomShift(BaseModel):
 class ReferencePersonCreate(BaseModel):
     name: str
     description: str = ""
+    relation_categories: List[str] = []  # per-person relation category names
 
 class ReferencePersonUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    relation_categories: Optional[List[str]] = None
 
 class RelationCategoryCreate(BaseModel):
     name: str
@@ -643,7 +650,13 @@ async def list_reference_persons(request: Request):
 @api_router.post("/admin/reference-persons")
 async def create_reference_person(body: ReferencePersonCreate, request: Request):
     user = await require_superadmin(request)
-    doc = {"id": str(uuid.uuid4()), "name": body.name, "description": body.description, "created_at": datetime.now(timezone.utc).isoformat()}
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": body.name,
+        "description": body.description,
+        "relation_categories": [c.strip() for c in (body.relation_categories or []) if c.strip()],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
     await db.reference_persons.insert_one(doc)
     doc.pop("_id", None)
     await log_audit("create", "reference_person", doc["id"], body.name, "Reference person created", user["name"])
@@ -2378,7 +2391,7 @@ DEFAULT_TEMPLATES = [
 
 @api_router.get("/admin/messages/templates")
 async def get_message_templates(request: Request):
-    user = await require_superadmin(request)
+    user = await require_admin_readable(request)
     templates = await db.message_templates.find({}, {"_id": 0}).sort("name", 1).to_list(100)
     return templates
 
@@ -2463,7 +2476,7 @@ async def send_message(body: MessageSend, request: Request):
 
 @api_router.get("/admin/messages/campaigns")
 async def get_campaigns(request: Request, page: int = 1, per_page: int = 20):
-    user = await require_superadmin(request)
+    user = await require_admin_readable(request)
     total = await db.message_campaigns.count_documents({})
     skip = (page - 1) * per_page
     campaigns = await db.message_campaigns.find({}, {"_id": 0}).sort("sent_at", -1).skip(skip).limit(per_page).to_list(per_page)
@@ -3063,7 +3076,7 @@ class WATemplateUpdate(BaseModel):
 
 @api_router.get("/admin/wa-templates")
 async def list_wa_templates(request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     templates = await db.wa_templates.find({}, {"_id": 0}).sort("display_name", 1).to_list(200)
     return templates
 
@@ -3120,7 +3133,7 @@ class CampaignCreate(BaseModel):
 
 @api_router.get("/admin/wa-campaigns")
 async def list_wa_campaigns(request: Request, page: int = 1, per_page: int = 20):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     total = await db.wa_campaigns.count_documents({})
     skip = (page - 1) * per_page
     campaigns = await db.wa_campaigns.find({}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
@@ -3128,7 +3141,7 @@ async def list_wa_campaigns(request: Request, page: int = 1, per_page: int = 20)
 
 @api_router.get("/admin/wa-campaigns/sample-excel")
 async def download_sample_excel(request: Request, template_id: str = ""):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Recipients"
@@ -3189,7 +3202,7 @@ async def upload_campaign_excel(request: Request, file: UploadFile = File(...)):
 
 @api_router.get("/admin/wa-campaigns/{camp_id}")
 async def get_wa_campaign(camp_id: str, request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     camp = await db.wa_campaigns.find_one({"id": camp_id}, {"_id": 0})
     if not camp:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -3197,7 +3210,7 @@ async def get_wa_campaign(camp_id: str, request: Request):
 
 @api_router.get("/admin/wa-campaigns/{camp_id}/recipients")
 async def get_campaign_recipients(camp_id: str, request: Request, page: int = 1, per_page: int = 50, status_filter: str = ""):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     query = {"campaign_id": camp_id}
     if status_filter:
         query["status"] = status_filter
@@ -3343,7 +3356,7 @@ async def process_campaign(campaign_id: str, tmpl: dict, media_url: str):
 # ─── Campaign Stats (live refresh) ───
 @api_router.get("/admin/wa-campaigns/{camp_id}/stats")
 async def get_campaign_stats(camp_id: str, request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     pipeline = [
         {"$match": {"campaign_id": camp_id}},
         {"$group": {"_id": "$status", "count": {"$sum": 1}}}
@@ -3381,7 +3394,7 @@ async def _load_campaign_for_export(camp_id: str):
 
 @api_router.get("/admin/wa-campaigns/{camp_id}/export.csv")
 async def export_campaign_csv(camp_id: str, request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     camp, recs, stats = await _load_campaign_for_export(camp_id)
 
     # Collect union of variable keys across all recipients
@@ -3446,7 +3459,7 @@ async def export_campaign_csv(camp_id: str, request: Request):
 
 @api_router.get("/admin/wa-campaigns/{camp_id}/export.pdf")
 async def export_campaign_pdf(camp_id: str, request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     camp, recs, stats = await _load_campaign_for_export(camp_id)
 
     pdf = FPDF(orientation="L", unit="mm", format="A4")
@@ -3565,7 +3578,7 @@ async def export_campaign_pdf(camp_id: str, request: Request):
 
 @api_router.get("/admin/wa-conversations")
 async def list_conversations(request: Request, search: str = "", page: int = 1, per_page: int = 50):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     query = {}
     if search:
         query["$or"] = [
@@ -3583,7 +3596,7 @@ async def list_conversations(request: Request, search: str = "", page: int = 1, 
 
 @api_router.get("/admin/wa-conversations/{phone}")
 async def get_conversation(phone: str, request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     conv = await db.wa_conversations.find_one({"phone": phone}, {"_id": 0})
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -3712,7 +3725,7 @@ async def get_room_stats(request: Request):
 # ─── OTP Logs Endpoint ───
 @api_router.get("/admin/otp-logs")
 async def get_otp_logs(request: Request, search: str = "", page: int = 1, per_page: int = 50):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     query = {}
     if search:
         query["$or"] = [
@@ -3967,7 +3980,7 @@ async def send_conversation_bundle(
 # ─── Auto Response Rules (keyword → template chain with delays) ───
 @api_router.get("/admin/wa-auto-responses")
 async def list_auto_responses(request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     rules = await db.wa_auto_responses.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
     return rules
 
@@ -4058,7 +4071,7 @@ async def delete_auto_response(rule_id: str, request: Request):
 @api_router.get("/admin/wa-auto-responses/runs")
 async def list_auto_response_runs(request: Request, limit: int = 50):
     """View recent auto-response executions for debugging."""
-    await require_superadmin(request)
+    await require_admin_readable(request)
     runs = await db.wa_auto_response_runs.find({}, {"_id": 0}).sort("started_at", -1).limit(min(limit, 200)).to_list(200)
     return runs
 
@@ -4245,7 +4258,7 @@ async def wa_flow_health():
 @api_router.get("/admin/wa-flow-json")
 async def get_flow_json(request: Request):
     """Download the Panchariya Seva Desk Flow JSON for Meta Flow Builder."""
-    await require_superadmin(request)
+    await require_admin_readable(request)
     flow_path = ROOT_DIR / "static" / "panchariya_seva_desk_flow.json"
     if not flow_path.exists():
         raise HTTPException(status_code=404, detail="Flow JSON file not found")
@@ -4461,7 +4474,7 @@ async def create_flow_session(request: Request):
 # ─── Flow Configuration CRUD ───
 @api_router.get("/admin/wa-flows")
 async def list_flows(request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     flows = await db.wa_flow_configs.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
     return flows
 
@@ -4506,7 +4519,7 @@ async def delete_flow(flow_id: str, request: Request):
 
 @api_router.get("/admin/wa-flow-events")
 async def list_flow_events(request: Request, page: int = 1, per_page: int = 50):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     total = await db.wa_flow_events.count_documents({})
     skip = (page - 1) * per_page
     events = await db.wa_flow_events.find({}, {"_id": 0}).sort("received_at", -1).skip(skip).limit(per_page).to_list(per_page)
@@ -4530,7 +4543,7 @@ SYSTEM_TRIGGERS = [
 
 @api_router.get("/admin/wa-triggers")
 async def list_wa_triggers(request: Request):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     configs = await db.wa_triggers.find({}, {"_id": 0}).to_list(100)
     config_map = {c["trigger_key"]: c for c in configs}
     result = []
@@ -4952,7 +4965,7 @@ async def process_queue_item(queue_id: str):
 # ─── Message Queue Log ───
 @api_router.get("/admin/wa-queue")
 async def list_wa_queue(request: Request, page: int = 1, per_page: int = 50, status_filter: str = ""):
-    await require_superadmin(request)
+    await require_admin_readable(request)
     query = {}
     if status_filter:
         query["status"] = status_filter
