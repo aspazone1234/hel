@@ -15,6 +15,7 @@ import AdminRoomManagement from "../components/admin/AdminRoomManagement";
 import ReferencePersonManager from "../components/admin/ReferencePersonManager";
 import QRScanner from "../components/admin/QRScanner";
 import HelpCentre from "../components/admin/HelpCentre";// MessageCenter removed - replaced by Notifications tab
+import HelpCentreSettings from "../components/admin/HelpCentreSettings";
 import TodoModule from "../components/admin/TodoModule";
 import CustomFieldsManager from "../components/admin/CustomFieldsManager";
 import AdminAuditLog from "../components/admin/AdminAuditLog";
@@ -102,6 +103,7 @@ function AdminShell({ user, onLogout }) {
     ...(!isSuper ? [
       "divider",
       "secondary-header",
+      { id: "help-settings", label: "Help Centre Settings", icon: Headphones, secondary: true },
       { id: "references", label: "Reference Persons", icon: Users, secondary: true },
       { id: "notifications", label: "Notifications", icon: Bell, secondary: true },
       { id: "customfields", label: "Custom Fields", icon: Settings, secondary: true },
@@ -126,6 +128,7 @@ function AdminShell({ user, onLogout }) {
       case "references": return <ReferencePersonManager user={user} />;
       case "qr": return <QRScanner user={user} />;
       case "help": return <HelpCentre user={user} />;
+      case "help-settings": return <HelpCentreSettings />;
       case "messages": return null; // removed
       case "notifications": return <NotificationManagement user={user} />;
       case "todos": return <TodoModule user={user} />;

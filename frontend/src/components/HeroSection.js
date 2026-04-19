@@ -5,7 +5,7 @@ import { useLang } from "@/context/LanguageContext";
 import { startFluteOnDoorOpen } from "@/components/Navbar";
 
 const MANDALA_URL = "https://static.prod-images.emergentagent.com/jobs/5bf2bda2-8412-46a4-8b32-53f8647e4ca2/images/35e418be769cfa52cd10a59ae3b385a4d13d9f3b25966ee85e423a509366becc.png";
-const KRISHNA_URL = "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/tn8alaht_ff265d7bbe6f2db1ea3467b0af455e6e.jpg";
+const KRISHNA_URL = `${process.env.REACT_APP_BACKEND_URL}/api/static/media/tn8alaht_ff265d7bbe6f2db1ea3467b0af455e6e.jpg`;
 
 function CountdownTimer() {
   const { t } = useLang();

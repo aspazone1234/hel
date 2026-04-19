@@ -145,7 +145,9 @@ export default function HelpCentre({ user }) {
         )}
       </div>
 
-      {/* Help Centre sub-tabs — visible to ALL admins; SLA + WA Flow Settings become view-only for non-super */}
+      {/* Help Centre sub-tabs — Services/SLA + WA Flow Settings visible to SUPER admins only.
+          Non-super admins see these two under a separate view-only "Help Centre Settings" page in the sidebar. */}
+      {isSuper && (
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit" data-testid="hc-subtabs">
         <button
           onClick={() => setHcTab("tickets")}
@@ -169,6 +171,7 @@ export default function HelpCentre({ user }) {
           <GitBranch size={14} /> WA Flow Settings
         </button>
       </div>
+      )}
 
       {hcTab === "flow" ? (
         <WAFlowSettings isSuper={isSuper} />

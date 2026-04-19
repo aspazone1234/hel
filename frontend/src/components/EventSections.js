@@ -2,24 +2,24 @@ import { useRef, useState, useEffect } from "react";
 import { Flame, BookOpen, Star, Music, Sparkles } from "lucide-react";
 import { useLang } from "@/context/LanguageContext";
 
-const ACHARYA_IMG = "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/sp8jvknu_Untitled%20design%20%282%29.png";
+const ACHARYA_IMG = `${process.env.REACT_APP_BACKEND_URL}/api/static/media/sp8jvknu_Untitled_design__2_.png`;
 const PUSHKAR_URL = "https://images.pexels.com/photos/6363480/pexels-photo-6363480.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940";
 
 const ELDER_IMAGES = [
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/l9byhsc7_1.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/f6hr3qf6_2.png",
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/l9byhsc7_1.png`,
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/f6hr3qf6_2.png`,
   "https://res.cloudinary.com/ds0jyd7oj/image/upload/q_auto/f_auto/v1775134738/Untitled_design_6_tmdwph.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/okqs8yx2_4.png",
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/okqs8yx2_4.png`,
 ];
 
 const EPISODE_IMAGES = [
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/rhwshqyd_1.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/l1x3vlre_2.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/57bikqhf_3.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/h4uid6r3_4.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/q40z0bp9_5.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/n3cazleg_6.png",
-  "https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/lpnclbmo_7.png",
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/rhwshqyd_1.png`,
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/l1x3vlre_2.png`,
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/57bikqhf_3.png`,
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/h4uid6r3_4.png`,
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/q40z0bp9_5.png`,
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/n3cazleg_6.png`,
+  `${process.env.REACT_APP_BACKEND_URL}/api/static/media/lpnclbmo_7.png`,
 ];
 
 function FadeIn({ children, className = "", delay = 0 }) {
@@ -205,7 +205,7 @@ export function AcharyaSection() {
         <FadeIn delay={350}>
           <div className="flex items-center justify-center gap-3 sm:gap-4 mb-8 bg-[#F8F1E5]/5 border border-[#D4AF37]/15 rounded-full px-5 py-3 sm:px-8 sm:py-4 inline-flex mx-auto">
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full border border-[#D4AF37]/30 overflow-hidden shrink-0">
-              <img src="https://customer-assets.emergentagent.com/job_shrimad-katha-event/artifacts/abo9dtvd_images%20%281%29.webp" alt="Jagadguru Shri Rambhadracharya Ji" className="w-full h-full object-cover" />
+              <img src={`${process.env.REACT_APP_BACKEND_URL}/api/static/media/abo9dtvd_images__1_.webp`} alt="Jagadguru Shri Rambhadracharya Ji" className="w-full h-full object-cover" />
             </div>
             <div className="text-left">
               <p className="text-[#F8F1E5]/50 text-xs">{t.vyasPeeth.guruLabel}</p>
