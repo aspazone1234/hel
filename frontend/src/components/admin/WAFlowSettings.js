@@ -29,7 +29,11 @@ export default function WAFlowSettings({ isSuper = true }) {
     keyword_template_name: "", keyword_template_language: "en",
   });
 
-  const ENDPOINT_URL = `${process.env.REACT_APP_BACKEND_URL}/api/webhooks/wa-flow`;
+  // Use the browser's current origin so the URL shown to paste in Meta matches
+  // whatever domain the user is currently logged into (custom domain, emergent.host, preview, etc.)
+  const PUBLIC_ORIGIN = (typeof window !== "undefined" && window.location?.origin) || process.env.REACT_APP_BACKEND_URL;
+  const ENDPOINT_URL = `${PUBLIC_ORIGIN}/api/webhooks/wa-flow`;
+  const WEBHOOK_URL = `${PUBLIC_ORIGIN}/api/webhooks/whatsapp`;
 
   const fetchData = useCallback(async () => {
     try {
@@ -149,6 +153,31 @@ export default function WAFlowSettings({ isSuper = true }) {
     }
   };
 
+  const [uploadingKey, setUploadingKey] = useState(false);
+  const uploadPublicKeyToMeta = async () => {
+    if (!window.confirm("Upload the current RSA public key to Meta's WhatsApp Business Encryption API?\n\nThis registers your server as the holder of the matching private key so Meta can encrypt Flow payloads to you.")) return;
+    setUploadingKey(true);
+    try {
+      const { data } = await axios.post(`${API}/admin/wa-flow-upload-public-key`, {}, { headers: authHeaders() });
+      if (data.success) {
+        toast.success("Public key uploaded to Meta successfully. Run Meta's health check now.");
+      } else {
+        toast.error(`Meta rejected: ${data.upload_response?.slice?.(0, 200) || "Unknown error"}`);
+      }
+      // eslint-disable-next-line no-console
+      console.log("[wa-flow-upload-public-key] result:", data);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Upload failed");
+    } finally {
+      setUploadingKey(false);
+    }
+  };
+
+  const copyWebhookUrl = () => {
+    navigator.clipboard.writeText(WEBHOOK_URL);
+    toast.success("Webhook URL copied!");
+  };
+
   return (
     <div className="space-y-4" data-testid="wa-flow-settings">
       {!isSuper && (
@@ -169,31 +198,44 @@ export default function WAFlowSettings({ isSuper = true }) {
             <Eye size={12} /> View Events
           </button>
         </div>
-        <div className="mt-4 bg-white/10 rounded-lg p-3">
-          <p className="text-[10px] text-white/60 uppercase font-bold mb-1">Data Exchange Endpoint (paste in Meta Flow Builder)</p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 text-sm font-mono bg-black/20 rounded px-3 py-2 truncate select-all" data-testid="endpoint-url">{ENDPOINT_URL}</code>
-            <button onClick={copyEndpoint} className="bg-[#D4AF37] text-[#0B1C3D] px-3 py-2 rounded-lg text-xs font-bold hover:bg-[#D4AF37]/90 whitespace-nowrap" data-testid="copy-endpoint">
-              Copy URL
-            </button>
+        <div className="mt-4 space-y-3">
+          <div className="bg-white/10 rounded-lg p-3">
+            <p className="text-[10px] text-white/60 uppercase font-bold mb-1">① Webhook URL (Meta → WhatsApp → Configuration → Webhook → Callback URL)</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-sm font-mono bg-black/20 rounded px-3 py-2 truncate select-all" data-testid="webhook-url">{WEBHOOK_URL}</code>
+              <button onClick={copyWebhookUrl} className="bg-white/15 hover:bg-white/25 text-white px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap" data-testid="copy-webhook-url">
+                Copy
+              </button>
+            </div>
+          </div>
+          <div className="bg-white/10 rounded-lg p-3">
+            <p className="text-[10px] text-white/60 uppercase font-bold mb-1">② Flow Data-Exchange Endpoint (Meta → WhatsApp Manager → Flows → your Flow → Endpoint URI)</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 text-sm font-mono bg-black/20 rounded px-3 py-2 truncate select-all" data-testid="endpoint-url">{ENDPOINT_URL}</code>
+              <button onClick={copyEndpoint} className="bg-[#D4AF37] text-[#0B1C3D] px-3 py-2 rounded-lg text-xs font-bold hover:bg-[#D4AF37]/90 whitespace-nowrap" data-testid="copy-endpoint">
+                Copy
+              </button>
+            </div>
           </div>
         </div>
         <div className="mt-3 flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/30 rounded-lg p-2.5 text-xs text-emerald-100">
           <ShieldCheck size={14} /> Public key uploaded to Meta (signature VALID). Keep Flow in <b className="mx-1">Draft</b> until Help Centre integration is live.
         </div>
-        {/* Public Key — upload to Meta → Flow → Sign public key */}
+        {/* Public Key — one-click upload to Meta (Graph API) */}
         <div className="mt-3 bg-sky-500/15 border border-sky-400/40 rounded-lg p-3 text-xs text-sky-100" data-testid="public-key-card">
-          <p className="font-semibold mb-2">RSA Public Key (for Meta Flow signing)</p>
-          <p className="opacity-90 mb-2">
-            When you rotate keys or set up a new Flow, copy this PEM and paste it into
-            <b> Meta Business Manager → WhatsApp Manager → Flows → {`<your flow>`} → Endpoint → Sign public key</b>.
-            Click <b>Save</b>, then <b>Health Check</b> — the status should flip to <b>VALID</b>.
+          <p className="font-semibold mb-2">③ RSA Public Key (tells Meta how to encrypt Flow payloads to you)</p>
+          <p className="opacity-90 mb-3">
+            Click <b>Upload to Meta</b> to register the current public key via WhatsApp Business Encryption API — no dashboard navigation needed.
+            After upload, go to Meta Flow Builder → your flow → Endpoint → click <b>Health Check</b>. It should return <b>VALID</b>.
           </p>
           <div className="flex gap-2 flex-wrap">
-            <button onClick={copyPublicKey} className="bg-sky-400 text-[#0B1C3D] px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-sky-300" data-testid="copy-public-key">
-              Copy Public Key (PEM)
+            <button onClick={uploadPublicKeyToMeta} disabled={uploadingKey} className="bg-emerald-400 text-[#0B1C3D] px-4 py-2 rounded-lg text-xs font-bold hover:bg-emerald-300 disabled:opacity-60" data-testid="upload-public-key-to-meta">
+              {uploadingKey ? "Uploading…" : "⚡ Upload to Meta (1-click)"}
             </button>
-            <button onClick={downloadPublicKey} className="bg-white/10 border border-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-white/20" data-testid="download-public-key">
+            <button onClick={copyPublicKey} className="bg-sky-400 text-[#0B1C3D] px-3 py-2 rounded-lg text-xs font-bold hover:bg-sky-300" data-testid="copy-public-key">
+              Copy PEM
+            </button>
+            <button onClick={downloadPublicKey} className="bg-white/10 border border-white/20 text-white px-3 py-2 rounded-lg text-xs font-bold hover:bg-white/20" data-testid="download-public-key">
               Download .pem
             </button>
           </div>

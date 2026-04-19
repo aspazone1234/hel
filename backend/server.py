@@ -4288,6 +4288,63 @@ async def get_flow_public_key(request: Request):
         raise HTTPException(status_code=404, detail="Public key not configured")
     return {"public_key_pem": pem, "source": "env" if pub_b64 else "file"}
 
+
+@api_router.post("/admin/wa-flow-upload-public-key")
+async def upload_public_key_to_meta(request: Request):
+    """One-click registration of the RSA public key with Meta's WhatsApp Business Encryption API.
+    Saves the super admin a manual trip to the Meta dashboard.
+
+    Uses: POST /{PHONE_NUMBER_ID}/whatsapp_business_encryption  (Graph API v21.0)
+    Required env: WA_ACCESS_TOKEN, WA_PHONE_NUMBER_ID, WA_FLOW_PUBLIC_KEY_B64 (or disk fallback)
+    """
+    await require_superadmin(request)
+    if not WA_PHONE_ID or not WA_TOKEN:
+        raise HTTPException(status_code=400, detail="WhatsApp API not configured (WA_PHONE_NUMBER_ID / WA_ACCESS_TOKEN missing)")
+
+    # Load public key PEM (same resolution order as GET endpoint)
+    pem = None
+    pub_b64 = os.environ.get("WA_FLOW_PUBLIC_KEY_B64", "").strip()
+    if pub_b64:
+        try:
+            pem = base64.b64decode(pub_b64).decode("utf-8")
+        except Exception:
+            pem = None
+    if not pem:
+        p = Path("/app/backend/keys/wa_flow_public_key.pem")
+        if p.exists():
+            pem = p.read_text()
+    if not pem:
+        raise HTTPException(status_code=404, detail="Public key not configured")
+
+    url = f"{WA_API_BASE}/{WA_PHONE_ID}/whatsapp_business_encryption"
+    headers = {"Authorization": f"Bearer {WA_TOKEN}"}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            # Upload key
+            post_resp = await client.post(url, headers=headers, data={"business_public_key": pem})
+            post_body = post_resp.text
+            # Read back current status to confirm
+            get_resp = await client.get(url, headers=headers)
+            get_body = {}
+            try:
+                get_body = get_resp.json()
+            except Exception:
+                get_body = {"raw": get_resp.text}
+    except Exception as e:
+        logger.exception("[Flow] upload_public_key_to_meta: HTTP error")
+        raise HTTPException(status_code=502, detail=f"Graph API request failed: {e}")
+
+    ok = post_resp.status_code in (200, 201)
+    if not ok:
+        logger.error(f"[Flow] upload_public_key_to_meta failed: {post_resp.status_code} {post_body}")
+    await log_audit("wa_flow_key_upload", "wa_flow", "public_key", "RSA Public Key", f"Upload to Meta: status={post_resp.status_code}", "super_admin")
+    return {
+        "success": ok,
+        "upload_status_code": post_resp.status_code,
+        "upload_response": post_body[:500] if isinstance(post_body, str) else post_body,
+        "current_key_status": get_body,
+    }
+
 @api_router.get("/admin/wa-flow-json")
 async def get_flow_json(request: Request):
     """Download the Panchariya Seva Desk Flow JSON for Meta Flow Builder."""
