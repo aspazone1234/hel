@@ -121,6 +121,34 @@ export default function WAFlowSettings({ isSuper = true }) {
     }
   };
 
+  const copyPublicKey = async () => {
+    try {
+      const res = await axios.get(`${API}/admin/wa-flow-public-key`, { headers: authHeaders() });
+      await navigator.clipboard.writeText(res.data.public_key_pem);
+      toast.success("Public key copied — paste into Meta → Flow → Sign public key");
+    } catch (e) {
+      toast.error("Failed to fetch public key");
+    }
+  };
+
+  const downloadPublicKey = async () => {
+    try {
+      const res = await axios.get(`${API}/admin/wa-flow-public-key`, { headers: authHeaders() });
+      const blob = new Blob([res.data.public_key_pem], { type: "application/x-pem-file" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "wa_flow_public_key.pem";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Public key downloaded");
+    } catch (e) {
+      toast.error("Failed to download public key");
+    }
+  };
+
   return (
     <div className="space-y-4" data-testid="wa-flow-settings">
       {!isSuper && (
@@ -152,6 +180,23 @@ export default function WAFlowSettings({ isSuper = true }) {
         </div>
         <div className="mt-3 flex items-center gap-2 bg-emerald-500/15 border border-emerald-400/30 rounded-lg p-2.5 text-xs text-emerald-100">
           <ShieldCheck size={14} /> Public key uploaded to Meta (signature VALID). Keep Flow in <b className="mx-1">Draft</b> until Help Centre integration is live.
+        </div>
+        {/* Public Key — upload to Meta → Flow → Sign public key */}
+        <div className="mt-3 bg-sky-500/15 border border-sky-400/40 rounded-lg p-3 text-xs text-sky-100" data-testid="public-key-card">
+          <p className="font-semibold mb-2">RSA Public Key (for Meta Flow signing)</p>
+          <p className="opacity-90 mb-2">
+            When you rotate keys or set up a new Flow, copy this PEM and paste it into
+            <b> Meta Business Manager → WhatsApp Manager → Flows → {`<your flow>`} → Endpoint → Sign public key</b>.
+            Click <b>Save</b>, then <b>Health Check</b> — the status should flip to <b>VALID</b>.
+          </p>
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={copyPublicKey} className="bg-sky-400 text-[#0B1C3D] px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-sky-300" data-testid="copy-public-key">
+              Copy Public Key (PEM)
+            </button>
+            <button onClick={downloadPublicKey} className="bg-white/10 border border-white/20 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-white/20" data-testid="download-public-key">
+              Download .pem
+            </button>
+          </div>
         </div>
         {/* Latest Flow JSON — paste this into Meta Flow Builder when anything on the backend changes */}
         <div className="mt-3 bg-amber-500/15 border border-amber-400/40 rounded-lg p-3 text-xs text-amber-100">

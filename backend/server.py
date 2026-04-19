@@ -4255,6 +4255,18 @@ async def wa_flow_health():
     """Health check for WhatsApp Flow endpoint (browser only)."""
     return {"status": "ok", "service": "wa-flow-data-exchange"}
 
+@api_router.get("/admin/wa-flow-public-key")
+async def get_flow_public_key(request: Request):
+    """Return the current PEM-encoded RSA public key for WhatsApp Flows data-exchange.
+    Upload this to Meta → WhatsApp Manager → Flows → <your flow> → Endpoint → Sign public key.
+    Rotating this means Meta must be re-signed with the new key before the flow will open again."""
+    await require_admin_readable(request)
+    pub_path = Path("/app/backend/keys/wa_flow_public_key.pem")
+    if not pub_path.exists():
+        raise HTTPException(status_code=404, detail="Public key not generated yet")
+    pem = pub_path.read_text()
+    return {"public_key_pem": pem, "generated_at": datetime.fromtimestamp(pub_path.stat().st_mtime, tz=timezone.utc).isoformat()}
+
 @api_router.get("/admin/wa-flow-json")
 async def get_flow_json(request: Request):
     """Download the Panchariya Seva Desk Flow JSON for Meta Flow Builder."""
