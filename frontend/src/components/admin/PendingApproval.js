@@ -297,6 +297,22 @@ function EditPendingDialog({ reg, onClose, onSaved, authHeaders }) {
 function FullRegistrationView({ reg, showAttendeeStatus = false }) {
   const headName = (reg.attendees || []).find(a => a.id === reg.group_head_id)?.name || "—";
   const addr = reg.address || {};
+  const [refName, setRefName] = useState(reg.reference_person_name || "");
+  useEffect(() => {
+    // Resolve reference_person_name from the ID if the record doesn't already carry it.
+    // (Legacy registrations created before name-denormalization stored only the UUID.)
+    if (reg.reference_person_name || !reg.reference_person_id) {
+      setRefName(reg.reference_person_name || "");
+      return;
+    }
+    let cancelled = false;
+    axios.get(`${API}/api/reference-persons/public`).then(r => {
+      if (cancelled) return;
+      const match = (r.data || []).find(p => p.id === reg.reference_person_id);
+      setRefName(match?.name || "");
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [reg.reference_person_id, reg.reference_person_name]);
   return (
     <div className="space-y-4 text-sm" data-testid="full-reg-view">
       <Section title="Contact Information">
@@ -349,7 +365,7 @@ function FullRegistrationView({ reg, showAttendeeStatus = false }) {
         <Field label="Travel Details" value={reg.travel_details} />
       </Section>
       <Section title="Reference Details">
-        <Field label="Reference Person" value={reg.reference_person_name || reg.reference_person_id} />
+        <Field label="Reference Person" value={refName || "—"} />
         <Field label="Relation with Reference Person" value={reg.relation_category} />
         <Field label="Message / Special Request" value={reg.message} />
       </Section>
