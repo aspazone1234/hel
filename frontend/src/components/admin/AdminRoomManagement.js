@@ -15,7 +15,7 @@ export default function AdminRoomManagement({ user }) {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [addMode, setAddMode] = useState("single"); // "single" | "bulk"
-  const [viewMode, setViewMode] = useState("floor");
+  const [viewMode, setViewMode] = useState("reference");
   const [form, setForm] = useState(EMPTY_FORM);
   // Bulk create: multiple room codes (one per line), shared settings
   const [bulkCodes, setBulkCodes] = useState("");
@@ -247,13 +247,13 @@ export default function AdminRoomManagement({ user }) {
 
       {/* View Toggle */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1" data-testid="room-view-toggle">
-        <button onClick={() => setViewMode("floor")} data-testid="view-floor"
-          className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${viewMode === "floor" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
-          <Layers size={14} /> Floor-wise
-        </button>
         <button onClick={() => setViewMode("reference")} data-testid="view-reference"
           className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${viewMode === "reference" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
           <Users size={14} /> Reference Person
+        </button>
+        <button onClick={() => setViewMode("floor")} data-testid="view-floor"
+          className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${viewMode === "floor" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
+          <Layers size={14} /> Floor-wise
         </button>
         <button onClick={() => setViewMode("swamsevak")} data-testid="view-swamsevak"
           className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${viewMode === "swamsevak" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
