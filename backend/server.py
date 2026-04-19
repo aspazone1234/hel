@@ -4102,14 +4102,25 @@ def _load_flow_private_key():
     if _FLOW_PRIVATE_KEY_CACHE is not None:
         return _FLOW_PRIVATE_KEY_CACHE
     from cryptography.hazmat.primitives import serialization
-    key_path = os.environ.get("WA_FLOW_PRIVATE_KEY_PATH", "")
     passphrase = os.environ.get("WA_FLOW_PRIVATE_KEY_PASSPHRASE", "")
-    if not key_path or not os.path.exists(key_path):
-        return None
-    with open(key_path, "rb") as f:
-        pem = f.read()
+    pem_bytes = None
+    # Preferred: base64-encoded PEM in env var (redeploy-proof, no disk dependency)
+    pem_b64 = os.environ.get("WA_FLOW_PRIVATE_KEY_B64", "").strip()
+    if pem_b64:
+        try:
+            pem_bytes = base64.b64decode(pem_b64)
+        except Exception as e:
+            logger.error(f"[Flow] WA_FLOW_PRIVATE_KEY_B64 could not be decoded: {e}")
+            return None
+    else:
+        # Fallback: file path on disk
+        key_path = os.environ.get("WA_FLOW_PRIVATE_KEY_PATH", "")
+        if not key_path or not os.path.exists(key_path):
+            return None
+        with open(key_path, "rb") as f:
+            pem_bytes = f.read()
     _FLOW_PRIVATE_KEY_CACHE = serialization.load_pem_private_key(
-        pem, password=passphrase.encode("utf-8") if passphrase else None
+        pem_bytes, password=passphrase.encode("utf-8") if passphrase else None
     )
     return _FLOW_PRIVATE_KEY_CACHE
 
@@ -4261,11 +4272,21 @@ async def get_flow_public_key(request: Request):
     Upload this to Meta → WhatsApp Manager → Flows → <your flow> → Endpoint → Sign public key.
     Rotating this means Meta must be re-signed with the new key before the flow will open again."""
     await require_admin_readable(request)
-    pub_path = Path("/app/backend/keys/wa_flow_public_key.pem")
-    if not pub_path.exists():
-        raise HTTPException(status_code=404, detail="Public key not generated yet")
-    pem = pub_path.read_text()
-    return {"public_key_pem": pem, "generated_at": datetime.fromtimestamp(pub_path.stat().st_mtime, tz=timezone.utc).isoformat()}
+    # Preferred: base64 env var (redeploy-proof). Fallback: file on disk.
+    pem = None
+    pub_b64 = os.environ.get("WA_FLOW_PUBLIC_KEY_B64", "").strip()
+    if pub_b64:
+        try:
+            pem = base64.b64decode(pub_b64).decode("utf-8")
+        except Exception as e:
+            logger.error(f"[Flow] WA_FLOW_PUBLIC_KEY_B64 decode error: {e}")
+    if not pem:
+        pub_path = Path("/app/backend/keys/wa_flow_public_key.pem")
+        if pub_path.exists():
+            pem = pub_path.read_text()
+    if not pem:
+        raise HTTPException(status_code=404, detail="Public key not configured")
+    return {"public_key_pem": pem, "source": "env" if pub_b64 else "file"}
 
 @api_router.get("/admin/wa-flow-json")
 async def get_flow_json(request: Request):
