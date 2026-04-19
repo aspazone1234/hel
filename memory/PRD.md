@@ -1,53 +1,53 @@
-# PRD — Shrimad Bhagavat Katha Mahotsav 2026 / Swamsevak Portal
+# PRD — Swayamsevak Portal (Shrimad Bhagavat Katha 2026)
 
 ## Original Problem Statement
-Import the GitHub repository `https://github.com/aspazone1234/hel` (branch `new4`) fully into the Emergent environment, install all dependencies, and verify that it runs end-to-end.
+Imported GitHub repo `https://github.com/aspazone1234/hel/tree/final1` and implemented two feature tasks:
+
+**Task 1** — Role-gated admin experience for normal admins (swamsevaks) vs super admins.
+**Task 2** — Per-reference-person relation categories (each reference person owns its own list).
 
 ## Architecture
-- Backend: FastAPI (single-file `backend/server.py`, ~5.5k lines) on port 8001, MongoDB via Motor
-- Frontend: React (CRACO + CRA) on port 3000, TailwindCSS, shadcn/ui components
-- Database: MongoDB `test_database` restored from `/app/db_export` (703 documents across ~30 collections)
-- Auth: JWT (HS256) with one system-level super admin; city-level admins in `custom_admins` collection
-- Integrations present in the code (most require env vars not currently set):
-  - WhatsApp Cloud API (Meta) — MOCKED (WA_* env vars intentionally unset)
-  - Stripe SDK imported but not configured
-  - Google GenAI / emergentintegrations available
-
-## Core Requirements (static)
-- Registration portal for devotees for the 2026 event (28 May – 3 Jun 2026)
-- Admin portal ("Swayamsevak Portal") with dashboard, rooms, guests, tickets, to-dos, notifications, reference persons, custom fields, audit log
-- WhatsApp-based notifications and OTP flow (when WA credentials are configured)
+- Backend: FastAPI (`/app/backend/server.py`) + MongoDB (`test_database`)
+- Frontend: React + Tailwind + Radix UI + Sonner (toasts)
+- WhatsApp: Meta Cloud API (currently **MOCKED** — WA_* env vars empty)
 
 ## User Personas
-- **Super Admin** (`superashwini`): Full system control, manages city admins and all config
-- **City / Custom Admin** (`custom_admins` collection): Restricted city-level access
-- **Swayamsevak (volunteer)**: Scoped admin tasks
-- **Devotee / End user**: Public landing page and registration flow
+- **Super admin (swami / superashwini)** — full access to all settings, sensitive data, configuration.
+- **Normal admin (swamsevak)** — day-to-day operations access. Can browse sensitive modules but cannot change them. Sensitive values (OTPs, contact names/phones) are masked for them.
 
-## What's Been Implemented (this session — 2026-04-18)
-- [2026-04-18] Cloned GitHub `aspazone1234/hel@new4` into `/app`, preserving `.env` files
-- [2026-04-18] Added `JWT_SECRET` to `backend/.env`; kept protected vars (`MONGO_URL`, `DB_NAME`, `REACT_APP_BACKEND_URL`) intact
-- [2026-04-18] Installed backend deps (`pip install -r requirements.txt`) — includes fpdf2, motor, litellm, stripe, emergentintegrations, etc.
-- [2026-04-18] Installed frontend deps (`yarn install`) + added missing `country-state-city` and `jsqr`
-- [2026-04-18] Restored MongoDB dump from `/app/db_export/test_database` via `mongorestore --drop` (703 docs)
-- [2026-04-18] Restarted supervisor (backend + frontend) — both RUNNING
-- [2026-04-18] Verified end-to-end with testing subagent:
-  - Backend: 18/18 API tests PASS (auth, registrations, rooms, reference persons, admins, todos, tickets, dashboard, geo, custom fields, etc.)
-  - Frontend: Landing → Main page → Admin login → Command Centre dashboard → Expected Guests → Room Management → Notifications — all PASS
+## Core Requirements (static)
+1. Only super admin can create/edit reference persons, relation categories (now per-person), help categories, WA flow config, run bulk campaigns, manage custom fields, approve/reject registrations as admin.
+2. Normal admin sees operational tools (help tickets, duties, attendance marker, room mgmt, expected/arrived lists).
+3. On any blocked action, user gets a clear toast: **"You cannot change these settings. Contact the super admin for this."**
+
+## What's been implemented
+### 2026-04-19 (this session) — full import + role gating + reference model redesign
+- Repo imported from branch `final1`; `.env`, deps, and MongoDB snapshot restored.
+- **Task 1:**
+  - `/app/frontend/src/lib/roleGuard.js` — global axios 403 interceptor shows the warning toast automatically on any backend-protected mutation.
+  - `AdminPage.js` — sidebar for normal admin split into primary section (operational) + secondary faded "VIEW-ONLY (SUPER ADMIN CONTROLLED)" section (Reference Persons, Notifications, Custom Fields). Super admin sees them inline with full-access styling.
+  - `ViewOnly.js` pointer-blocker wrapper removed from Reference Persons / Notifications / Custom Fields — users can now click freely.
+  - `WAFlowSettings.js` — hides the entire dark endpoint/JSON card, flow-id/flow-token chips, Add/Edit/Delete buttons, and events viewer when `isSuper=false`. Shows amber "sensitive data hidden" banner instead.
+  - `NotificationManagement.js` — accepts `user` prop, masks OTP codes (→ `••••••`), mobile numbers (→ `+91•••••••XX`), and conversation names/messages (→ "Hidden conversation" / "Protected message content"). Clicking a conversation row as non-super triggers the warning toast instead of opening detail.
+  - `HelpCentre.js` — removes old ViewOnly wrappers; pipes `isSuper` into children.
+- **Task 2:**
+  - `ReferencePersonManager.js` redesigned to a single-panel layout. Each reference person card has inline chip-list of relation categories with remove-X and an "add category" input (supports comma-separated bulk add).
+  - `RegisterPage.js` (public form): relation-category `<Select>` is rendered **only when the selected reference person has non-empty `relation_categories`**; derived list comes from the selected person. Changing reference person resets the chosen relation. Validation requires a relation only if the person has categories.
+  - `MyRegistrationPage.js` EditReferenceModal: same conditional behaviour.
+  - Dropped the (now-unused) global relation-categories fetch from both pages.
+
+## Current Verified Status
+- All 20 backend API tests PASSED (role-gating + reference-person CRUD + regression).
+- All frontend UI tests PASSED (super + non-super flows; toast, masking, hidden sections, per-person chips).
+- No regressions in dashboard / registrations / rooms / auth.
+
+## Prioritized Backlog / Future
+- **P1** — Hook up real WhatsApp Cloud API credentials in `/app/backend/.env` (WA_PHONE_NUMBER_ID, WA_ACCESS_TOKEN, WA_BUSINESS_ACCOUNT_ID, WA_WEBHOOK_VERIFY_TOKEN) so OTP send, bulk campaigns, and flow webhooks become live. Currently MOCKED.
+- **P1** — Configure `APP_URL` env var for deep links generated in templates (already points to preview URL; update on production).
+- **P2** — Allow an opt-in "show OTP for audit" button that unmasks a single OTP on-click for normal admins with a short reason prompt (audit logged).
+- **P2** — Consider deprecating `/api/relation-categories/public` (unused by new UI) after a migration window.
+- **P2** — In the Reference Persons manager, allow drag-reorder of categories per person.
 
 ## Test Credentials
-See `/app/memory/test_credentials.md` (super admin: `superashwini` / `supersebhiupper123`)
-
-## Mocked / Not-configured Integrations
-- **WhatsApp Cloud API** — `WA_PHONE_NUMBER_ID`, `WA_ACCESS_TOKEN`, `WA_BUSINESS_ACCOUNT_ID`, `WA_WEBHOOK_VERIFY_TOKEN` intentionally unset. WhatsApp sends / OTP / campaigns will no-op or fail gracefully until real credentials are provided.
-- **Stripe** — SDK present but no keys configured (no flow is currently using it in user-facing screens).
-- **Google GenAI / emergentintegrations** — available if needed, no key set.
-
-## Prioritized Backlog
-- **P1** — Provide real WhatsApp Cloud API credentials to enable notifications / OTP
-- **P1** — Configure `APP_URL` env var for deep links generated in templates
-- **P2** — Clean up pre-existing React warnings (nested button in AdminDashboard, a few react-hooks/exhaustive-deps)
-- **P2** — Add a lightweight CI smoke test using the generated `backend/tests/test_smoke_e2e.py`
-
-## Next Tasks
-- Await user direction on WhatsApp/Stripe key provisioning, or further feature work on top of the imported app.
+- Super admin — `superashwini` / `supersebhiupper123`
+- Normal admin (seeded) — `testadmin` / `test1234`
