@@ -11,6 +11,7 @@ const EMPTY_FORM = { room_code: "", floor: "", capacity: 2, ac_type: "Non-AC", n
 export default function AdminRoomManagement({ user }) {
   const [rooms, setRooms] = useState([]);
   const [regs, setRegs] = useState([]);
+  const [refPersons, setRefPersons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [addMode, setAddMode] = useState("single"); // "single" | "bulk"
@@ -29,15 +30,16 @@ export default function AdminRoomManagement({ user }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [roomRes, expRes, arrRes] = await Promise.all([
+      const [roomRes, expRes, arrRes, refRes] = await Promise.all([
         axios.get(`${API}/api/admin/rooms`, { headers: authHeaders() }),
         axios.get(`${API}/api/admin/guests/expected`, { headers: authHeaders(), params: { per_page: 500 } }),
         axios.get(`${API}/api/admin/guests/arrived`, { headers: authHeaders(), params: { per_page: 500 } }),
+        axios.get(`${API}/api/reference-persons/public`),
       ]);
       setRooms(roomRes.data.data || roomRes.data || []);
-      // Combine expected + arrived for room occupant mapping
       const allGuests = [...(expRes.data.data || []), ...(arrRes.data.data || [])];
       setRegs(allGuests);
+      setRefPersons(refRes.data || []);
     } catch {}
     setLoading(false);
   }, [authHeaders]);
@@ -100,6 +102,15 @@ export default function AdminRoomManagement({ user }) {
 
   const [transferDialog, setTransferDialog] = useState(null); // { roomCode, occupant }
 
+  // Reference person lookup: id -> { name, relation_categories }
+  const refById = {};
+  const refByName = {};
+  (refPersons || []).forEach(rp => {
+    const data = { name: rp.name, categories: rp.relation_categories || [] };
+    if (rp.id) refById[rp.id] = data;
+    if (rp.name) refByName[rp.name] = data;
+  });
+
   // Build occupant map from registrations
   const roomOccupants = {};
   regs.forEach(r => {
@@ -107,18 +118,31 @@ export default function AdminRoomManagement({ user }) {
       if (!roomOccupants[code]) roomOccupants[code] = [];
       const head = (r.attendees || []).find(a => a.id === r.group_head_id);
       const familyName = r.family_name || head?.name || r.primary_mobile;
+      // Resolve reference person name (registration might only carry the UUID on legacy data)
+      const refLookup = refById[r.reference_person_id] || refByName[r.reference_person_name] || null;
+      const refName = r.reference_person_name || refLookup?.name || "";
+      const refCategories = refLookup?.categories || [];
+      // For Room Management view ONLY: hide attendees marked absent (not_arrived / not_coming)
+      // from families that have already checked in. Pre-arrival families keep showing everyone.
+      const familyHasArrived = ["arrived", "partially_arrived", "departed"].includes(r.arrival_status);
+      const visibleAttendees = (r.attendees || []).filter(att => {
+        if (!familyHasArrived) return true; // pre-arrival — show all expected
+        return !["not_arrived", "not_coming"].includes(att.arrival_status || "not_arrived");
+      });
+      const visibleNum = familyHasArrived ? visibleAttendees.length : r.num_people;
       roomOccupants[code].push({
         name: head?.name || r.primary_mobile,
         familyName,
-        num: r.num_people,
-        ref: r.reference_person_name || "",
+        num: visibleNum,
+        ref: refName,
+        refCategories,
         relation: r.relation_category || "",
         swamsevak: r.assigned_swamsevak || "",
         regId: r.id,
         departureDate: r.departure_date || r.expected_departure_time || "",
         notes: r.admin_notes || "",
         mobile: r.primary_mobile || "",
-        attendees: r.attendees || [],
+        attendees: visibleAttendees,
         group_head_id: r.group_head_id,
       });
     });
@@ -133,23 +157,6 @@ export default function AdminRoomManagement({ user }) {
         if (!groups[key]) groups[key] = [];
         groups[key].push(r);
       });
-      return groups;
-    }
-    if (viewMode === "reference") {
-      const groups = { "Unassigned": [] };
-      rooms.forEach(r => {
-        const occupants = roomOccupants[r.room_code] || [];
-        if (occupants.length === 0) {
-          groups["Unassigned"].push(r);
-        } else {
-          occupants.forEach(occ => {
-            const key = occ.ref || "No Reference Person";
-            if (!groups[key]) groups[key] = [];
-            if (!groups[key].find(rm => rm.room_code === r.room_code)) groups[key].push(r);
-          });
-        }
-      });
-      if (groups["Unassigned"].length === 0) delete groups["Unassigned"];
       return groups;
     }
     if (viewMode === "swamsevak") {
@@ -172,7 +179,48 @@ export default function AdminRoomManagement({ user }) {
     return {};
   };
 
-  const grouped = groupRooms();
+  // Reference view: nested structure {refName: {categories:[], flat:[], byRelation:{relName:[rooms]}}}
+  const buildReferenceGroups = () => {
+    const groups = {};
+    const unassigned = [];
+    rooms.forEach(r => {
+      const occupants = roomOccupants[r.room_code] || [];
+      if (occupants.length === 0) {
+        unassigned.push(r);
+        return;
+      }
+      occupants.forEach(occ => {
+        const refName = occ.ref?.trim();
+        if (!refName) {
+          // Room without a reference person
+          if (!groups.__NO_REF__) groups.__NO_REF__ = { name: "No Reference Person", categories: [], flat: [], byRelation: {} };
+          if (!groups.__NO_REF__.flat.find(rm => rm.room_code === r.room_code)) groups.__NO_REF__.flat.push(r);
+          return;
+        }
+        if (!groups[refName]) {
+          groups[refName] = { name: refName, categories: occ.refCategories || [], flat: [], byRelation: {} };
+        }
+        const categories = groups[refName].categories;
+        if (!categories || categories.length === 0) {
+          // No subcategories — flat bucket under this reference person
+          if (!groups[refName].flat.find(rm => rm.room_code === r.room_code)) groups[refName].flat.push(r);
+        } else {
+          // Bucket by relation_category (if it matches one of the configured categories; otherwise "Other")
+          const rel = (occ.relation || "").trim();
+          const bucketName = rel && categories.includes(rel) ? rel : (rel || "Other");
+          if (!groups[refName].byRelation[bucketName]) groups[refName].byRelation[bucketName] = [];
+          if (!groups[refName].byRelation[bucketName].find(rm => rm.room_code === r.room_code)) {
+            groups[refName].byRelation[bucketName].push(r);
+          }
+        }
+      });
+    });
+    if (unassigned.length) groups.__UNASSIGNED__ = { name: "Unassigned (vacant rooms)", categories: [], flat: unassigned, byRelation: {} };
+    return groups;
+  };
+
+  const grouped = viewMode === "reference" ? null : groupRooms();
+  const referenceGrouped = viewMode === "reference" ? buildReferenceGroups() : null;
 
   return (
     <div className="p-4 md:p-6 space-y-4" data-testid="room-management">
@@ -303,100 +351,75 @@ export default function AdminRoomManagement({ user }) {
 
       {loading ? <p className="text-gray-500 text-center py-4">Loading...</p> : (
         <div className="space-y-6" data-testid="room-groups">
-          {Object.entries(grouped).map(([groupName, groupRooms]) => (
+          {viewMode !== "reference" && Object.entries(grouped || {}).map(([groupName, groupRooms]) => (
             <div key={groupName}>
               <h3 className="font-semibold text-[#0B1C3D] text-sm mb-2 flex items-center gap-2">
-                {viewMode === "reference" && <Users size={14} className="text-amber-600" />}
                 {viewMode === "swamsevak" && <UserCheck size={14} className="text-purple-600" />}
                 {viewMode === "floor" && <Layers size={14} className="text-blue-600" />}
                 {groupName}
                 <span className="text-xs text-gray-400">({groupRooms.length} rooms)</span>
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {groupRooms.map((rm) => {
-                  const occupants = roomOccupants[rm.room_code] || [];
-                  const isOccupied = rm.status === "occupied";
-                  // Calculate vacancy timing for occupied rooms
-                  const getVacancyLabel = (depDate) => {
-                    if (!depDate) return null;
-                    const dateStr = depDate.split("T")[0];
-                    const today = new Date(); today.setHours(0,0,0,0);
-                    const dep = new Date(dateStr + "T00:00:00");
-                    const diff = Math.ceil((dep - today) / 86400000);
-                    if (diff < 0) return { label: "Overdue", className: "text-red-700 bg-red-100" };
-                    if (diff === 0) return { label: "Departing today", className: "text-orange-700 bg-orange-100" };
-                    if (diff === 1) return { label: "Vacant tomorrow", className: "text-amber-700 bg-amber-100" };
-                    return { label: `Vacant in ${diff} days`, className: "text-blue-700 bg-blue-100" };
-                  };
-                  return (
-                    <div key={rm.room_code}
-                      className={`rounded-xl p-3 border-2 transition ${isOccupied ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}
-                      data-testid={`room-${rm.room_code}`}>
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="font-bold text-sm text-[#0B1C3D]">{rm.room_code}</span>
-                        <div className="flex items-center gap-1">
-                          {isSuper && isOccupied && (
-                            <button onClick={() => setTransferDialog({ roomCode: rm.room_code, occupants })}
-                              className="text-blue-400 hover:text-blue-600 text-xs px-1.5 py-0.5 bg-blue-50 rounded border border-blue-200"
-                              data-testid={`transfer-room-${rm.room_code}`} title="Transfer room">
-                              Transfer
-                            </button>
-                          )}
-                          {isSuper && !isOccupied && (
-                            <button onClick={() => deleteRoom(rm.room_code)} className="text-red-400 hover:text-red-600" data-testid={`delete-room-${rm.room_code}`}>
-                              <Trash2 size={12} />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500">
-                        {rm.ac_type || "Non-AC"} · {occupants.reduce((s, o) => s + o.num, 0)}/{rm.capacity} beds
-                      </p>
-                      {rm.floor && <p className="text-xs text-gray-400">Floor {rm.floor}</p>}
-                      {rm.notes && <p className="text-xs text-gray-400 italic truncate">{rm.notes}</p>}
-                      {occupants.length > 0 && (
-                        <div className="mt-1.5 space-y-2">
-                          {occupants.map((o, i) => {
-                            const vac = o.departureDate ? getVacancyLabel(o.departureDate) : null;
-                            return (
-                              <div key={i} className="text-xs">
-                                <p className="font-medium text-[#0B1C3D] truncate">{o.name} <span className="font-normal text-gray-500">({o.num}p)</span></p>
-                                {o.mobile && <p className="text-gray-500 truncate">📞 {o.mobile}</p>}
-                                {/* Show ALL people in the family/group */}
-                                {(o.attendees || []).length > 1 && (
-                                  <div className="ml-2 mt-0.5 space-y-0.5">
-                                    {o.attendees.map(att => (
-                                      <p key={att.id} className={`text-[10px] truncate ${att.id === o.group_head_id ? "text-amber-700 font-semibold" : "text-gray-500"}`}>
-                                        {att.id === o.group_head_id ? "★ " : "· "}{att.name}{att.age ? ` (${att.age}y)` : ""}{att.special_needs ? ` [${att.special_needs}]` : ""}
-                                      </p>
-                                    ))}
-                                  </div>
-                                )}
-                                {o.swamsevak && <p className="text-purple-600 truncate">Contact: {o.swamsevak}</p>}
-                                {o.notes && <p className="text-gray-400 italic truncate">{o.notes}</p>}
-                                {o.departureDate && (
-                                  <p className="text-gray-400 mt-0.5">Departs: <span className="font-medium text-gray-600">{o.departureDate.split("T")[0]}</span></p>
-                                )}
-                                {vac && (
-                                  <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-semibold ${vac.className}`} data-testid={`vacancy-label-${rm.room_code}`}>
-                                    {vac.label}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      <span className={`inline-block mt-2 text-xs px-2 py-0.5 rounded-full ${isOccupied ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-                        {isOccupied ? `Occupied` : "Available"}
-                      </span>
-                    </div>
-                  );
-                })}
+                {groupRooms.map(rm => (
+                  <RoomCard key={rm.room_code} rm={rm} roomOccupants={roomOccupants} isSuper={isSuper}
+                    onTransfer={setTransferDialog} onDelete={deleteRoom} />
+                ))}
               </div>
             </div>
           ))}
-          {Object.keys(grouped).length === 0 && <p className="text-gray-400 text-center py-8">No rooms found</p>}
+
+          {viewMode === "reference" && Object.entries(referenceGrouped || {})
+            .sort(([a], [b]) => {
+              // push the synthetic buckets to the bottom
+              if (a.startsWith("__")) return 1;
+              if (b.startsWith("__")) return -1;
+              return a.localeCompare(b);
+            })
+            .map(([key, bucket]) => {
+            const isSynthetic = key.startsWith("__");
+            const totalRoomsInBucket = bucket.flat.length + Object.values(bucket.byRelation).reduce((s, arr) => s + arr.length, 0);
+            const hasSubs = Object.keys(bucket.byRelation).length > 0;
+            return (
+              <div key={key} className={`rounded-2xl p-4 ${isSynthetic ? "bg-gray-50 border border-gray-200" : "bg-amber-50/60 border border-amber-200"}`}
+                data-testid={`ref-bucket-${key}`}>
+                <h3 className={`font-bold text-base flex items-center gap-2 mb-3 ${isSynthetic ? "text-gray-500" : "text-[#0B1C3D]"}`}>
+                  <Users size={16} className={isSynthetic ? "text-gray-400" : "text-amber-700"} />
+                  {bucket.name}
+                  <span className="text-xs font-normal text-gray-400">({totalRoomsInBucket} rooms)</span>
+                </h3>
+
+                {/* Flat rooms (reference person without categories OR unassigned) */}
+                {bucket.flat.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-2">
+                    {bucket.flat.map(rm => (
+                      <RoomCard key={rm.room_code} rm={rm} roomOccupants={roomOccupants} isSuper={isSuper}
+                        onTransfer={setTransferDialog} onDelete={deleteRoom} />
+                    ))}
+                  </div>
+                )}
+
+                {/* Relation subgroups (reference person with categories) */}
+                {hasSubs && Object.entries(bucket.byRelation).sort(([a], [b]) => a.localeCompare(b)).map(([relName, relRooms]) => (
+                  <div key={relName} className="mt-3 bg-white/60 rounded-xl p-3 border border-amber-100" data-testid={`ref-${key}-rel-${relName}`}>
+                    <h4 className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                      <span className="inline-block w-1 h-3 bg-amber-400 rounded-full"></span>
+                      {relName}
+                      <span className="text-[10px] font-normal text-gray-400 normal-case">({relRooms.length})</span>
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                      {relRooms.map(rm => (
+                        <RoomCard key={rm.room_code} rm={rm} roomOccupants={roomOccupants} isSuper={isSuper}
+                          onTransfer={setTransferDialog} onDelete={deleteRoom} />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+
+          {viewMode !== "reference" && Object.keys(grouped || {}).length === 0 && <p className="text-gray-400 text-center py-8">No rooms found</p>}
+          {viewMode === "reference" && Object.keys(referenceGrouped || {}).length === 0 && <p className="text-gray-400 text-center py-8">No rooms found</p>}
         </div>
       )}
 
@@ -575,6 +598,89 @@ function TransferRoomForm({ fromRoom, occupants, allRooms, authHeaders, onDone }
         data-testid="confirm-transfer-btn">
         {loading ? "Transferring..." : "Confirm Transfer"}
       </button>
+    </div>
+  );
+}
+
+/**
+ * Single room card used by every view mode.
+ * Extracted so that the reference view can reuse it inside nested subgroup containers
+ * without duplicating the layout.
+ */
+function RoomCard({ rm, roomOccupants, isSuper, onTransfer, onDelete }) {
+  const occupants = roomOccupants[rm.room_code] || [];
+  const isOccupied = rm.status === "occupied";
+  const getVacancyLabel = (depDate) => {
+    if (!depDate) return null;
+    const dateStr = depDate.split("T")[0];
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dep = new Date(dateStr + "T00:00:00");
+    const diff = Math.ceil((dep - today) / 86400000);
+    if (diff < 0) return { label: "Overdue", className: "text-red-700 bg-red-100" };
+    if (diff === 0) return { label: "Departing today", className: "text-orange-700 bg-orange-100" };
+    if (diff === 1) return { label: "Vacant tomorrow", className: "text-amber-700 bg-amber-100" };
+    return { label: `Vacant in ${diff} days`, className: "text-blue-700 bg-blue-100" };
+  };
+  return (
+    <div className={`rounded-xl p-3 border-2 transition ${isOccupied ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}
+      data-testid={`room-${rm.room_code}`}>
+      <div className="flex justify-between items-start mb-1">
+        <span className="font-bold text-sm text-[#0B1C3D]">{rm.room_code}</span>
+        <div className="flex items-center gap-1">
+          {isSuper && isOccupied && (
+            <button onClick={() => onTransfer({ roomCode: rm.room_code, occupants })}
+              className="text-blue-400 hover:text-blue-600 text-xs px-1.5 py-0.5 bg-blue-50 rounded border border-blue-200"
+              data-testid={`transfer-room-${rm.room_code}`} title="Transfer room">
+              Transfer
+            </button>
+          )}
+          {isSuper && !isOccupied && (
+            <button onClick={() => onDelete(rm.room_code)} className="text-red-400 hover:text-red-600" data-testid={`delete-room-${rm.room_code}`}>
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-gray-500">
+        {rm.ac_type || "Non-AC"} · {occupants.reduce((s, o) => s + o.num, 0)}/{rm.capacity} beds
+      </p>
+      {rm.floor && <p className="text-xs text-gray-400">Floor {rm.floor}</p>}
+      {rm.notes && <p className="text-xs text-gray-400 italic truncate">{rm.notes}</p>}
+      {occupants.length > 0 && (
+        <div className="mt-1.5 space-y-2">
+          {occupants.map((o, i) => {
+            const vac = o.departureDate ? getVacancyLabel(o.departureDate) : null;
+            return (
+              <div key={i} className="text-xs">
+                <p className="font-medium text-[#0B1C3D] truncate">{o.name} <span className="font-normal text-gray-500">({o.num}p)</span></p>
+                {o.mobile && <p className="text-gray-500 truncate">📞 {o.mobile}</p>}
+                {(o.attendees || []).length > 1 && (
+                  <div className="ml-2 mt-0.5 space-y-0.5">
+                    {o.attendees.map(att => (
+                      <p key={att.id} className={`text-[10px] truncate ${att.id === o.group_head_id ? "text-amber-700 font-semibold" : "text-gray-500"}`}>
+                        {att.id === o.group_head_id ? "★ " : "· "}{att.name}{att.age ? ` (${att.age}y)` : ""}{att.special_needs ? ` [${att.special_needs}]` : ""}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                {o.swamsevak && <p className="text-purple-600 truncate">Contact: {o.swamsevak}</p>}
+                {o.notes && <p className="text-gray-400 italic truncate">{o.notes}</p>}
+                {o.departureDate && (
+                  <p className="text-gray-400 mt-0.5">Departs: <span className="font-medium text-gray-600">{o.departureDate.split("T")[0]}</span></p>
+                )}
+                {vac && (
+                  <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-semibold ${vac.className}`} data-testid={`vacancy-label-${rm.room_code}`}>
+                    {vac.label}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <span className={`inline-block mt-2 text-xs px-2 py-0.5 rounded-full ${isOccupied ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+        {isOccupied ? `Occupied` : "Available"}
+      </span>
     </div>
   );
 }

@@ -208,16 +208,20 @@ export default function AdminDashboard({ user }) {
           </div>
         </div>
 
-        {/* Block 2: Arrival Status — Arrived, Not Arrived, Departed */}
+        {/* Block 2: Arrival Status — Present (attendee-level), Absent, Not Arrived, Departed */}
         <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-xl p-4 border border-emerald-100" data-testid="stat-arrival-status">
           <div className="flex items-center gap-2 mb-3">
             <UserCheck size={18} className="text-emerald-600" />
             <span className="font-semibold text-emerald-800 text-sm">Arrival Status</span>
           </div>
           <div className="space-y-2">
-            <button onClick={() => openDrillDown("arrival_status", "arrived", "Arrived Guests")} className="flex justify-between items-center w-full text-left hover:bg-emerald-100/50 rounded px-2 py-1 transition" data-testid="stat-arrived">
-              <span className="text-sm text-emerald-700">Arrived</span>
-              <span className="font-bold text-emerald-900 text-sm">{arr.arrived.families} fam / {arr.arrived.people} ppl</span>
+            <button onClick={() => openDrillDown("attendee_arrival_status", "arrived", "Present (People Arrived)")} className="flex justify-between items-center w-full text-left hover:bg-emerald-100/50 rounded px-2 py-1 transition" data-testid="stat-present">
+              <span className="text-sm text-emerald-700">Arrived (Present)</span>
+              <span className="font-bold text-emerald-900 text-sm">{arr.arrived.people_present ?? arr.arrived.people} ppl</span>
+            </button>
+            <button onClick={() => openDrillDown("attendee_arrival_status", "not_arrived", "Absent (marked absent during QR scan)")} className="flex justify-between items-center w-full text-left hover:bg-rose-100/50 rounded px-2 py-1 transition" data-testid="stat-absent">
+              <span className="text-sm text-rose-600">Absent</span>
+              <span className="font-bold text-rose-700 text-sm">{arr.arrived.people_absent ?? 0} ppl</span>
             </button>
             <button onClick={() => openDrillDown("arrival_status", "not_arrived", "Not Yet Arrived")} className="flex justify-between items-center w-full text-left hover:bg-amber-100/50 rounded px-2 py-1 transition" data-testid="stat-not-arrived">
               <span className="text-sm text-amber-600">Not Arrived</span>

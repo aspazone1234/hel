@@ -1369,6 +1369,23 @@ async def get_dashboard(request: Request):
     arrived_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived"]}})
     arrived_p = (await db.registrations.aggregate([{"$match": {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived"]}}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]).to_list(1) or [{"total": 0}])[0]["total"]
 
+    # Attendee-level split: people physically present (individual arrival_status == "arrived")
+    # vs. people absent (attendee.arrival_status in [not_arrived, not_coming] despite family having checked in)
+    pipe_present = [
+        {"$match": {"approval_status": "approved"}},
+        {"$unwind": "$attendees"},
+        {"$match": {"attendees.arrival_status": "arrived"}},
+        {"$count": "total"},
+    ]
+    people_present = (await db.registrations.aggregate(pipe_present).to_list(1) or [{"total": 0}])[0].get("total", 0)
+    pipe_absent = [
+        {"$match": {"approval_status": "approved", "arrival_status": {"$in": ["arrived", "partially_arrived", "departed"]}}},
+        {"$unwind": "$attendees"},
+        {"$match": {"attendees.arrival_status": {"$in": ["not_arrived", "not_coming"]}}},
+        {"$count": "total"},
+    ]
+    people_absent = (await db.registrations.aggregate(pipe_absent).to_list(1) or [{"total": 0}])[0].get("total", 0)
+
     not_coming_fam = await db.registrations.count_documents({"approval_status": "approved", "arrival_status": "not_coming"})
     not_coming_p = (await db.registrations.aggregate([{"$match": {"approval_status": "approved", "arrival_status": "not_coming"}}, {"$group": {"_id": None, "total": {"$sum": "$num_people"}}}]).to_list(1) or [{"total": 0}])[0]["total"]
 
@@ -1465,7 +1482,7 @@ async def get_dashboard(request: Request):
         "active_tickets": active_tickets,
         "arrival_summary": {
             "expected": {"families": expected_fam, "people": expected_p},
-            "arrived": {"families": arrived_fam, "people": arrived_p},
+            "arrived": {"families": arrived_fam, "people": arrived_p, "people_present": people_present, "people_absent": people_absent},
             "not_coming": {"families": not_coming_fam, "people": not_coming_p},
             "departed": {"families": departed_fam, "people": departed_p},
             "not_arrived": {"families": not_arrived_fam, "people": expected_p},
@@ -5308,6 +5325,15 @@ async def dashboard_drill_down(request: Request, field: str = "", value: str = "
             query["arrival_status"] = {"$in": ["arrived", "partially_arrived"]}
         else:
             query["arrival_status"] = value
+    elif field == "attendee_arrival_status":
+        # Drill-down into families that contain at least one attendee with the given status.
+        # Used by the Command Centre "Present" and "Absent" buttons to list families
+        # that have people in those states.
+        if value == "arrived":
+            query["attendees.arrival_status"] = "arrived"
+        else:  # absent: registration already arrived but attendees marked not_arrived / not_coming
+            query["arrival_status"] = {"$in": ["arrived", "partially_arrived", "departed"]}
+            query["attendees.arrival_status"] = {"$in": ["not_arrived", "not_coming"]}
     elif field == "pending":
         query = {"approval_status": "pending"}
     elif field == "reference_person":
