@@ -97,7 +97,7 @@ export default function MessageCenter({ user }) {
                 return (
                   <div key={cat} className="mb-4">
                     <h3 className="text-xs font-bold text-[#0B1C3D]/50 uppercase tracking-wider mb-2">
-                      {cat === "system" ? "System / Auto" : cat === "shraddhalu" ? "Shraddhalu Messages" : "Swamsevak Messages"}
+                      {cat === "system" ? "System / Auto" : cat === "shraddhalu" ? "Shraddhalu Messages" : "Swayamsevak Messages"}
                     </h3>
                     {catTemplates.map(t => (
                       <div key={t.id} className="bg-white rounded-xl border border-[#D4AF37]/10 p-4 mb-2 flex flex-col sm:flex-row sm:items-center gap-3" data-testid={`template-${t.id}`}>
@@ -202,7 +202,7 @@ function SendMessageView({ templates, authHeaders, onSent }) {
             <SelectItem value="all_approved">All Approved Guests</SelectItem>
             <SelectItem value="all_expected">Expected Guests Only</SelectItem>
             <SelectItem value="all_arrived">Arrived Guests Only</SelectItem>
-            <SelectItem value="all_swamsevaks">All Swamsevaks</SelectItem>
+            <SelectItem value="all_swamsevaks">All Swayamsevaks</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -262,7 +262,7 @@ function TemplateDialog({ open, onClose, template, authHeaders, onSaved }) {
                 <SelectContent>
                   <SelectItem value="system">System</SelectItem>
                   <SelectItem value="shraddhalu">Shraddhalu</SelectItem>
-                  <SelectItem value="swamsevak">Swamsevak</SelectItem>
+                  <SelectItem value="swamsevak">Swayamsevak</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -353,7 +353,7 @@ function ScheduleView({ templates, authHeaders }) {
                   <SelectItem value="all_approved">All Approved</SelectItem>
                   <SelectItem value="all_expected">All Expected</SelectItem>
                   <SelectItem value="all_arrived">All Arrived</SelectItem>
-                  <SelectItem value="all_swamsevaks">All Swamsevaks</SelectItem>
+                  <SelectItem value="all_swamsevaks">All Swayamsevaks</SelectItem>
                 </SelectContent>
               </Select>
             </div>

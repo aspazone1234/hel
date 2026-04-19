@@ -363,6 +363,14 @@ export default function ArrivedGuestList({ user }) {
                     {r.assigned_swamsevak && (
                       <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full">Contact: {r.assigned_swamsevak}</span>
                     )}
+                    {/* Custom Field Labels */}
+                    {(customFields || []).filter(cf => cf.applies_to?.includes(r.id)).map(cf => {
+                      const val = r.custom_field_values?.[cf.id];
+                      const displayVal = val === true ? "Yes" : val === false ? "No" : (val || cf.default_value || "—");
+                      return (
+                        <span key={cf.id} className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{cf.name}: {String(displayVal)}</span>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0 flex-wrap">

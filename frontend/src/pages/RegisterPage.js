@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import AddressSelector from "../components/AddressSelector";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, ChevronLeft, Globe, Phone, Check, AlertTriangle, Users, Calendar, Clock, MapPin, User } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, Globe, Phone, Check, Users, Calendar, Clock, MapPin, User } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -64,8 +64,9 @@ export default function RegisterPage() {
   const [otpPhase, setOtpPhase] = useState("enter_mobile"); // enter_mobile | otp_sent | verified
   const [mobile, setMobile] = useState("");
   const [otp, setOtp] = useState("");
-  const [mockOtp, setMockOtp] = useState("");
+  const [mockOtp, setMockOtp] = useState(""); // kept for state compatibility
   const [otpLoading, setOtpLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   // Form state
   const [step, setStep] = useState(0);
@@ -77,7 +78,6 @@ export default function RegisterPage() {
 
   // Reference data
   const [refPersons, setRefPersons] = useState([]);
-  const [relationCats, setRelationCats] = useState([]);
   // Geo data
   const [countries, setCountries] = useState([]);
   const [geoStates, setGeoStates] = useState([]);
@@ -100,7 +100,6 @@ export default function RegisterPage() {
 
   useEffect(() => {
     axios.get(`${API}/reference-persons/public`).then(r => setRefPersons(r.data)).catch(() => {});
-    axios.get(`${API}/relation-categories/public`).then(r => setRelationCats(r.data)).catch(() => {});
     axios.get(`${API}/geo/countries`).then(r => setCountries(r.data)).catch(() => {});
     // Check URL params for returning user from MyRegistrationPage edit
     const urlParams = new URLSearchParams(window.location.search);
@@ -153,6 +152,13 @@ export default function RegisterPage() {
   };
 
   // ─── OTP Flow ───
+  // Cooldown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
+
   const sendOtp = async () => {
     const cleanNum = mobile.replace(/[\s\-]/g, "").trim();
     if (!cleanNum || cleanNum.length < 7 || !/^\d+$/.test(cleanNum)) {
@@ -164,9 +170,9 @@ export default function RegisterPage() {
     try {
       const { data } = await axios.post(`${API}/otp/send`, { mobile: fullMobile });
       setMobile(fullMobile);
-      setMockOtp(data.mock_otp);
       setOtpPhase("otp_sent");
-      toast.success(lang === "hi" ? "OTP \u092D\u0947\u091C\u093E \u0917\u092F\u093E" : "OTP sent successfully");
+      setResendCooldown(60);
+      toast.success(lang === "hi" ? "OTP WhatsApp पर भेजा गया" : "OTP sent via WhatsApp");
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to send OTP");
     } finally {
@@ -174,8 +180,23 @@ export default function RegisterPage() {
     }
   };
 
+  const resendOtp = async () => {
+    if (resendCooldown > 0) return;
+    setOtpLoading(true);
+    try {
+      await axios.post(`${API}/otp/send`, { mobile: mobile.trim() });
+      setResendCooldown(60);
+      setOtp("");
+      toast.success(lang === "hi" ? "OTP पुनः भेजा गया" : "OTP resent via WhatsApp");
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Failed to resend OTP");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   const verifyOtp = async () => {
-    if (!otp || otp.length < 4) {
+    if (!otp || otp.length < 6) {
       toast.error(lang === "hi" ? "\u0915\u0943\u092A\u092F\u093E OTP \u0926\u0930\u094D\u091C \u0915\u0930\u0947\u0902" : "Please enter the OTP");
       return;
     }
@@ -230,7 +251,9 @@ export default function RegisterPage() {
     }
     if (step === 2) {
       if (!form.reference_person_id) e.reference_person = true;
-      if (!form.relation_category) e.relation_category = true;
+      const rp = refPersons.find(p => p.id === form.reference_person_id);
+      const rpCats = rp?.relation_categories || [];
+      if (rpCats.length > 0 && !form.relation_category) e.relation_category = true;
     }
     if (step === 3) {
       if (!form.consent) e.consent = true;
@@ -399,25 +422,34 @@ export default function RegisterPage() {
             {otpPhase === "otp_sent" && (
               <div data-testid="otp-verify-phase">
                 <p className="text-[#0B1C3D]/60 text-sm mb-2">
-                  {lang === "hi" ? `${mobile} \u092A\u0930 OTP \u092D\u0947\u091C\u093E \u0917\u092F\u093E` : `OTP sent to ${mobile}`}
+                  {lang === "hi" ? `${mobile} पर WhatsApp OTP भेजा गया` : `OTP sent to ${mobile} via WhatsApp`}
                 </p>
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
-                  <p className="text-amber-700 text-xs font-medium flex items-center gap-1">
-                    <AlertTriangle size={12} /> {lang === "hi" ? "Mock OTP (Testing):" : "Mock OTP (Testing):"} <span className="font-bold text-base ml-1" data-testid="mock-otp-display">{mockOtp}</span>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+                  <p className="text-green-700 text-xs font-medium flex items-center gap-1">
+                    ✓ {lang === "hi" ? "कृपया WhatsApp पर प्राप्त 6-अंकीय OTP दर्ज करें" : "Please enter the 6-digit OTP received on WhatsApp"}
                   </p>
                 </div>
                 <div className="space-y-4">
                   <div>
                     <Label className="text-[#0B1C3D]/70 text-sm">OTP</Label>
                     <Input data-testid="otp-code-input" value={otp} onChange={e => setOtp(e.target.value)}
-                      placeholder="1234" className="mt-1.5 bg-white border-[#D4AF37]/20 text-center text-2xl tracking-[0.5em]" maxLength={4} />
+                      placeholder="123456" className="mt-1.5 bg-white border-[#D4AF37]/20 text-center text-2xl tracking-[0.5em]" maxLength={6} />
                   </div>
                   <Button onClick={verifyOtp} disabled={otpLoading} className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90 py-3" data-testid="otp-verify-btn">
                     {otpLoading ? (lang === "hi" ? "\u0938\u0924\u094D\u092F\u093E\u092A\u093F\u0924 \u0915\u0930 \u0930\u0939\u0947 \u0939\u0948\u0902..." : "Verifying...") : (lang === "hi" ? "OTP \u0938\u0924\u094D\u092F\u093E\u092A\u093F\u0924 \u0915\u0930\u0947\u0902" : "Verify OTP")}
                   </Button>
-                  <button onClick={() => { setOtpPhase("enter_mobile"); setOtp(""); }} className="w-full text-[#0B1C3D]/50 text-sm hover:text-[#0B1C3D]" data-testid="otp-change-number">
-                    {lang === "hi" ? "\u0928\u0902\u092C\u0930 \u092C\u0926\u0932\u0947\u0902" : "Change number"}
-                  </button>
+                  <div className="flex items-center justify-between">
+                    <button onClick={() => { setOtpPhase("enter_mobile"); setOtp(""); setResendCooldown(0); }} className="text-[#0B1C3D]/50 text-sm hover:text-[#0B1C3D]" data-testid="otp-change-number">
+                      {lang === "hi" ? "\u0928\u0902\u092C\u0930 \u092C\u0926\u0932\u0947\u0902" : "Change number"}
+                    </button>
+                    <button onClick={resendOtp} disabled={resendCooldown > 0 || otpLoading}
+                      className={`text-sm font-medium ${resendCooldown > 0 ? "text-[#0B1C3D]/30 cursor-not-allowed" : "text-[#D4AF37] hover:text-[#B8860B]"}`}
+                      data-testid="otp-resend-btn">
+                      {resendCooldown > 0
+                        ? (lang === "hi" ? `पुनः भेजें (${resendCooldown}s)` : `Resend (${resendCooldown}s)`)
+                        : (lang === "hi" ? "OTP पुनः भेजें" : "Resend OTP")}
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -717,7 +749,10 @@ export default function RegisterPage() {
               {/* Reference Person */}
               <div>
                 <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F *" : "Reference Person *"}</Label>
-                <Select value={form.reference_person_id} onValueChange={v => set("reference_person_id", v)}>
+                <Select
+                  value={form.reference_person_id}
+                  onValueChange={v => { set("reference_person_id", v); set("relation_category", ""); }}
+                >
                   <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="reference-person-select">
                     <SelectValue placeholder={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Select reference person"} />
                   </SelectTrigger>
@@ -727,18 +762,25 @@ export default function RegisterPage() {
                 </Select>
               </div>
 
-              {/* Relation Category */}
-              <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0938\u0947 \u0938\u092E\u094D\u092C\u0928\u094D\u0927 *" : "Relation with Reference Person *"}</Label>
-                <Select value={form.relation_category} onValueChange={v => set("relation_category", v)}>
-                  <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="relation-category-select">
-                    <SelectValue placeholder={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {relationCats.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Relation Category — only if the selected reference person defined one */}
+              {(() => {
+                const rp = refPersons.find(p => p.id === form.reference_person_id);
+                const cats = rp?.relation_categories || [];
+                if (!form.reference_person_id || cats.length === 0) return null;
+                return (
+                  <div>
+                    <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0938\u0947 \u0938\u092E\u094D\u092C\u0928\u094D\u0927 *" : "Relation with Reference Person *"}</Label>
+                    <Select value={form.relation_category} onValueChange={v => set("relation_category", v)}>
+                      <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="relation-category-select">
+                        <SelectValue placeholder={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cats.map((c, i) => <SelectItem key={`${c}-${i}`} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                );
+              })()}
 
               {/* Message */}
               <div>
@@ -798,6 +840,8 @@ export default function RegisterPage() {
                 <Checkbox id="consent" checked={form.consent} onCheckedChange={v => set("consent", v)} data-testid="consent-checkbox" className="mt-0.5" />
                 <label htmlFor="consent" className="text-sm text-[#0B1C3D]/70 cursor-pointer">
                   {t.register.consent}
+                  {" "}
+                  <a href="/privacy-policy" target="_blank" rel="noopener noreferrer" className="text-[#D4AF37] underline underline-offset-2 hover:text-[#B8860B]" data-testid="consent-privacy-link">Privacy Policy</a>
                 </label>
               </div>
 

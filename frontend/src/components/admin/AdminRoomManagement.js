@@ -117,6 +117,9 @@ export default function AdminRoomManagement({ user }) {
         regId: r.id,
         departureDate: r.departure_date || r.expected_departure_time || "",
         notes: r.admin_notes || "",
+        mobile: r.primary_mobile || "",
+        attendees: r.attendees || [],
+        group_head_id: r.group_head_id,
       });
     });
   });
@@ -157,7 +160,7 @@ export default function AdminRoomManagement({ user }) {
           groups["Unassigned"].push(r);
         } else {
           occupants.forEach(occ => {
-            const key = occ.swamsevak || "Unassigned Swamsevak";
+            const key = occ.swamsevak || "Unassigned Swayamsevak";
             if (!groups[key]) groups[key] = [];
             if (!groups[key].find(rm => rm.room_code === r.room_code)) groups[key].push(r);
           });
@@ -206,16 +209,80 @@ export default function AdminRoomManagement({ user }) {
         </button>
         <button onClick={() => setViewMode("swamsevak")} data-testid="view-swamsevak"
           className={`flex items-center gap-1 px-3 py-2 rounded-md text-sm transition ${viewMode === "swamsevak" ? "bg-white shadow font-medium text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}>
-          <UserCheck size={14} /> Swamsevak-wise
+          <UserCheck size={14} /> Swayamsevak-wise
         </button>
       </div>
 
-      {/* Summary */}
-      <div className="flex gap-4 text-sm">
-        <span className="text-gray-600">Total: <strong>{rooms.length}</strong></span>
-        <span className="text-green-600">Available: <strong>{rooms.filter(r => r.status === "available").length}</strong></span>
-        <span className="text-red-600">Occupied: <strong>{rooms.filter(r => r.status === "occupied").length}</strong></span>
-      </div>
+      {/* Enhanced Summary Stats */}
+      {(() => {
+        const total = rooms.length;
+        const occupied = rooms.filter(r => r.status === "occupied").length;
+        const available = total - occupied;
+        const acTotal = rooms.filter(r => r.ac_type === "AC").length;
+        const acOccupied = rooms.filter(r => r.ac_type === "AC" && r.status === "occupied").length;
+        const nonAcTotal = rooms.filter(r => r.ac_type !== "AC").length;
+        const nonAcOccupied = rooms.filter(r => r.ac_type !== "AC" && r.status === "occupied").length;
+        const capMap = {};
+        rooms.forEach(r => {
+          const c = r.capacity || 0;
+          if (!capMap[c]) capMap[c] = { total: 0, occupied: 0 };
+          capMap[c].total++;
+          if (r.status === "occupied") capMap[c].occupied++;
+        });
+        const capacities = Object.entries(capMap).sort((a, b) => Number(a[0]) - Number(b[0]));
+        return (
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white rounded-xl p-4 border text-center">
+                <p className="text-2xl font-bold text-[#0B1C3D]">{total}</p>
+                <p className="text-xs text-gray-500">Total Rooms</p>
+              </div>
+              <div className="bg-green-50 rounded-xl p-4 border border-green-200 text-center">
+                <p className="text-2xl font-bold text-green-700">{available}</p>
+                <p className="text-xs text-green-600">Available</p>
+              </div>
+              <div className="bg-red-50 rounded-xl p-4 border border-red-200 text-center">
+                <p className="text-2xl font-bold text-red-700">{occupied}</p>
+                <p className="text-xs text-red-600">Occupied</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-blue-50 rounded-xl p-3 border border-blue-200">
+                <p className="text-xs font-semibold text-blue-800 mb-1">❄ AC Rooms</p>
+                <div className="flex justify-between text-sm">
+                  <span className="text-blue-700">Total: <strong>{acTotal}</strong></span>
+                  <span className="text-blue-600">Occupied: <strong>{acOccupied}</strong></span>
+                  <span className="text-green-600">Free: <strong>{acTotal - acOccupied}</strong></span>
+                </div>
+              </div>
+              <div className="bg-amber-50 rounded-xl p-3 border border-amber-200">
+                <p className="text-xs font-semibold text-amber-800 mb-1">☀ Non-AC Rooms</p>
+                <div className="flex justify-between text-sm">
+                  <span className="text-amber-700">Total: <strong>{nonAcTotal}</strong></span>
+                  <span className="text-amber-600">Occupied: <strong>{nonAcOccupied}</strong></span>
+                  <span className="text-green-600">Free: <strong>{nonAcTotal - nonAcOccupied}</strong></span>
+                </div>
+              </div>
+            </div>
+            {capacities.length > 0 && (
+              <div className="bg-gray-50 rounded-xl p-3 border">
+                <p className="text-xs font-semibold text-gray-700 mb-2">📊 By Capacity</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                  {capacities.map(([cap, v]) => (
+                    <div key={cap} className="bg-white rounded-lg p-2 border text-center">
+                      <p className="text-xs text-gray-500">{cap}-Person</p>
+                      <p className="text-sm font-bold text-[#0B1C3D]">{v.occupied}/{v.total}</p>
+                      <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
+                        <div className="bg-[#0B1C3D] h-1.5 rounded-full" style={{width: `${v.total > 0 ? (v.occupied/v.total*100) : 0}%`}}/>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Near-Future Vacancy Insights */}
       {vacancyForecast.length > 0 && rooms.filter(r => r.status === "available").length === 0 && (
@@ -294,7 +361,17 @@ export default function AdminRoomManagement({ user }) {
                             return (
                               <div key={i} className="text-xs">
                                 <p className="font-medium text-[#0B1C3D] truncate">{o.name} <span className="font-normal text-gray-500">({o.num}p)</span></p>
-                                {o.familyName && o.familyName !== o.name && <p className="text-gray-500 truncate">Family: {o.familyName}</p>}
+                                {o.mobile && <p className="text-gray-500 truncate">📞 {o.mobile}</p>}
+                                {/* Show ALL people in the family/group */}
+                                {(o.attendees || []).length > 1 && (
+                                  <div className="ml-2 mt-0.5 space-y-0.5">
+                                    {o.attendees.map(att => (
+                                      <p key={att.id} className={`text-[10px] truncate ${att.id === o.group_head_id ? "text-amber-700 font-semibold" : "text-gray-500"}`}>
+                                        {att.id === o.group_head_id ? "★ " : "· "}{att.name}{att.age ? ` (${att.age}y)` : ""}{att.special_needs ? ` [${att.special_needs}]` : ""}
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
                                 {o.swamsevak && <p className="text-purple-600 truncate">Contact: {o.swamsevak}</p>}
                                 {o.notes && <p className="text-gray-400 italic truncate">{o.notes}</p>}
                                 {o.departureDate && (

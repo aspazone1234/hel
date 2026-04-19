@@ -1,158 +1,53 @@
-# PRD - Shrimad Bhagavat Katha 2026 Event Registration & Admin System
+# PRD — Swayamsevak Portal (Shrimad Bhagavat Katha 2026)
 
 ## Original Problem Statement
-Full-stack event management platform for Katha 2026 (Shrimad Bhagavat). Mobile-first, WhatsApp-based guest registration and admin management system with QR code attendance, room assignments, volunteer management, and real-time dashboard.
+Imported GitHub repo `https://github.com/aspazone1234/hel/tree/final1` and implemented two feature tasks:
 
----
-
-## User Personas
-1. **Guest / Attendee** — Registers via mobile number + WhatsApp OTP, gets confirmation with QR code
-2. **Swamsevak (Volunteer Admin)** — Manages assigned guests, marks attendance via QR, handles help tickets
-3. **Super Admin (superashwini)** — Full control: approvals, room assignment, analytics, task management, edit all records
-
----
-
-## Core Requirements
-- WhatsApp mobile-based primary identity (DO NOT change)
-- QR code for attendance entry
-- Mobile-first design
-- Room management and swamsevak assignment
-- Help ticket / support system
-
----
+**Task 1** — Role-gated admin experience for normal admins (swamsevaks) vs super admins.
+**Task 2** — Per-reference-person relation categories (each reference person owns its own list).
 
 ## Architecture
-```
-/app/
-├── backend/
-│   ├── server.py              # All endpoints (~2600 lines)
-│   └── requirements.txt
-│   ├── pages/
-│   │   ├── PrivacyPolicyPage.js  # /privacy-policy route (DONE)
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── AddressSelector.js     # Country/State/City autocomplete
-│   │   │   ├── Navbar.js              # Flute sound player
-│   │   │   ├── HeroSection.js         # Golden door + flute trigger
-│   │   │   └── admin/
-│   │   │       ├── QRScanner.js       # jsQR auto-detect + re-scan read-only view
-│   │   │       ├── AdminDashboard.js  # Command Center (3-block layout)
-│   │   │       ├── TodoModule.js      # Tasks + recurring + Guest Assignment
-│   │   │       ├── AdminAuditLog.js   # Activity Log
-│   │   │       ├── AdminRoomManagement.js  # Room cards with vacancy info + transfer
-│   │   │       ├── CustomFieldsManager.js  # target_scope redesign
-│   │   │       ├── ExpectedGuestList.js    # Full edit dialog
-│   │   │       └── ArrivedGuestList.js     # Full edit dialog
-│   │   └── pages/
-│   │       ├── RegisterPage.js        # Guest self-registration
-│   │       ├── MyRegistrationPage.js  # Confirmation with volunteer contact
-│   │       ├── ThankYouPage.js
-│   │       └── AdminPage.js           # Admin shell with icon sidebar
-└── memory/
-    └── PRD.md
-```
+- Backend: FastAPI (`/app/backend/server.py`) + MongoDB (`test_database`)
+- Frontend: React + Tailwind + Radix UI + Sonner (toasts)
+- WhatsApp: Meta Cloud API (currently **MOCKED** — WA_* env vars empty)
 
----
+## User Personas
+- **Super admin (swami / superashwini)** — full access to all settings, sensitive data, configuration.
+- **Normal admin (swamsevak)** — day-to-day operations access. Can browse sensitive modules but cannot change them. Sensitive values (OTPs, contact names/phones) are masked for them.
 
-## What's Been Implemented
+## Core Requirements (static)
+1. Only super admin can create/edit reference persons, relation categories (now per-person), help categories, WA flow config, run bulk campaigns, manage custom fields, approve/reject registrations as admin.
+2. Normal admin sees operational tools (help tickets, duties, attendance marker, room mgmt, expected/arrived lists).
+3. On any blocked action, user gets a clear toast: **"You cannot change these settings. Contact the super admin for this."**
 
-### June 2025 — Phase 1 (Foundation)
-- WhatsApp OTP-based registration flow
-- Guest self-registration (multi-step form)
-- QR code generation + download
-- Admin panel with login
-- Basic expected/arrived guest lists
+## What's been implemented
+### 2026-04-19 (this session) — full import + role gating + reference model redesign
+- Repo imported from branch `final1`; `.env`, deps, and MongoDB snapshot restored.
+- **Task 1:**
+  - `/app/frontend/src/lib/roleGuard.js` — global axios 403 interceptor shows the warning toast automatically on any backend-protected mutation.
+  - `AdminPage.js` — sidebar for normal admin split into primary section (operational) + secondary faded "VIEW-ONLY (SUPER ADMIN CONTROLLED)" section (Reference Persons, Notifications, Custom Fields). Super admin sees them inline with full-access styling.
+  - `ViewOnly.js` pointer-blocker wrapper removed from Reference Persons / Notifications / Custom Fields — users can now click freely.
+  - `WAFlowSettings.js` — hides the entire dark endpoint/JSON card, flow-id/flow-token chips, Add/Edit/Delete buttons, and events viewer when `isSuper=false`. Shows amber "sensitive data hidden" banner instead.
+  - `NotificationManagement.js` — accepts `user` prop, masks OTP codes (→ `••••••`), mobile numbers (→ `+91•••••••XX`), and conversation names/messages (→ "Hidden conversation" / "Protected message content"). Clicking a conversation row as non-super triggers the warning toast instead of opening detail.
+  - `HelpCentre.js` — removes old ViewOnly wrappers; pipes `isSuper` into children.
+- **Task 2:**
+  - `ReferencePersonManager.js` redesigned to a single-panel layout. Each reference person card has inline chip-list of relation categories with remove-X and an "add category" input (supports comma-separated bulk add).
+  - `RegisterPage.js` (public form): relation-category `<Select>` is rendered **only when the selected reference person has non-empty `relation_categories`**; derived list comes from the selected person. Changing reference person resets the chosen relation. Validation requires a relation only if the person has categories.
+  - `MyRegistrationPage.js` EditReferenceModal: same conditional behaviour.
+  - Dropped the (now-unused) global relation-categories fetch from both pages.
 
-### Phase 2 (Core Features)
-- Room management (create, assign, bulk create)
-- Swamsevak assignment and dashboard
-- Help Centre (tickets)
-- Custom fields framework
-- Todo/task module
-- Reference person management
-- PDF/CSV exports
+## Current Verified Status
+- All 20 backend API tests PASSED (role-gating + reference-person CRUD + regression).
+- All frontend UI tests PASSED (super + non-super flows; toast, masking, hidden sections, per-person chips).
+- No regressions in dashboard / registrations / rooms / auth.
 
-### Phase 3 (Stabilization)
-- Address standardization (Country/State/City via AddressSelector)
-- DB cleanup (stale rooms, test data)
-- Swamsevak count fixes
-- Reference person stats
-- Room management export
-- Expected guest list filters
+## Prioritized Backlog / Future
+- **P1** — Hook up real WhatsApp Cloud API credentials in `/app/backend/.env` (WA_PHONE_NUMBER_ID, WA_ACCESS_TOKEN, WA_BUSINESS_ACCOUNT_ID, WA_WEBHOOK_VERIFY_TOKEN) so OTP send, bulk campaigns, and flow webhooks become live. Currently MOCKED.
+- **P1** — Configure `APP_URL` env var for deep links generated in templates (already points to preview URL; update on production).
+- **P2** — Allow an opt-in "show OTP for audit" button that unmasks a single OTP on-click for normal admins with a short reason prompt (audit logged).
+- **P2** — Consider deprecating `/api/relation-categories/public` (unused by new UI) after a migration window.
+- **P2** — In the Reference Persons manager, allow drag-reorder of categories per person.
 
-### Phase 4 (Apr 2026 — 18-Point Overhaul)
-1. ✅ QR re-scan: shows full read-only guest profile + "contact super admin" note
-2. ✅ Confirmation page: volunteer contact explanation, mobile number, bigger QR button, form-closed notice, System Admin label
-3. ✅ Head of Family mandatory in registration form
-4. ✅ Toast import fixed in AdminPage.js (admin creation no longer errors)
-5. ✅ Edit permissions: Super Admin = full edit (all customer fields except mobile), Volunteer = admin notes + custom fields only. Edit button visible to ALL admin roles.
-6. ✅ Active ticket notification at ABSOLUTE TOP of Command Center (above My Day)
-7. ✅ Room transfer: super admin can shift occupied room to empty room
-8. ✅ Dashboard blocks restructured: Expected+NotComing | ArrivalStatus(Arrived/NotArrived/Departed) | Rooms
-9. ✅ Room cards: occupant name/family, departure date, "Vacant in X days" label
-10. ✅ Custom fields: target_scope (Expected/Arrived/All), admin-only, guest selector
-11. ✅ Activity Log uses full AdminAuditLog.js component
-12. ✅ Guest Assignment section in TodoModule (see all volunteer→guest assignments)
-13. ✅ Recurring tasks: daily reset at configured time, completion history, permissions (volunteers can't delete recurring/superadmin tasks)
-14. ✅ Top Geographies: Countries + States + Cities (not just states)
-15. ✅ My Day: Special Needs shows ALL guests for super admin, only assigned for volunteers
-16. ✅ Flute sound: fallback to MP3 now also calls play()
-17. ✅ Mobile sidebar: icon-only default on mobile, expanded default on desktop, blinking expand cue
-18. ✅ Regression maintained
-
----
-
-## Key API Endpoints
-- `POST /api/auth/login` — Admin login
-- `POST /api/register` — Guest registration
-- `GET /api/registration/by-mobile/{mobile}` — Guest self-lookup
-- `GET /api/admin/dashboard` — Full analytics (includes top_countries, top_cities)
-- `GET /api/admin/swamsevak-dashboard` — My Day (superadmin=global, volunteer=scoped)
-- `GET /api/admin/guests/expected` — Expected list (paginated)
-- `GET /api/admin/guests/arrived` — Arrived list (paginated)
-- `PUT /api/admin/registrations/{id}` — Update registration
-- `PUT /api/admin/rooms/{code}/shift` — Room transfer
-- `POST /api/admin/todos` — Create task (recurring supported)
-- `POST /api/admin/custom-fields` — Create custom field (with target_scope, applies_to)
-- `GET /api/admin/audit-logs` — Activity log
-- `POST /api/admin/scan-qr` — QR attendance (already-arrived returns full details)
-
----
-
-## DB Schema (Key Fields)
-- `registrations`: `arrival_status` (expected/arrived/departed/not_coming), `address` (country/state/city/pin_code), `selected_days`, `group_head_id`, `assigned_swamsevak`, `assigned_swamsevak_mobile`, `custom_field_values`
-- `rooms`: `room_code`, `status`, `capacity`, `floor`, `ac_type`, `notes`, `occupant_ids`
-- `todos`: `is_recurring`, `recurring_time`, `completion_history`, `last_completed_date`, `created_by_role`
-- `custom_fields`: `target_scope` (expected/arrived/all), `applies_to` (list of reg IDs), `visibility` (always "admin_only")
-- `audit_logs`: `action`, `entity_type`, `target_id`, `performed_by`, `description`, `created_at`
-
----
-
-## Prioritized Backlog
-
-### P0 — Immediate Next
-- None (all tasks including /privacy-policy complete)
-
-### P1 — High Priority
-- Real Twilio SMS / WhatsApp Business API integration (currently mocked)
-- Test coverage for new recurring tasks and custom fields features
-
-### P2 — Important
-- Push notifications for status changes
-- Advanced analytics dashboard (trend charts)
-- Bulk room assignment UI
-- Email notifications for approvals
-
-### P3 — Future
-- Multi-event support
-- Guest mobile app
-- WhatsApp bot integration
-- Report builder
-
----
-
-## Known Issues / Caveats
-- WhatsApp OTP is MOCKED (uses any 6-digit code)
-- The `server.py` is ~2600 lines; future refactoring should split into route modules
-- `top_countries/cities/states` only shows data when registrations have addresses
+## Test Credentials
+- Super admin — `superashwini` / `supersebhiupper123`
+- Normal admin (seeded) — `testadmin` / `test1234`

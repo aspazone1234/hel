@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { LanguageProvider } from "@/context/LanguageContext";
 import axios from "axios";
+import { installRoleInterceptor } from "@/lib/roleGuard";
 import HomePage from "@/pages/HomePage";
 import RegisterPage from "@/pages/RegisterPage";
 import AdminPage from "@/pages/AdminPage";
@@ -12,6 +13,7 @@ import MyRegistrationPage from "@/pages/MyRegistrationPage";
 import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
 
 axios.defaults.withCredentials = false;
+installRoleInterceptor();
 
 function App() {
   return (

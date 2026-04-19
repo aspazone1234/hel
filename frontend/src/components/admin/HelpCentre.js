@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
-import { Headphones, Plus, Search, Clock, AlertTriangle, CheckCircle, Eye, UserPlus } from "lucide-react";
+import { Headphones, Plus, Search, Clock, AlertTriangle, CheckCircle, Eye, UserPlus, GitBranch, LayoutGrid } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
+import WAFlowSettings from "./WAFlowSettings";
+import HelpCategoryManager from "./HelpCategoryManager";
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
@@ -19,6 +21,7 @@ export default function HelpCentre({ user }) {
   const [categories, setCategories] = useState([]);
   const [admins, setAdmins] = useState([]);
   const [resolveNote, setResolveNote] = useState("");
+  const [hcTab, setHcTab] = useState("tickets"); // "tickets" | "flow"
   const isSuper = user?.role === "superadmin";
 
   const authHeaders = useCallback(() => ({
@@ -134,12 +137,45 @@ export default function HelpCentre({ user }) {
           <Headphones className="text-[#B8860B]" size={24} />
           <h1 className="text-xl font-bold text-[#0B1C3D]">Help Centre</h1>
         </div>
-        <button onClick={() => setShowCreate(true)} data-testid="create-ticket-btn"
-          className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1">
-          <Plus size={14} /> New Ticket
+        {hcTab === "tickets" && (
+          <button onClick={() => setShowCreate(true)} data-testid="create-ticket-btn"
+            className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1">
+            <Plus size={14} /> New Ticket
+          </button>
+        )}
+      </div>
+
+      {/* Help Centre sub-tabs — visible to ALL admins; SLA + WA Flow Settings become view-only for non-super */}
+      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit" data-testid="hc-subtabs">
+        <button
+          onClick={() => setHcTab("tickets")}
+          data-testid="hc-tab-tickets"
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "tickets" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+        >
+          <Headphones size={14} /> Tickets
+        </button>
+        <button
+          onClick={() => setHcTab("categories")}
+          data-testid="hc-tab-categories"
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "categories" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+        >
+          <LayoutGrid size={14} /> Services / SLA
+        </button>
+        <button
+          onClick={() => setHcTab("flow")}
+          data-testid="hc-tab-flow"
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${hcTab === "flow" ? "bg-white shadow text-[#0B1C3D]" : "text-gray-600 hover:bg-gray-50"}`}
+        >
+          <GitBranch size={14} /> WA Flow Settings
         </button>
       </div>
 
+      {hcTab === "flow" ? (
+        <WAFlowSettings isSuper={isSuper} />
+      ) : hcTab === "categories" ? (
+        <HelpCategoryManager isSuper={isSuper} />
+      ) : (
+        <>
       {/* Stats */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="ticket-stats">
@@ -209,13 +245,22 @@ export default function HelpCentre({ user }) {
             <div key={t.id} className="bg-white rounded-xl p-4 border hover:shadow-sm transition" data-testid={`ticket-${t.id}`}>
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex-1 min-w-0">
+                  {/* Guest name + Room shown prominently on top */}
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="font-semibold text-[#0B1C3D] text-sm" data-testid={`ticket-guest-${t.id}`}>
+                      {t.guest_name || "Guest"}
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700" data-testid={`ticket-room-${t.id}`}>
+                      Room: {t.room_or_location || "—"}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${priorityColors[t.priority] || ""}`}>{t.priority}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${statusColors[t.status] || ""}`}>{t.status}</span>
                     <span className={`text-xs font-medium ${getSLAColor(t)}`}><Clock size={10} className="inline" /> {getRemainingTime(t)}</span>
                   </div>
-                  <p className="font-medium text-[#0B1C3D] text-sm mt-1 truncate">{t.description || t.category}</p>
-                  <p className="text-xs text-gray-500">{t.guest_name || "Admin"} • Assigned: {t.assigned_to || "Unassigned"}</p>
+                  <p className="text-[#0B1C3D] text-sm mt-1 truncate">{t.category_label || t.category}{t.description ? ` — ${t.description}` : ""}</p>
+                  <p className="text-xs text-gray-500">Assigned: {t.assigned_to_name || t.assigned_to || "Unassigned"}</p>
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <button onClick={() => { setViewTicket(t); setResolveNote(""); }} data-testid={`view-ticket-${t.id}`}
@@ -277,6 +322,7 @@ export default function HelpCentre({ user }) {
                 <div className="flex justify-between"><span className="text-gray-500">Status</span><span className={`px-2 py-0.5 rounded-full text-xs ${statusColors[viewTicket.status]}`}>{viewTicket.status}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">SLA</span><span className={getSLAColor(viewTicket)}>{getRemainingTime(viewTicket)}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Guest</span><span>{viewTicket.guest_name || "—"} {viewTicket.guest_mobile && `(${viewTicket.guest_mobile})`}</span></div>
+                <div className="flex justify-between"><span className="text-gray-500">Room / Location</span><span className="font-medium" data-testid="detail-room">{viewTicket.room_or_location || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Created By</span><span>{viewTicket.created_by}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Assigned To</span><span>{viewTicket.assigned_to || "Unassigned"}</span></div>
                 <div className="flex justify-between"><span className="text-gray-500">Created</span><span>{new Date(viewTicket.created_at).toLocaleString()}</span></div>
@@ -320,6 +366,8 @@ export default function HelpCentre({ user }) {
           )}
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 }

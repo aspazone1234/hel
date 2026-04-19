@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2, Save, X } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Plus, Edit2, Trash2, Save, X, Users } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -8,158 +8,231 @@ import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+/**
+ * Reference Person manager.
+ *
+ * Each reference person OWNS their own set of relation categories. A person
+ * can have zero relation categories (in which case registrants don't pick a
+ * relation for them). Super admin adds/removes categories per person inline.
+ */
 export default function ReferencePersonManager({ user }) {
+  const isSuper = user?.role === "superadmin";
   const [persons, setPersons] = useState([]);
-  const [cats, setCats] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
-  const [newDesc, setNewDesc] = useState("");
+  const [newCategoriesText, setNewCategoriesText] = useState("");
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState("");
-  const [newCat, setNewCat] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [addCatText, setAddCatText] = useState({}); // { [personId]: "text" }
 
-  const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` });
+  const authHeaders = useCallback(() => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` }), []);
 
-  const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [pRes, cRes] = await Promise.all([
-        axios.get(`${API}/admin/reference-persons`, { headers: authHeaders() }),
-        axios.get(`${API}/admin/relation-categories`, { headers: authHeaders() }),
-      ]);
-      setPersons(pRes.data);
-      setCats(cRes.data);
-    } catch (err) {
-      toast.error("Failed to load");
+      const { data } = await axios.get(`${API}/admin/reference-persons`, { headers: authHeaders() });
+      setPersons(data || []);
+    } catch {
+      toast.error("Failed to load reference persons");
     } finally {
       setLoading(false);
     }
-  };
+  }, [authHeaders]);
 
-  useEffect(() => { fetchAll(); }, []);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const addPerson = async () => {
     if (!newName.trim()) return;
+    const cats = newCategoriesText.split(",").map(c => c.trim()).filter(Boolean);
     try {
-      await axios.post(`${API}/admin/reference-persons`, { name: newName, description: newDesc }, { headers: authHeaders() });
-      toast.success("Added");
-      setNewName(""); setNewDesc("");
+      await axios.post(`${API}/admin/reference-persons`,
+        { name: newName.trim(), description: "", relation_categories: cats },
+        { headers: authHeaders() });
+      toast.success("Reference person added");
+      setNewName(""); setNewCategoriesText("");
       fetchAll();
-    } catch (err) {
-      toast.error("Failed to add");
+    } catch (e) {
+      if (e.response?.status !== 403) toast.error("Failed to add");
     }
   };
 
-  const updatePerson = async (id) => {
+  const saveRename = async (id) => {
+    if (!editName.trim()) return;
     try {
-      await axios.put(`${API}/admin/reference-persons/${id}`, { name: editName }, { headers: authHeaders() });
+      await axios.put(`${API}/admin/reference-persons/${id}`,
+        { name: editName.trim() },
+        { headers: authHeaders() });
       toast.success("Updated");
       setEditId(null);
       fetchAll();
-    } catch (err) {
-      toast.error("Failed");
+    } catch (e) {
+      if (e.response?.status !== 403) toast.error("Failed");
     }
   };
 
   const deletePerson = async (id) => {
+    if (!window.confirm("Delete this reference person? Existing registrations that reference them will keep the link but it may no longer resolve.")) return;
     try {
       await axios.delete(`${API}/admin/reference-persons/${id}`, { headers: authHeaders() });
       toast.success("Deleted");
       fetchAll();
-    } catch (err) {
-      toast.error("Failed");
+    } catch (e) {
+      if (e.response?.status !== 403) toast.error("Failed");
     }
   };
 
-  const addCategory = async () => {
-    if (!newCat.trim()) return;
+  const addCategoryToPerson = async (person) => {
+    const raw = (addCatText[person.id] || "").trim();
+    if (!raw) return;
+    const existing = person.relation_categories || [];
+    const toAdd = raw.split(",").map(c => c.trim()).filter(Boolean)
+      .filter(c => !existing.some(x => x.toLowerCase() === c.toLowerCase()));
+    if (toAdd.length === 0) {
+      setAddCatText({ ...addCatText, [person.id]: "" });
+      return;
+    }
     try {
-      await axios.post(`${API}/admin/relation-categories`, { name: newCat, description: "" }, { headers: authHeaders() });
+      await axios.put(`${API}/admin/reference-persons/${person.id}`,
+        { relation_categories: [...existing, ...toAdd] },
+        { headers: authHeaders() });
       toast.success("Category added");
-      setNewCat("");
+      setAddCatText({ ...addCatText, [person.id]: "" });
       fetchAll();
-    } catch (err) {
-      toast.error("Failed");
+    } catch (e) {
+      if (e.response?.status !== 403) toast.error("Failed");
     }
   };
 
-  const deleteCategory = async (id) => {
+  const removeCategoryFromPerson = async (person, cat) => {
+    const next = (person.relation_categories || []).filter(c => c !== cat);
     try {
-      await axios.delete(`${API}/admin/relation-categories/${id}`, { headers: authHeaders() });
-      toast.success("Category deleted");
+      await axios.put(`${API}/admin/reference-persons/${person.id}`,
+        { relation_categories: next },
+        { headers: authHeaders() });
       fetchAll();
-    } catch (err) {
-      toast.error("Failed");
+    } catch (e) {
+      if (e.response?.status !== 403) toast.error("Failed");
     }
   };
 
   return (
-    <div data-testid="reference-person-manager">
-      <h2 className="text-2xl font-bold text-[#0B1C3D] mb-6" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-        Reference Persons & Relation Categories
-      </h2>
+    <div className="p-4 md:p-6" data-testid="reference-person-manager">
+      <div className="flex items-center gap-2 mb-6">
+        <Users className="text-[#B8860B]" size={22} />
+        <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
+          Reference Persons
+        </h2>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Reference Persons */}
-        <div className="bg-white rounded-xl border border-[#D4AF37]/15 p-5">
-          <h3 className="text-base font-bold text-[#0B1C3D] mb-4">Reference Persons</h3>
-          <div className="flex gap-2 mb-4">
-            <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Name" className="bg-white border-[#D4AF37]/20" data-testid="ref-person-name-input" />
-            <Button onClick={addPerson} size="sm" className="bg-[#D4AF37] text-[#0B1C3D] shrink-0" data-testid="add-ref-person-btn">
-              <Plus size={14} className="mr-1" /> Add
-            </Button>
-          </div>
-          {loading ? <p className="text-[#0B1C3D]/40 text-sm">Loading...</p> : (
-            <div className="space-y-2">
-              {persons.map(p => (
-                <div key={p.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#F8F1E5] border border-[#D4AF37]/10" data-testid={`ref-person-${p.id}`}>
-                  {editId === p.id ? (
-                    <div className="flex items-center gap-2 flex-1">
-                      <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-8 text-sm bg-white" />
-                      <Button size="sm" onClick={() => updatePerson(p.id)} className="h-7 bg-green-600 text-white"><Save size={12} /></Button>
-                      <Button size="sm" variant="outline" onClick={() => setEditId(null)} className="h-7"><X size={12} /></Button>
-                    </div>
-                  ) : (
-                    <>
-                      <span className="text-sm font-medium text-[#0B1C3D]">{p.name}</span>
-                      <div className="flex gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => { setEditId(p.id); setEditName(p.name); }} className="h-7 w-7 p-0" data-testid={`edit-ref-${p.id}`}>
-                          <Edit2 size={12} />
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => deletePerson(p.id)} className="h-7 w-7 p-0 text-red-500 hover:text-red-700" data-testid={`delete-ref-${p.id}`}>
-                          <Trash2 size={12} />
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-              {persons.length === 0 && <p className="text-[#0B1C3D]/40 text-sm text-center py-4">No reference persons added yet</p>}
-            </div>
-          )}
+      {!isSuper && (
+        <p className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-testid="ref-watcher-banner">
+          View-only — you can browse reference persons and their relation categories. Any change will be blocked by the super admin.
+        </p>
+      )}
+
+      {/* Add new reference person */}
+      <div className="bg-white rounded-xl border border-[#D4AF37]/15 p-5 mb-5">
+        <h3 className="text-sm font-bold text-[#0B1C3D] mb-3">Add Reference Person</h3>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+          <Input value={newName} onChange={e => setNewName(e.target.value)}
+            placeholder="Reference person name"
+            className="md:col-span-4 bg-white border-[#D4AF37]/20"
+            data-testid="ref-person-name-input" />
+          <Input value={newCategoriesText} onChange={e => setNewCategoriesText(e.target.value)}
+            placeholder="Relation categories (comma-separated, optional)"
+            className="md:col-span-6 bg-white border-[#D4AF37]/20"
+            data-testid="ref-person-cats-input" />
+          <Button onClick={addPerson}
+            className="md:col-span-2 bg-[#D4AF37] text-[#0B1C3D] font-semibold"
+            data-testid="add-ref-person-btn">
+            <Plus size={14} className="mr-1" /> Add
+          </Button>
         </div>
+        <p className="text-[11px] text-gray-500 mt-2">
+          Leave the categories blank if this reference person doesn't need a relation dropdown on the registration form.
+        </p>
+      </div>
 
-        {/* Relation Categories */}
-        <div className="bg-white rounded-xl border border-[#D4AF37]/15 p-5">
-          <h3 className="text-base font-bold text-[#0B1C3D] mb-4">Relation Categories</h3>
-          <div className="flex gap-2 mb-4">
-            <Input value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Category name" className="bg-white border-[#D4AF37]/20" data-testid="rel-cat-input" />
-            <Button onClick={addCategory} size="sm" className="bg-[#D4AF37] text-[#0B1C3D] shrink-0" data-testid="add-rel-cat-btn">
-              <Plus size={14} className="mr-1" /> Add
-            </Button>
-          </div>
-          <div className="space-y-2">
-            {cats.map(c => (
-              <div key={c.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-[#F8F1E5] border border-[#D4AF37]/10" data-testid={`rel-cat-${c.id}`}>
-                <span className="text-sm font-medium text-[#0B1C3D]">{c.name}</span>
-                <Button size="sm" variant="ghost" onClick={() => deleteCategory(c.id)} className="h-7 w-7 p-0 text-red-500 hover:text-red-700" data-testid={`delete-cat-${c.id}`}>
-                  <Trash2 size={12} />
+      {/* List */}
+      {loading ? <p className="text-[#0B1C3D]/40 text-sm">Loading...</p> :
+        persons.length === 0 ? <p className="text-[#0B1C3D]/40 text-sm text-center py-10">No reference persons added yet</p> :
+        <div className="space-y-3">
+          {persons.map(p => (
+            <div key={p.id}
+              className="bg-white rounded-xl border border-[#D4AF37]/15 p-4"
+              data-testid={`ref-person-${p.id}`}>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                {editId === p.id ? (
+                  <div className="flex items-center gap-2 flex-1">
+                    <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-8 text-sm bg-white" data-testid={`edit-name-input-${p.id}`} />
+                    <Button size="sm" onClick={() => saveRename(p.id)} className="h-8 bg-green-600 text-white" data-testid={`save-name-${p.id}`}><Save size={12} /></Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditId(null)} className="h-8"><X size={12} /></Button>
+                  </div>
+                ) : (
+                  <div className="flex-1">
+                    <p className="font-semibold text-[#0B1C3D]" data-testid={`ref-person-name-${p.id}`}>{p.name}</p>
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {(p.relation_categories || []).length === 0
+                        ? "No relation categories — registrants won't pick a relation for this person"
+                        : `${p.relation_categories.length} relation categor${p.relation_categories.length === 1 ? "y" : "ies"}`}
+                    </p>
+                  </div>
+                )}
+                {editId !== p.id && (
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="sm" variant="ghost" onClick={() => { setEditId(p.id); setEditName(p.name); }} className="h-7 w-7 p-0" data-testid={`edit-ref-${p.id}`}>
+                      <Edit2 size={12} />
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => deletePerson(p.id)} className="h-7 w-7 p-0 text-red-500 hover:text-red-700" data-testid={`delete-ref-${p.id}`}>
+                      <Trash2 size={12} />
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Relation categories chips */}
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(p.relation_categories || []).map((c, i) => (
+                  <span key={i} data-testid={`ref-${p.id}-cat-${i}`}
+                    className="inline-flex items-center gap-1 text-[11px] bg-[#F8F1E5] border border-[#D4AF37]/30 text-[#0B1C3D] px-2 py-0.5 rounded-full">
+                    {c}
+                    <button
+                      onClick={() => removeCategoryFromPerson(p, c)}
+                      className="text-red-500 hover:text-red-700"
+                      data-testid={`remove-cat-${p.id}-${i}`}
+                      title="Remove">
+                      <X size={11} />
+                    </button>
+                  </span>
+                ))}
+                {(p.relation_categories || []).length === 0 && (
+                  <span className="text-[11px] text-gray-300 italic">No categories</span>
+                )}
+              </div>
+
+              {/* Add category input */}
+              <div className="flex gap-2">
+                <Input
+                  value={addCatText[p.id] || ""}
+                  onChange={e => setAddCatText({ ...addCatText, [p.id]: e.target.value })}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addCategoryToPerson(p); } }}
+                  placeholder="Add a relation category (or comma-separated list)"
+                  className="h-8 text-sm bg-white border-[#D4AF37]/20 flex-1"
+                  data-testid={`add-cat-input-${p.id}`}
+                />
+                <Button
+                  size="sm"
+                  onClick={() => addCategoryToPerson(p)}
+                  className="h-8 bg-[#0B1C3D] text-white"
+                  data-testid={`add-cat-btn-${p.id}`}
+                >
+                  <Plus size={12} className="mr-1" /> Add
                 </Button>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
-      </div>
+      }
     </div>
   );
 }

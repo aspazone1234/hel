@@ -93,6 +93,11 @@ export default function PendingApproval({ user }) {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <h1 className="text-xl font-bold text-[#0B1C3D]">Pending Form Approval</h1>
         <div className="flex gap-2 flex-wrap">
+          {!isSuper && (
+            <span className="bg-amber-50 text-amber-700 px-3 py-2 rounded-lg text-xs font-medium border border-amber-200">
+              👁 View Only Mode
+            </span>
+          )}
           <button onClick={() => { const params = new URLSearchParams({ bucket: "pending", token: localStorage.getItem("admin_token"), search }); window.open(`${API}/api/admin/export-csv?${params}`, "_blank"); }}
             className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm flex items-center gap-1 hover:bg-gray-200" data-testid="export-pending-csv">
             <Download size={14} /> CSV
@@ -140,24 +145,24 @@ export default function PendingApproval({ user }) {
                     <Eye size={14} /> View
                   </button>
                   {isSuper && (
-                    <button onClick={() => setEditReg(r)} data-testid={`edit-pending-${r.id}`}
-                      className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-indigo-100">
-                      <Edit size={14} /> Edit
-                    </button>
-                  )}
-                  <button onClick={() => approveReg(r.id)} data-testid={`approve-${r.id}`}
-                    className="bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-green-100">
-                    <Check size={14} /> Approve
-                  </button>
-                  <button onClick={() => rejectReg(r.id)} data-testid={`reject-${r.id}`}
-                    className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-red-100">
-                    <X size={14} /> Disapprove
-                  </button>
-                  {isSuper && (
-                    <button onClick={() => deleteReg(r.id)} data-testid={`delete-pending-${r.id}`}
-                      className="bg-red-100 text-red-800 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-red-200">
-                      <Trash2 size={14} /> Delete
-                    </button>
+                    <>
+                      <button onClick={() => setEditReg(r)} data-testid={`edit-pending-${r.id}`}
+                        className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-indigo-100">
+                        <Edit size={14} /> Edit
+                      </button>
+                      <button onClick={() => approveReg(r.id)} data-testid={`approve-${r.id}`}
+                        className="bg-green-50 text-green-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-green-100">
+                        <Check size={14} /> Approve
+                      </button>
+                      <button onClick={() => rejectReg(r.id)} data-testid={`reject-${r.id}`}
+                        className="bg-red-50 text-red-700 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-red-100">
+                        <X size={14} /> Disapprove
+                      </button>
+                      <button onClick={() => deleteReg(r.id)} data-testid={`delete-pending-${r.id}`}
+                        className="bg-red-100 text-red-800 px-3 py-1.5 rounded-lg text-sm flex items-center gap-1 hover:bg-red-200">
+                        <Trash2 size={14} /> Delete
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -352,7 +357,8 @@ function FullRegistrationView({ reg, showAttendeeStatus = false }) {
         <Field label="Approval Status" value={reg.approval_status} />
         <Field label="Arrival Status" value={reg.arrival_status} />
         <Field label="Room Assignments" value={(reg.room_assignments || []).join(", ") || "None"} />
-        <Field label="Assigned Swamsevak" value={reg.assigned_swamsevak || "Not assigned"} />
+        <Field label="Assigned Swayamsevak" value={reg.assigned_swamsevak || "Not assigned"} />
+        <Field label="Swayamsevak Mobile" value={reg.assigned_swamsevak_mobile} />
         <Field label="Submitted At" value={reg.created_at ? new Date(reg.created_at).toLocaleString() : ""} />
       </Section>
     </div>

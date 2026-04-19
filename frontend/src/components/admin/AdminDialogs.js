@@ -5,6 +5,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { toast } from "sonner";
 import axios from "axios";
+import AddressSelector from "../AddressSelector";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -52,10 +53,11 @@ export function GuestDetailDialog({ registration: reg, open, onClose }) {
   );
 }
 
-/* === Manual Entry Dialog (Simplified - no management/room/arrival fields) === */
+/* === Manual Entry Dialog (with AddressSelector for location dropdowns) === */
 export function ManualEntryDialog({ open, onClose, authHeaders, onSaved }) {
   const [form, setForm] = useState({
-    full_name: "", mobile: "", additional_phone: "", email: "", address: "",
+    full_name: "", mobile: "", additional_phone: "", email: "",
+    address: { country: "India", state: "", city: "", pin_code: "", full_address: "" },
     attendance_intent: "Yes", arrival_date: "", departure_date: "",
     num_people: 1, attendees: [{ name: "", category: "Adult", special_needs: "" }],
     message: "", admin_notes: "",
@@ -88,12 +90,14 @@ export function ManualEntryDialog({ open, onClose, authHeaders, onSaved }) {
 
   const handleSave = async () => {
     if (!form.full_name.trim() || !form.mobile.trim()) return toast.error("Name and Mobile are required");
-    if (!form.address.trim()) return toast.error("Address is required");
+    const addrStr = [form.address.full_address, form.address.city, form.address.state, form.address.country].filter(Boolean).join(", ");
+    if (!addrStr.trim()) return toast.error("Address is required");
     setSaving(true);
     try {
-      await axios.post(`${API}/admin/registrations/manual`, form, { headers: authHeaders() });
+      const payload = { ...form, address: addrStr };
+      await axios.post(`${API}/admin/registrations/manual`, payload, { headers: authHeaders() });
       toast.success("Manual entry created (added to Final Guest List)");
-      setForm({ full_name: "", mobile: "", additional_phone: "", email: "", address: "", attendance_intent: "Yes", arrival_date: "", departure_date: "", num_people: 1, attendees: [{ name: "", category: "Adult", special_needs: "" }], message: "", admin_notes: "" });
+      setForm({ full_name: "", mobile: "", additional_phone: "", email: "", address: { country: "India", state: "", city: "", pin_code: "", full_address: "" }, attendance_intent: "Yes", arrival_date: "", departure_date: "", num_people: 1, attendees: [{ name: "", category: "Adult", special_needs: "" }], message: "", admin_notes: "" });
       setDupWarning(null);
       onSaved();
       onClose();
@@ -120,10 +124,15 @@ export function ManualEntryDialog({ open, onClose, authHeaders, onSaved }) {
             <div><Label className="text-xs">Additional Phone</Label><Input value={form.additional_phone} onChange={e => set("additional_phone", e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">Email</Label><Input type="email" value={form.email} onChange={e => set("email", e.target.value)} className="mt-1 h-8 text-sm" /></div>
           </div>
+
+          {/* Address with Country/State/City selectors */}
           <div>
-            <Label className="text-xs">Address *</Label>
-            <Input value={form.address} onChange={e => set("address", e.target.value)} placeholder="City, Country" className="mt-1 h-8 text-sm" data-testid="manual-address" />
+            <Label className="text-xs font-semibold">Address *</Label>
+            <div className="mt-1">
+              <AddressSelector value={form.address} onChange={(addr) => set("address", addr)} />
+            </div>
           </div>
+
           <div className="grid grid-cols-3 gap-3">
             <div><Label className="text-xs">Arrival Date</Label><Input type="date" value={form.arrival_date} onChange={e => set("arrival_date", e.target.value)} className="mt-1 h-8 text-sm" /></div>
             <div><Label className="text-xs">Departure Date</Label><Input type="date" value={form.departure_date} onChange={e => set("departure_date", e.target.value)} className="mt-1 h-8 text-sm" /></div>

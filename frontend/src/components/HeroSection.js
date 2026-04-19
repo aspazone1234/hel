@@ -101,7 +101,7 @@ function GoldenDoorOverlay({ onEnter }) {
   );
 }
 
-export default function HeroSection() {
+export default function HeroSection({ onDoorOpened }) {
   const { t, lang } = useLang();
   const [showDoor, setShowDoor] = useState(true);
   const [doorOpening, setDoorOpening] = useState(false);
@@ -111,7 +111,10 @@ export default function HeroSection() {
   const handleEnter = () => {
     setDoorOpening(true);
     startFluteOnDoorOpen();
-    setTimeout(() => setShowDoor(false), 1800);
+    setTimeout(() => {
+      setShowDoor(false);
+      if (onDoorOpened) onDoorOpened();
+    }, 1800);
   };
 
   return (

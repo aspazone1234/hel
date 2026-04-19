@@ -11,6 +11,8 @@ export default function TodoModule({ user }) {
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [showAssignView, setShowAssignView] = useState(true);
+  const [filterAssignee, setFilterAssignee] = useState("");
+  const [filterPriority, setFilterPriority] = useState("");
   const isSuper = user?.role === "superadmin";
 
   const authHeaders = useCallback(() => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` }), []);
@@ -71,7 +73,7 @@ export default function TodoModule({ user }) {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-xl font-bold text-[#0B1C3D]">Tasks &amp; To-Do</h1>
+          <h1 className="text-xl font-bold text-[#0B1C3D]">My Duties</h1>
           <p className="text-xs text-gray-500">{pending.length} pending · {completed.length} completed today</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="bg-[#0B1C3D] text-white px-3 py-2 rounded-lg text-sm flex items-center gap-1.5 hover:bg-[#1a3a6b] transition" data-testid="add-todo-btn">
@@ -82,8 +84,8 @@ export default function TodoModule({ user }) {
       {/* === GUEST ASSIGNMENT SECTION === */}
       <GuestAssignmentSection user={user} authHeaders={authHeaders} showAssignView={showAssignView} setShowAssignView={setShowAssignView} />
 
-      {/* Recurring Tasks */}
-      {recurring.length > 0 && (
+      {/* Recurring Tasks — only shown separately for non-superadmin */}
+      {!isSuper && recurring.length > 0 && (
         <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 overflow-hidden" data-testid="recurring-tasks">
           <div className="p-3 border-b border-purple-200 flex items-center gap-2">
             <RefreshCw size={14} className="text-purple-600" />
@@ -143,19 +145,77 @@ export default function TodoModule({ user }) {
         </div>
       )}
 
-      {/* Pending One-time Tasks */}
+      {/* Pending Tasks — for Super Admin includes both recurring + non-recurring in filtered view */}
       <div className="space-y-2" data-testid="todo-pending">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Pending Tasks</p>
-        {loading ? <p className="text-gray-400 text-sm">Loading...</p> : pending.filter(t => !t.is_recurring).length === 0 ? (
-          <div className="bg-gray-50 rounded-xl p-6 text-center">
-            <Check size={20} className="text-green-400 mx-auto mb-1" />
-            <p className="text-sm text-gray-400">All caught up!</p>
-          </div>
-        ) : (
-          pending.filter(t => !t.is_recurring).map(t => (
-            <TaskCard key={t.id} task={t} onComplete={completeTodo} onDelete={canDelete(t) ? deleteTodo : null} />
-          ))
-        )}
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Pending Tasks</p>
+          {isSuper && (
+            <div className="flex gap-1 flex-wrap">
+              <select onChange={e => setFilterAssignee(e.target.value)} value={filterAssignee || ""}
+                className="text-xs border rounded px-2 py-1 bg-gray-50">
+                <option value="">All assignees</option>
+                {[...new Set([...pending, ...recurring].map(t => t.assigned_to).filter(Boolean))].map(a => (
+                  <option key={a} value={a}>{a}</option>
+                ))}
+              </select>
+              <select onChange={e => setFilterPriority(e.target.value)} value={filterPriority || ""}
+                className="text-xs border rounded px-2 py-1 bg-gray-50">
+                <option value="">All priorities</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          )}
+        </div>
+        {loading ? <p className="text-gray-400 text-sm">Loading...</p> : (() => {
+          // For Super Admin: merge recurring + non-recurring, apply same filters
+          // For others: only non-recurring (recurring shown separately above)
+          let allTasks = isSuper
+            ? [...recurring, ...pending.filter(t => !t.is_recurring)]
+            : pending.filter(t => !t.is_recurring);
+          if (filterAssignee) allTasks = allTasks.filter(t => t.assigned_to === filterAssignee);
+          if (filterPriority) allTasks = allTasks.filter(t => t.priority === filterPriority);
+          return allTasks.length === 0 ? (
+            <div className="bg-gray-50 rounded-xl p-6 text-center">
+              <Check size={20} className="text-green-400 mx-auto mb-1" />
+              <p className="text-sm text-gray-400">All caught up!</p>
+            </div>
+          ) : (
+            allTasks.map(t => t.is_recurring ? (
+              <div key={t.id} className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200 p-3" data-testid={`recurring-task-${t.id}`}>
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => isRecurringPendingToday(t) && completeTodo(t)}
+                    disabled={!isRecurringPendingToday(t)}
+                    className={`mt-0.5 w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${isRecurringPendingToday(t) ? "border-purple-400 hover:bg-purple-100 cursor-pointer" : "border-green-400 bg-green-50 cursor-default"}`}
+                  >
+                    {!isRecurringPendingToday(t) && <Check size={10} className="text-green-600" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-sm text-[#0B1C3D]">{t.title}</p>
+                      <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                        <RefreshCw size={8} /> Daily
+                      </span>
+                      {t.recurring_time && <span className="text-[10px] text-purple-600 flex items-center gap-0.5"><Clock size={8} /> {t.recurring_time}</span>}
+                      {!isRecurringPendingToday(t) && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full">Done today</span>}
+                    </div>
+                    {t.description && <p className="text-xs text-gray-500 mt-0.5">{t.description}</p>}
+                    <p className="text-xs text-gray-400 mt-0.5">For: {t.assigned_to} · By: {t.created_by_name}</p>
+                  </div>
+                  {canDelete(t) && (
+                    <button onClick={() => deleteTodo(t)} className="text-red-300 hover:text-red-500 shrink-0">
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <TaskCard key={t.id} task={t} onComplete={completeTodo} onDelete={canDelete(t) ? deleteTodo : null} isSuper={isSuper} />
+            ))
+          );
+        })()}
       </div>
 
       {/* Completed Tasks */}
@@ -186,7 +246,7 @@ export default function TodoModule({ user }) {
   );
 }
 
-function TaskCard({ task: t, onComplete, onDelete }) {
+function TaskCard({ task: t, onComplete, onDelete, isSuper }) {
   return (
     <div className={`bg-white rounded-xl p-3 border flex items-start gap-3 ${t.priority === "high" ? "border-red-200" : "border-gray-200"}`} data-testid={`pending-task-${t.id}`}>
       <button onClick={() => onComplete(t)}
@@ -199,7 +259,8 @@ function TaskCard({ task: t, onComplete, onDelete }) {
         <div className="flex items-center gap-2 mt-1 flex-wrap">
           <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${t.priority === "high" ? "bg-red-100 text-red-700" : t.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{t.priority}</span>
           {t.due_date && <span className="text-xs text-gray-400">{t.due_date}</span>}
-          {t.assigned_to && <span className="text-xs text-gray-400">For: {t.assigned_to}</span>}
+          {t.assigned_to && <span className="text-xs text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">For: {t.assigned_to}</span>}
+          {isSuper && t.created_by_name && <span className="text-xs text-gray-400">By: {t.created_by_name}</span>}
         </div>
       </div>
       {onDelete && (
@@ -216,6 +277,8 @@ function GuestAssignmentSection({ user, authHeaders, showAssignView, setShowAssi
   const [selected, setSelected] = useState(null);
   const [assignedGuests, setAssignedGuests] = useState([]);
   const [loadingGuests, setLoadingGuests] = useState(false);
+  const [allGuests, setAllGuests] = useState([]);
+  const [guestsLoaded, setGuestsLoaded] = useState(false);
 
   useEffect(() => {
     axios.get(`${API}/api/admin/admins`, { headers: authHeaders() })
@@ -223,21 +286,35 @@ function GuestAssignmentSection({ user, authHeaders, showAssignView, setShowAssi
       .catch(() => {});
   }, [authHeaders]);
 
+  // Pre-fetch all guests for count display
+  useEffect(() => {
+    if (!showAssignView || guestsLoaded) return;
+    const fetchAll = async () => {
+      try {
+        const [exp, arr] = await Promise.all([
+          axios.get(`${API}/api/admin/guests/expected`, { headers: authHeaders(), params: { per_page: 500 } }),
+          axios.get(`${API}/api/admin/guests/arrived`, { headers: authHeaders(), params: { per_page: 500 } }),
+        ]);
+        setAllGuests([...(exp.data.data || []), ...(arr.data.data || [])]);
+        setGuestsLoaded(true);
+      } catch {}
+    };
+    fetchAll();
+  }, [authHeaders, showAssignView, guestsLoaded]);
+
+  const getAssignCount = (admin) => {
+    const name = admin.name || admin.username;
+    return allGuests.filter(g => g.assigned_swamsevak === name || g.assigned_swamsevak === admin.username).length;
+  };
+
   const viewAssignments = async (admin) => {
     setSelected(admin);
     setLoadingGuests(true);
-    try {
-      const [exp, arr] = await Promise.all([
-        axios.get(`${API}/api/admin/guests/expected`, { headers: authHeaders(), params: { per_page: 500 } }),
-        axios.get(`${API}/api/admin/guests/arrived`, { headers: authHeaders(), params: { per_page: 500 } }),
-      ]);
-      const allGuests = [...(exp.data.data || []), ...(arr.data.data || [])];
-      const name = admin.name || admin.username;
-      const filtered = allGuests.filter(g =>
-        g.assigned_swamsevak === name || g.assigned_swamsevak === admin.username
-      );
-      setAssignedGuests(filtered);
-    } catch {}
+    const name = admin.name || admin.username;
+    const filtered = allGuests.filter(g =>
+      g.assigned_swamsevak === name || g.assigned_swamsevak === admin.username
+    );
+    setAssignedGuests(filtered);
     setLoadingGuests(false);
   };
 
@@ -251,7 +328,7 @@ function GuestAssignmentSection({ user, authHeaders, showAssignView, setShowAssi
         <div className="flex items-center gap-2">
           <Users size={16} className="text-indigo-600" />
           <span className="font-semibold text-[#0B1C3D] text-sm">Guest Assignments</span>
-          <span className="text-xs text-gray-400">— click a volunteer to see their guests</span>
+          <span className="text-xs text-gray-400">— click a Swayamsevak to see their guests</span>
         </div>
         {showAssignView ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
       </button>
@@ -259,17 +336,27 @@ function GuestAssignmentSection({ user, authHeaders, showAssignView, setShowAssi
       {showAssignView && (
         <div className="p-4 pt-0 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {admins.filter(a => a.role === "swamsevak" || a.role === "admin").map(a => (
-              <button key={a.username}
-                onClick={() => viewAssignments(a)}
-                className={`text-left rounded-lg p-2 border text-sm transition ${selected?.username === a.username ? "bg-indigo-50 border-indigo-300" : "bg-gray-50 border-gray-200 hover:border-indigo-200"}`}
-                data-testid={`view-assign-${a.username}`}>
-                <p className="font-medium text-[#0B1C3D] truncate">{a.name || a.username}</p>
-                <p className="text-xs text-gray-400 capitalize">{a.role}</p>
-              </button>
-            ))}
+            {admins.filter(a => a.role === "swamsevak" || a.role === "admin").map(a => {
+              const count = getAssignCount(a);
+              return (
+                <button key={a.username}
+                  onClick={() => viewAssignments(a)}
+                  className={`text-left rounded-lg p-2.5 border text-sm transition ${selected?.username === a.username ? "bg-indigo-50 border-indigo-300" : "bg-gray-50 border-gray-200 hover:border-indigo-200"}`}
+                  data-testid={`view-assign-${a.username}`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold shrink-0 ${count > 0 ? "bg-indigo-600 text-white" : "bg-gray-200 text-gray-500"}`}>
+                      {count}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-medium text-[#0B1C3D] truncate">{a.name || a.username}</p>
+                      <p className="text-xs text-gray-400 capitalize">{a.role}</p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
             {admins.filter(a => a.role === "swamsevak" || a.role === "admin").length === 0 && (
-              <p className="text-xs text-gray-400 col-span-3">No volunteers in system.</p>
+              <p className="text-xs text-gray-400 col-span-3">No Swayamsevaks in system.</p>
             )}
           </div>
 
@@ -289,7 +376,7 @@ function GuestAssignmentSection({ user, authHeaders, showAssignView, setShowAssi
                     return (
                       <div key={g.id} className="flex items-center justify-between bg-white rounded-lg px-3 py-2 text-xs border border-indigo-100">
                         <div>
-                          <p className="font-medium text-[#0B1C3D]">{head?.name || g.primary_mobile}</p>
+                          <p className="font-medium text-[#0B1C3D]">{head?.name || g.primary_mobile} <span className="font-normal text-gray-400">· {g.primary_mobile}</span></p>
                           <p className="text-gray-400">{g.num_people} people · Room: {(g.room_assignments || []).join(", ") || "—"}</p>
                         </div>
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${g.arrival_status === "arrived" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>

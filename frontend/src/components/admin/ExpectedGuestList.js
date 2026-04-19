@@ -311,7 +311,7 @@ export default function ExpectedGuestList({ user }) {
   const assignSwamsevak = async (regId, swamsevakName, swamsevakMobile) => {
     try {
       await axios.put(`${API}/api/admin/registrations/${regId}`, { assigned_swamsevak: swamsevakName, assigned_swamsevak_mobile: swamsevakMobile || "" }, { headers: authHeaders() });
-      toast.success("Swamsevak assigned");
+      toast.success("Swayamsevak assigned");
       setShowAssign(null);
       fetchRegs();
     } catch { toast.error("Failed"); }
@@ -467,6 +467,14 @@ export default function ExpectedGuestList({ user }) {
                     {r.reference_person_name && (
                       <span className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full">Ref: {r.reference_person_name}</span>
                     )}
+                    {/* Custom Field Labels */}
+                    {(customFields || []).filter(cf => cf.applies_to?.includes(r.id)).map(cf => {
+                      const val = r.custom_field_values?.[cf.id];
+                      const displayVal = val === true ? "Yes" : val === false ? "No" : (val || cf.default_value || "—");
+                      return (
+                        <span key={cf.id} className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full">{cf.name}: {String(displayVal)}</span>
+                      );
+                    })}
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0 flex-wrap">
@@ -566,7 +574,7 @@ export default function ExpectedGuestList({ user }) {
       {/* Swamsevak Assignment Dialog */}
       <Dialog open={!!showAssign} onOpenChange={() => setShowAssign(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Assign Swamsevak</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Assign Swayamsevak</DialogTitle></DialogHeader>
           <p className="text-sm text-gray-500 mb-3">Assign a first point of contact for: {showAssign && getHeadName(showAssign)}</p>
           <div className="space-y-2">
             {admins.map((a) => (

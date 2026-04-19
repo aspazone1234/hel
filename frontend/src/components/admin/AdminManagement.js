@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Plus, Edit2, Trash2, Shield } from "lucide-react";
+import { Plus, Edit2, Trash2, Phone } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
@@ -40,50 +40,37 @@ export default function AdminManagement({ user, authHeaders }) {
     <div className="space-y-6" data-testid="admin-management-view">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Swamsevak Management</h2>
-          <p className="text-sm text-[#0B1C3D]/50">Manage portal Swamsevaks (volunteers)</p>
+          <h2 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>Swayamsevak Management</h2>
+          <p className="text-sm text-[#0B1C3D]/50">Manage portal Swayamsevaks</p>
         </div>
         <Button size="sm" onClick={() => setShowCreate(true)} className="bg-[#D4AF37] text-[#0B1C3D] h-8 text-xs" data-testid="create-admin-btn">
-          <Plus size={14} className="mr-1" /> Create Swamsevak
+          <Plus size={14} className="mr-1" /> Create Swayamsevak
         </Button>
       </div>
 
-      {/* System Admins */}
-      <div className="bg-white rounded-2xl border border-[#D4AF37]/20 overflow-hidden">
-        <div className="bg-[#0B1C3D] text-[#F8F1E5] px-4 py-3 font-semibold text-sm flex items-center gap-2">
-          <Shield size={16} /> System Admins (Read-only)
-        </div>
-        <div className="divide-y divide-[#D4AF37]/10">
-          {admins.filter(a => a.source === "system").map(a => (
-            <div key={a.username} className="px-4 py-3 flex items-center justify-between" data-testid={`admin-${a.username}`}>
-              <div>
-                <p className="font-medium text-[#0B1C3D] text-sm">{a.name}</p>
-                <p className="text-[#0B1C3D]/40 text-xs">{a.username} &middot; {a.city}</p>
-              </div>
-              <span className="text-[9px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-semibold uppercase">System</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Custom Admins */}
+      {/* All Admins */}
       <div className="bg-white rounded-2xl border border-[#D4AF37]/20 overflow-hidden">
         <div className="bg-[#0B1C3D] text-[#F8F1E5] px-4 py-3 font-semibold text-sm">
-          Custom Admins ({admins.filter(a => a.source === "custom").length})
+          Swayamsevaks ({admins.length})
         </div>
         {loading ? (
           <div className="py-8 text-center text-[#0B1C3D]/40">Loading...</div>
-        ) : admins.filter(a => a.source === "custom").length === 0 ? (
-          <div className="py-8 text-center text-[#0B1C3D]/40 text-sm">No custom admins created yet</div>
+        ) : admins.length === 0 ? (
+          <div className="py-8 text-center text-[#0B1C3D]/40 text-sm">No Swayamsevaks created yet. Create your first Swayamsevak above.</div>
         ) : (
           <div className="divide-y divide-[#D4AF37]/10">
-            {admins.filter(a => a.source === "custom").map(a => (
+            {admins.map(a => (
               <div key={a.username} className="px-4 py-3 flex items-center justify-between" data-testid={`admin-${a.username}`}>
-                <div>
-                  <p className="font-medium text-[#0B1C3D] text-sm">{a.name}</p>
-                  <p className="text-[#0B1C3D]/40 text-xs">{a.username} &middot; {a.city || "No city"}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-[#0B1C3D] text-sm truncate">{a.name}</p>
+                  <p className="text-[#0B1C3D]/40 text-xs truncate">{a.username} &middot; {a.city || "No city"} &middot; <span className="capitalize">{a.role === "swamsevak" || a.role === "admin" ? "Swayamsevak" : a.role || "Swayamsevak"}</span></p>
+                  {a.mobile && (
+                    <p className="text-[#0B1C3D]/50 text-xs flex items-center gap-1 mt-0.5">
+                      <Phone size={10} /> {a.mobile}
+                    </p>
+                  )}
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 shrink-0 ml-2">
                   <Button size="sm" variant="outline" onClick={() => setEditAdmin(a)} className="h-7 text-xs" data-testid={`edit-admin-${a.username}`}>
                     <Edit2 size={12} className="mr-1" /> Edit
                   </Button>
@@ -119,7 +106,7 @@ export default function AdminManagement({ user, authHeaders }) {
 }
 
 function CreateAdminDialog({ onClose, authHeaders, onDone }) {
-  const [form, setForm] = useState({ username: "", password: "", name: "", city: "" });
+  const [form, setForm] = useState({ username: "", password: "", name: "", city: "", mobile: "", role: "swamsevak" });
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -127,7 +114,7 @@ function CreateAdminDialog({ onClose, authHeaders, onDone }) {
     setSaving(true);
     try {
       await axios.post(`${API}/admin/admins`, form, { headers: authHeaders() });
-      toast.success(`Admin '${form.username}' created`);
+      toast.success(`Swayamsevak '${form.username}' created`);
       onDone();
     } catch (err) { const d = err.response?.data?.detail; toast.error(typeof d === "string" ? d : "Create failed"); }
     finally { setSaving(false); }
@@ -136,16 +123,17 @@ function CreateAdminDialog({ onClose, authHeaders, onDone }) {
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-sm" data-testid="create-admin-dialog">
-        <DialogHeader><DialogTitle>Create New Admin</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Create New Swayamsevak</DialogTitle></DialogHeader>
         <div className="space-y-3">
           <div><Label className="text-xs">Username *</Label><Input value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} className="mt-1 h-8 text-sm" data-testid="new-admin-username" /></div>
           <div><Label className="text-xs">Password *</Label><Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="mt-1 h-8 text-sm" data-testid="new-admin-password" /></div>
           <div><Label className="text-xs">Full Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="mt-1 h-8 text-sm" data-testid="new-admin-name" /></div>
+          <div><Label className="text-xs">Mobile Number</Label><Input value={form.mobile} onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))} className="mt-1 h-8 text-sm" placeholder="e.g. +91 9876543210" /></div>
           <div><Label className="text-xs">City</Label><Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} className="mt-1 h-8 text-sm" /></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving} className="bg-[#D4AF37] text-[#0B1C3D]" data-testid="save-new-admin">{saving ? "Creating..." : "Create Admin"}</Button>
+          <Button onClick={handleSave} disabled={saving} className="bg-[#D4AF37] text-[#0B1C3D]" data-testid="save-new-admin">{saving ? "Creating..." : "Create"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -153,14 +141,14 @@ function CreateAdminDialog({ onClose, authHeaders, onDone }) {
 }
 
 function EditAdminDialog({ admin, onClose, authHeaders, onDone }) {
-  const [form, setForm] = useState({ name: admin.name || "", city: admin.city || "", password: "" });
+  const [form, setForm] = useState({ mobile: admin.mobile || "", city: admin.city || "", password: "" });
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       const updates = {};
-      if (form.name !== admin.name) updates.name = form.name;
+      if (form.mobile !== (admin.mobile || "")) updates.mobile = form.mobile;
       if (form.city !== (admin.city || "")) updates.city = form.city;
       if (form.password) updates.password = form.password;
       if (Object.keys(updates).length === 0) { toast.info("No changes"); onClose(); return; }
@@ -174,11 +162,28 @@ function EditAdminDialog({ admin, onClose, authHeaders, onDone }) {
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-sm" data-testid="edit-admin-dialog">
-        <DialogHeader><DialogTitle>Edit Admin: {admin.username}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Edit: {admin.name}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div><Label className="text-xs">Full Name</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="mt-1 h-8 text-sm" /></div>
-          <div><Label className="text-xs">City</Label><Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} className="mt-1 h-8 text-sm" /></div>
-          <div><Label className="text-xs">New Password (leave blank to keep current)</Label><Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="mt-1 h-8 text-sm" placeholder="Enter new password" /></div>
+          <div>
+            <Label className="text-xs text-gray-400">Username (non-editable)</Label>
+            <Input value={admin.username} disabled className="mt-1 h-8 text-sm bg-gray-50 cursor-not-allowed" />
+          </div>
+          <div>
+            <Label className="text-xs text-gray-400">Full Name (non-editable)</Label>
+            <Input value={admin.name} disabled className="mt-1 h-8 text-sm bg-gray-50 cursor-not-allowed" />
+          </div>
+          <div>
+            <Label className="text-xs">Mobile Number</Label>
+            <Input value={form.mobile} onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))} className="mt-1 h-8 text-sm" placeholder="e.g. +91 9876543210" />
+          </div>
+          <div>
+            <Label className="text-xs">City</Label>
+            <Input value={form.city} onChange={e => setForm(f => ({ ...f, city: e.target.value }))} className="mt-1 h-8 text-sm" />
+          </div>
+          <div>
+            <Label className="text-xs">New Password / Passcode</Label>
+            <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className="mt-1 h-8 text-sm" placeholder="Leave blank to keep current" />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>

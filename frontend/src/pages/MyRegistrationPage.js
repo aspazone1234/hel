@@ -43,7 +43,6 @@ export default function MyRegistrationPage() {
   const [expandedSections, setExpandedSections] = useState({});
   const [editModal, setEditModal] = useState(null);
   const [refPersons, setRefPersons] = useState([]);
-  const [relationCats, setRelationCats] = useState([]);
   const [justSubmitted, setJustSubmitted] = useState(false);
 
   const isPastCutoff = new Date().toISOString().slice(0, 10) > CUTOFF_DATE;
@@ -69,7 +68,6 @@ export default function MyRegistrationPage() {
 
   useEffect(() => {
     axios.get(`${API}/api/reference-persons/public`).then(r => setRefPersons(r.data)).catch(() => {});
-    axios.get(`${API}/api/relation-categories/public`).then(r => setRelationCats(r.data)).catch(() => {});
     // Check if user just submitted
     const fromSubmit = sessionStorage.getItem("just_submitted");
     if (fromSubmit === mobile) {
@@ -151,24 +149,34 @@ export default function MyRegistrationPage() {
                   <Calendar size={18} className="text-white" />
                 </div>
                 <div>
-                  <p className="font-bold text-sm">{lang === "hi" ? "\u092B\u0949\u0930\u094D\u092E \u0914\u0930 \u092C\u0926\u0932\u093E\u0935 19 \u092E\u0908 2026 \u0924\u0915" : "Changes Open Until 19 May 2026"}</p>
+                  <p className="font-bold text-sm">{lang === "hi" ? "फॉर्म और बदलाव 19 मई 2026 तक" : "Changes Open Until 19 May 2026"}</p>
                   <p className="text-white/80 text-xs mt-1 leading-relaxed">{lang === "hi"
-                    ? "\u0906\u092A \u0905\u092A\u0928\u093E \u092B\u0949\u0930\u094D\u092E \u0914\u0930 \u0909\u092A\u0938\u094D\u0925\u093F\u0924\u093F \u0915\u093E \u0935\u093F\u0935\u0930\u0923 19 \u092E\u0908 2026 \u0924\u0915 \u0905\u092A\u0921\u0947\u091F \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902\u0964 \u0909\u0938\u0915\u0947 \u092C\u093E\u0926 \u0915\u094B\u0908 \u092C\u0926\u0932\u093E\u0935 \u0938\u0902\u092D\u0935 \u0928\u0939\u0940\u0902 \u0939\u094B\u0917\u093E\u0964"
+                    ? "आप अपना फॉर्म और उपस्थिति का विवरण 19 मई 2026 तक अपडेट कर सकते हैं। उसके बाद कोई बदलाव संभव नहीं होगा।"
                     : "You can submit your form and update your attendance details until 19 May 2026. After this date, no further changes will be accepted."}</p>
                 </div>
               </div>
             </div>
-            {/* Notice 2: Final list on 21 May */}
+            {/* Notice 2: Final list on 21 May — with detail about what you receive */}
             <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl p-4 text-white shadow-lg shadow-emerald-600/20">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center shrink-0">
                   <Check size={18} className="text-white" />
                 </div>
                 <div>
-                  <p className="font-bold text-sm">{lang === "hi" ? "\u0905\u0902\u0924\u093F\u092E \u0938\u0942\u091A\u0940 21 \u092E\u0908 2026 \u0915\u094B" : "Final Guest List on 21 May 2026"}</p>
+                  <p className="font-bold text-sm">{lang === "hi" ? "अंतिम सूची 21 मई 2026 को" : "Final Guest List on 21 May 2026"}</p>
                   <p className="text-white/80 text-xs mt-1 leading-relaxed">{lang === "hi"
-                    ? "\u0905\u0902\u0924\u093F\u092E \u0905\u0924\u093F\u0925\u093F \u0938\u0942\u091A\u0940 \u0914\u0930 \u0915\u092E\u0930\u0947 \u0915\u093E \u0935\u093F\u0935\u0930\u0923 21 \u092E\u0908 2026 \u0915\u094B \u0906\u092A\u0915\u0947 \u092A\u0902\u091C\u0940\u0915\u0943\u0924 WhatsApp \u0928\u0902\u092C\u0930 \u092A\u0930 \u092D\u0947\u091C\u093E \u091C\u093E\u090F\u0917\u093E\u0964"
-                    : "The final guest list and room allocation will be released on 21 May 2026. You will be notified on your registered WhatsApp number."}</p>
+                    ? "21 मई 2026 को आपको प्राप्त होगा:"
+                    : "On 21 May 2026, you will receive:"}</p>
+                  <ul className="text-white/90 text-xs mt-1.5 space-y-1 list-disc list-inside">
+                    <li>{lang === "hi" ? "आपका QR कोड — इवेंट में प्रवेश के लिए आवश्यक" : "Your QR Code — required for venue entry"}</li>
+                    <li>{lang === "hi" ? "कमरा नंबर" : "Room number allocation"}</li>
+                    <li>{lang === "hi" ? "समर्पित संपर्क व्यक्ति (स्वयंसेवक)" : "Dedicated point of contact (Swayamsevak)"}</li>
+                  </ul>
+                  <div className="mt-2 bg-white/15 rounded-lg px-3 py-2">
+                    <p className="text-white/90 text-[11px] leading-relaxed">{lang === "hi"
+                      ? "ये विवरण WhatsApp पर साझा किए जाएंगे। आप 21 मई 2026 के बाद भी अपने मोबाइल नंबर से लॉगिन करके यहाँ डैशबोर्ड पर देख सकते हैं।"
+                      : "These details will be shared via WhatsApp. You can also view them anytime after 21 May 2026 by logging in here with your mobile number."}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -196,61 +204,76 @@ export default function MyRegistrationPage() {
             </div>
           </div>
 
-          {/* Confirmed State - Room + QR */}
+          {/* Confirmed State - QR first, then Room + Contact */}
           {isConfirmed && (
             <div className="p-5 bg-gradient-to-b from-green-50 to-white border-b border-green-100" data-testid="confirmed-section">
               <div className="flex items-center gap-2 mb-4">
                 <Check size={16} className="text-green-600" />
-                <h3 className="font-semibold text-green-800 text-sm">{lang === "hi" ? "\u092C\u0941\u0915\u093F\u0902\u0917 \u0915\u0928\u094D\u092B\u0930\u094D\u092E" : "Booking Confirmed"}</h3>
+                <h3 className="font-semibold text-green-800 text-sm">{lang === "hi" ? "बुकिंग कन्फर्म" : "Booking Confirmed"}</h3>
               </div>
 
-              {/* Room Block */}
-              <div className="bg-white rounded-xl border border-green-200 p-4 mb-4 shadow-sm">
-                <p className="text-xs text-gray-500 mb-1">{lang === "hi" ? "\u0906\u092A\u0915\u093E \u0915\u092E\u0930\u093E" : "Your Room"}</p>
-                <p className="font-bold text-[#0B1C3D] text-xl" data-testid="confirmed-room">{(reg.room_assignments || []).join(", ")}</p>
-              </div>
-
-              {/* Contact Person / Volunteer Block */}
-              <div className="bg-white rounded-xl border border-indigo-200 p-4 mb-4 shadow-sm space-y-2">
-                <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">{lang === "hi" ? "\u0906\u092A\u0915\u093E \u0928\u093F\u092F\u0941\u0915\u094D\u0924 \u0938\u094D\u0935\u092F\u0902\u0938\u0947\u0935\u0915" : "Your Assigned Volunteer"}</p>
-                <p className="font-bold text-[#0B1C3D] text-base" data-testid="confirmed-contact">{reg.assigned_swamsevak}</p>
-                <p className="text-xs text-gray-600 leading-relaxed">
-                  {lang === "hi"
-                    ? "\u092F\u0939 \u0938\u094D\u0935\u092F\u0902\u0938\u0947\u0935\u0915 \u0915\u093E\u0930\u094D\u092F\u0915\u094D\u0930\u092E \u0938\u0947 \u092A\u0939\u0932\u0947 \u0914\u0930 \u0915\u093E\u0930\u094D\u092F\u0915\u094D\u0930\u092E \u0915\u0947 \u0926\u094C\u0930\u093E\u0928 \u0906\u092A\u0915\u0940 \u0938\u0939\u093E\u092F\u0924\u093E \u0914\u0930 \u0938\u0939\u092F\u094B\u0917 \u0915\u0947 \u0932\u093F\u090F \u0906\u092A\u0915\u093E \u092A\u094D\u0930\u0925\u092E \u0938\u0902\u092A\u0930\u094D\u0915 \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0939\u0948\u0964"
-                    : "This volunteer is your first point of contact for any help or support \u2014 both before the event and throughout your stay."}
-                </p>
-                {reg.assigned_swamsevak_mobile ? (
-                  <div className="bg-indigo-50 rounded-lg p-3">
-                    <p className="text-xs text-indigo-700">
-                      {lang === "hi" ? "\u0906\u092A \u0909\u0928\u094D\u0939\u0947\u0902 WhatsApp \u092A\u0930 \u0915\u0949\u0932 \u092F\u093E \u0938\u0902\u0926\u0947\u0936 \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902:" : "You can call or WhatsApp them directly on:"}
-                    </p>
-                    <p className="font-bold text-indigo-800 text-sm mt-1">{reg.assigned_swamsevak_mobile}</p>
-                  </div>
-                ) : (
-                  <p className="text-xs text-indigo-600 bg-indigo-50 rounded-lg p-2">
-                    {lang === "hi"
-                      ? "\u0909\u0928\u0915\u0947 \u092A\u0902\u091C\u0940\u0915\u0943\u0924 WhatsApp \u0928\u0902\u092C\u0930 \u092A\u0930 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902\u0964"
-                      : "Please contact them on their registered WhatsApp number."}
-                  </p>
-                )}
-              </div>
-
-              {/* QR Code - Prominent */}
+              {/* QR Code - FIRST / TOPMOST */}
               {reg.qr_image_b64 && (
                 <div className="bg-gradient-to-b from-[#0B1C3D] to-[#1a3a6b] rounded-2xl p-5 mb-4 text-center shadow-xl">
-                  <p className="text-white/80 text-xs font-medium mb-3 uppercase tracking-wide">{lang === "hi" ? "\u0906\u092A\u0915\u093E \u092A\u094D\u0930\u0935\u0947\u0936 QR \u0915\u094B\u0921" : "Your Entry QR Code"}</p>
+                  <p className="text-white/80 text-xs font-medium mb-3 uppercase tracking-wide">{lang === "hi" ? "आपका प्रवेश QR कोड" : "Your Entry QR Code"}</p>
                   <img src={`data:image/png;base64,${reg.qr_image_b64}`} alt="QR Code"
                     className="w-44 h-44 mx-auto rounded-xl border-4 border-[#D4AF37]/60 shadow-2xl" data-testid="confirmed-qr" />
                   <button onClick={downloadQR}
                     className="mt-4 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] text-white font-bold px-8 py-3.5 rounded-xl text-base shadow-lg flex items-center gap-2 mx-auto hover:from-[#e6c64a] hover:to-[#c9961f] transition active:scale-95"
                     data-testid="download-qr-btn">
-                    <Download size={18} /> {lang === "hi" ? "QR \u0915\u094B\u0921 \u0921\u093E\u0909\u0928\u0932\u094B\u0921 \u0915\u0930\u0947\u0902" : "Download Your QR Code"}
+                    <Download size={18} /> {lang === "hi" ? "QR कोड डाउनलोड करें" : "Download Your QR Code"}
                   </button>
                   <p className="text-white/50 text-xs mt-3">
-                    {lang === "hi" ? "\u0907\u0935\u0947\u0902\u091F \u092E\u0947\u0902 \u092A\u094D\u0930\u0935\u0947\u0936 \u0915\u0947 \u0932\u093F\u090F QR \u0915\u094B\u0921 \u091C\u0930\u0942\u0930\u0940 \u0939\u0948\u0964" : "This QR code is required for event entry. Save it to your phone."}
+                    {lang === "hi" ? "इवेंट में प्रवेश के लिए QR कोड जरूरी है।" : "This QR code is required for event entry. Save it to your phone."}
                   </p>
                 </div>
               )}
+
+              {/* Room Block */}
+              <div className="bg-white rounded-xl border border-green-200 p-4 mb-4 shadow-sm">
+                <p className="text-xs text-gray-500 mb-1">{lang === "hi" ? "आपका कमरा" : "Your Room"}</p>
+                <p className="font-bold text-[#0B1C3D] text-xl" data-testid="confirmed-room">{(reg.room_assignments || []).join(", ")}</p>
+              </div>
+
+              {/* Contact Person / Swayamsevak Block — PROMINENT */}
+              <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border-2 border-indigo-300 p-4 mb-4 shadow-md space-y-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center shrink-0">
+                    <span className="text-white text-xs font-bold">✦</span>
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-indigo-800 uppercase tracking-wider">{lang === "hi" ? "आपके समर्पित स्वयंसेवक" : "Your Dedicated First Point of Contact"}</p>
+                  </div>
+                </div>
+                <p className="font-bold text-[#0B1C3D] text-xl" data-testid="confirmed-contact">{reg.assigned_swamsevak}</p>
+                <p className="text-xs text-indigo-700 leading-relaxed font-medium">
+                  {lang === "hi"
+                    ? "यह स्वयंसेवक कार्यक्रम से पहले और आपके पूरे ठहराव के दौरान आपका प्रथम संपर्क व्यक्ति है।"
+                    : "This Swayamsevak is your first point of contact — before the event and throughout your entire stay."}
+                </p>
+                {reg.assigned_swamsevak_mobile ? (
+                  <div className="bg-white rounded-xl p-4 border-2 border-indigo-400 shadow-sm">
+                    <p className="text-xs text-indigo-600 font-medium mb-2">{lang === "hi" ? "सीधे संपर्क करें:" : "Contact directly:"}</p>
+                    <p className="font-bold text-indigo-900 text-2xl tracking-wide" data-testid="volunteer-mobile">{reg.assigned_swamsevak_mobile}</p>
+                    <div className="flex gap-2 mt-3">
+                      <a href={`https://wa.me/${reg.assigned_swamsevak_mobile.replace(/[^0-9+]/g, '')}`} target="_blank" rel="noopener noreferrer"
+                        className="flex-1 bg-green-600 text-white text-center py-2.5 rounded-lg text-sm font-bold hover:bg-green-700 transition active:scale-95">
+                        WhatsApp
+                      </a>
+                      <a href={`tel:${reg.assigned_swamsevak_mobile}`}
+                        className="flex-1 bg-indigo-600 text-white text-center py-2.5 rounded-lg text-sm font-bold hover:bg-indigo-700 transition active:scale-95">
+                        {lang === "hi" ? "कॉल करें" : "Call Now"}
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-indigo-600 bg-white rounded-lg p-3 border border-indigo-200">
+                    {lang === "hi"
+                      ? "उनके पंजीकृत WhatsApp नंबर पर संपर्क करें।"
+                      : "Contact them on their registered WhatsApp number."}
+                  </p>
+                )}
+              </div>
 
               {/* Form Closed Notice */}
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3 space-y-1">
@@ -272,22 +295,30 @@ export default function MyRegistrationPage() {
             </div>
           )}
 
-          {/* Edit Status Bar */}
-          <div className={`px-5 py-3 ${isConfirmed ? "bg-green-50 border-b border-green-100" : isPastCutoff ? "bg-red-50 border-b border-red-100" : "bg-blue-50 border-b border-blue-100"}`}>
+          {/* Edit Status Bar — PROMINENT for pending */}
+          <div className={`px-5 py-3 ${isConfirmed ? "bg-green-50 border-b border-green-100" : isPastCutoff ? "bg-red-50 border-b border-red-100" : "border-b border-blue-200"}`}>
             {isConfirmed ? (
               <div className="flex items-center gap-2 text-green-700 text-sm" data-testid="confirmed-locked">
                 <Lock size={14} />
-                <span>{lang === "hi" ? "\u092C\u0941\u0915\u093F\u0902\u0917 \u0915\u0928\u094D\u092B\u0930\u094D\u092E \u0939\u094B \u091A\u0941\u0915\u0940 \u0939\u0948\u0964 \u092C\u0926\u0932\u093E\u0935 \u0915\u0947 \u0932\u093F\u090F \u090F\u0921\u092E\u093F\u0928 \u0938\u0947 \u0938\u0902\u092A\u0930\u094D\u0915 \u0915\u0930\u0947\u0902\u0964" : "Booking confirmed. Contact admin for changes."}</span>
+                <span>{lang === "hi" ? "बुकिंग कन्फर्म हो चुकी है। बदलाव के लिए एडमिन से संपर्क करें।" : "Booking confirmed. Contact admin for changes."}</span>
               </div>
             ) : isPastCutoff ? (
               <div className="flex items-center gap-2 text-red-600 text-sm" data-testid="cutoff-locked">
                 <Lock size={14} />
-                <span>{lang === "hi" ? "\u092B\u0949\u0930\u094D\u092E 19 \u092E\u0908 2026 \u0915\u094B \u0932\u0949\u0915 \u0939\u094B \u0917\u092F\u093E \u0939\u0948\u0964" : "Form locked since May 19, 2026."}</span>
+                <span>{lang === "hi" ? "फॉर्म 19 मई 2026 को लॉक हो गया है।" : "Form locked since May 19, 2026."}</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-blue-700 text-sm" data-testid="editable-notice">
-                <Calendar size={14} />
-                <span>{lang === "hi" ? "19 \u092E\u0908 2026 \u0924\u0915 \u0938\u0902\u092A\u093E\u0926\u0928 \u092F\u094B\u0917\u094D\u092F" : "Editable until May 19, 2026"}</span>
+              <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-600 rounded-xl p-4 text-white shadow-lg" data-testid="editable-notice">
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent animate-pulse" style={{ animationDuration: "2s" }}></div>
+                <div className="relative flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-white/25 flex items-center justify-center shrink-0 animate-bounce" style={{ animationDuration: "2s" }}>
+                    <Calendar size={20} className="text-white" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-base">{lang === "hi" ? "✏️ अभी बदलाव करें!" : "✏️ You Can Still Make Changes!"}</p>
+                    <p className="text-white/90 text-xs mt-0.5">{lang === "hi" ? "नीचे के सभी सेक्शन 19 मई 2026 तक संपादन योग्य हैं।" : "All sections below are editable until 19 May 2026."}</p>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -407,7 +438,7 @@ export default function MyRegistrationPage() {
         <EditStayModal reg={reg} lang={lang} onSave={handleSaveSection} onClose={() => setEditModal(null)} />
       )}
       {editModal === "reference" && (
-        <EditReferenceModal reg={reg} lang={lang} refPersons={refPersons} relationCats={relationCats} onSave={handleSaveSection} onClose={() => setEditModal(null)} />
+        <EditReferenceModal reg={reg} lang={lang} refPersons={refPersons} onSave={handleSaveSection} onClose={() => setEditModal(null)} />
       )}
     </div>
   );
@@ -654,17 +685,20 @@ function EditStayModal({ reg, lang, onSave, onClose }) {
   );
 }
 
-function EditReferenceModal({ reg, lang, refPersons, relationCats, onSave, onClose }) {
+function EditReferenceModal({ reg, lang, refPersons, onSave, onClose }) {
   const [refId, setRefId] = useState(reg.reference_person_id || "");
   const [relation, setRelation] = useState(reg.relation_category || "");
   const [message, setMessage] = useState(reg.message || "");
   const [saving, setSaving] = useState(false);
 
+  const selectedRef = refPersons.find(p => p.id === refId);
+  const availableCats = selectedRef?.relation_categories || [];
+
   const save = async () => {
     if (!refId) { toast.error(lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Reference person required"); return; }
-    if (!relation) { toast.error(lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 \u091A\u0941\u0928\u0947\u0902" : "Relation required"); return; }
+    if (availableCats.length > 0 && !relation) { toast.error(lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 \u091A\u0941\u0928\u0947\u0902" : "Relation required"); return; }
     setSaving(true);
-    await onSave({ reference_person_id: refId, relation_category: relation, message });
+    await onSave({ reference_person_id: refId, relation_category: availableCats.length > 0 ? relation : "", message });
     setSaving(false);
   };
 
@@ -675,14 +709,16 @@ function EditReferenceModal({ reg, lang, refPersons, relationCats, onSave, onClo
         <div className="space-y-4">
           <div>
             <Label className="text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F *" : "Reference Person *"}</Label>
-            <Select value={refId} onValueChange={setRefId}><SelectTrigger className="mt-1" data-testid="edit-ref-person"><SelectValue placeholder="Select" /></SelectTrigger>
+            <Select value={refId} onValueChange={(v) => { setRefId(v); setRelation(""); }}><SelectTrigger className="mt-1" data-testid="edit-ref-person"><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>{refPersons.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>
           </div>
-          <div>
-            <Label className="text-sm">{lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 *" : "Relation *"}</Label>
-            <Select value={relation} onValueChange={setRelation}><SelectTrigger className="mt-1" data-testid="edit-relation"><SelectValue placeholder="Select" /></SelectTrigger>
-              <SelectContent>{relationCats.map(c => <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>)}</SelectContent></Select>
-          </div>
+          {availableCats.length > 0 && (
+            <div>
+              <Label className="text-sm">{lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 *" : "Relation *"}</Label>
+              <Select value={relation} onValueChange={setRelation}><SelectTrigger className="mt-1" data-testid="edit-relation"><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>{availableCats.map((c, i) => <SelectItem key={`${c}-${i}`} value={c}>{c}</SelectItem>)}</SelectContent></Select>
+            </div>
+          )}
           <div>
             <Label className="text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0947\u0936" : "Message"}</Label>
             <Textarea value={message} onChange={e => setMessage(e.target.value)} className="mt-1" rows={2} data-testid="edit-message" />

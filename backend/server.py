@@ -1,10 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, APIRouter, Request, HTTPException, Query
+from fastapi import FastAPI, APIRouter, Request, HTTPException, Query, UploadFile, File, Form
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response, PlainTextResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
@@ -19,6 +19,12 @@ import uuid
 import math
 import random
 import pycountry
+import httpx
+import asyncio
+import base64
+import json
+import qrcode
+import openpyxl
 
 ROOT_DIR = Path(__file__).parent
 mongo_url = os.environ['MONGO_URL']
@@ -32,12 +38,8 @@ JWT_ALGORITHM = "HS256"
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# V2: Hardcoded admin accounts — role "admin" becomes "swamsevak", superadmin stays
+# V2: Only system-level super admin. All other admins managed via custom_admins in DB.
 ADMIN_ACCOUNTS = {
-    "arunpanchariya": {"password": "arunlondon123", "name": "Arun Panchariya", "city": "London", "role": "swamsevak"},
-    "ashokpanchariya": {"password": "ashokahmedabad123", "name": "Ashok Panchariya", "city": "Ahmedabad", "role": "swamsevak"},
-    "satishpanchariya": {"password": "satishmumbai123", "name": "Satish Panchariya", "city": "Mumbai", "role": "swamsevak"},
-    "basantmalpani": {"password": "basantjaipur123", "name": "Basant Malpani", "city": "Jaipur", "role": "swamsevak"},
     "superashwini": {"password": "supersebhiupper123", "name": "Super Admin Ashwini", "city": "", "role": "superadmin"},
 }
 
@@ -87,6 +89,11 @@ async def require_superadmin(request: Request):
     if user.get("role") != "superadmin":
         raise HTTPException(status_code=403, detail="Super Admin access required")
     return user
+
+async def require_admin_readable(request: Request):
+    """Any authenticated admin (superadmin OR custom admin / swamsevak) can read.
+    Use this on GET endpoints that should be visible in view-only mode to normal admins."""
+    return await get_current_user(request)
 
 # ─── Audit Helper ───
 async def log_audit(action_type: str, target_type: str, target_id: str, target_name: str, details: str, performed_by: str):
@@ -169,6 +176,8 @@ class RegistrationUpdateV2(BaseModel):
     travel_mode: Optional[str] = None
     travel_details: Optional[str] = None
     assigned_swamsevak: Optional[str] = None
+    assigned_swamsevak_mobile: Optional[str] = None
+    custom_field_values: Optional[dict] = None
 
 class ManualEntryCreateV2(BaseModel):
     primary_mobile: str = ""
@@ -214,10 +223,12 @@ class RoomShift(BaseModel):
 class ReferencePersonCreate(BaseModel):
     name: str
     description: str = ""
+    relation_categories: List[str] = []  # per-person relation category names
 
 class ReferencePersonUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    relation_categories: Optional[List[str]] = None
 
 class RelationCategoryCreate(BaseModel):
     name: str
@@ -268,20 +279,120 @@ async def get_me(request: Request):
 async def logout():
     return {"message": "Logged out"}
 
-# ─── OTP Endpoints (Mocked) ───
+# ─── WhatsApp Config & Helper (used by OTP + Notification modules) ───
+WA_PHONE_ID = os.environ.get("WA_PHONE_NUMBER_ID", "")
+WA_TOKEN = os.environ.get("WA_ACCESS_TOKEN", "")
+WA_BIZ_ID = os.environ.get("WA_BUSINESS_ACCOUNT_ID", "")
+WA_WEBHOOK_VERIFY = os.environ.get("WA_WEBHOOK_VERIFY_TOKEN", "")
+WA_API_BASE = "https://graph.facebook.com/v21.0"
+
+def normalize_phone_for_wa(phone: str) -> str:
+    """Normalize a phone number for WhatsApp Cloud API (no + prefix, with country code).
+    - Strips spaces, dashes, parentheses.
+    - If starts with '+', returns the digits after '+' (assumes country code is present).
+    - If 10 digits long, assumes India (+91) and prefixes '91'.
+    - Otherwise, returns digits as-is (assumes country code is already included).
+    This correctly handles UK (+44), US (+1), Indian (+91 or 10-digit), and any international number.
+    """
+    p = (phone or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    if p.startswith("+"):
+        return p[1:]
+    # Drop any stray leading zeros commonly prefixed (e.g., 07911... should be treated as needing country code)
+    # BUT we don't auto-add a country code for unknown shapes — user must include it if not Indian 10-digit.
+    if len(p) == 10 and p[:1] in ("6", "7", "8", "9"):
+        return "91" + p
+    return p
+
+async def send_whatsapp_template(phone: str, template_name: str, language: str, body_params: list = None, header_media_url: str = None, header_type: str = None):
+    """Send a WhatsApp template message via Meta Cloud API. Returns (success, wa_message_id_or_error)"""
+    if not WA_PHONE_ID or not WA_TOKEN:
+        return False, "WhatsApp API not configured"
+    clean_phone = normalize_phone_for_wa(phone)
+
+    components = []
+    if header_media_url and header_type:
+        media_key = header_type.lower()
+        if media_key in ("image", "video", "document"):
+            components.append({"type": "header", "parameters": [{"type": media_key, media_key: {"link": header_media_url}}]})
+    if body_params:
+        components.append({"type": "body", "parameters": [{"type": "text", "text": str(v)} for v in body_params]})
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": clean_phone,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language},
+        }
+    }
+    if components:
+        payload["template"]["components"] = components
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client_http:
+            resp = await client_http.post(
+                f"{WA_API_BASE}/{WA_PHONE_ID}/messages",
+                headers={"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"},
+                json=payload
+            )
+            data = resp.json()
+            if resp.status_code == 200 and data.get("messages"):
+                return True, data["messages"][0]["id"]
+            else:
+                err = data.get("error", {}).get("message", str(data))
+                return False, err
+    except Exception as e:
+        return False, str(e)
+
+# ─── OTP Endpoints (WhatsApp) ───
 @api_router.post("/otp/send")
 async def send_otp(body: OTPSendRequest):
     mobile = body.mobile.strip()
     if not mobile or len(mobile) < 10:
         raise HTTPException(status_code=400, detail="Invalid mobile number")
-    otp_code = str(random.randint(1000, 9999))
+    otp_code = str(random.randint(100000, 999999))
     await db.otp_sessions.update_one(
         {"mobile": mobile},
         {"$set": {"mobile": mobile, "otp": otp_code, "created_at": datetime.now(timezone.utc).isoformat(), "verified": False, "attempts": 0}},
         upsert=True
     )
-    logger.info(f"[MOCK OTP] Sent OTP {otp_code} to {mobile}")
-    return {"message": "OTP sent successfully", "mock_otp": otp_code}
+    # Send OTP via WhatsApp (template has body + URL button that both need the OTP code)
+    clean_phone = normalize_phone_for_wa(mobile)
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": clean_phone,
+        "type": "template",
+        "template": {
+            "name": "otp_verification",
+            "language": {"code": "en"},
+            "components": [
+                {"type": "body", "parameters": [{"type": "text", "text": otp_code}]},
+                {"type": "button", "sub_type": "url", "index": "0", "parameters": [{"type": "text", "text": otp_code}]}
+            ]
+        }
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client_http:
+            resp = await client_http.post(
+                f"{WA_API_BASE}/{WA_PHONE_ID}/messages",
+                headers={"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"},
+                json=payload
+            )
+            data = resp.json()
+            if resp.status_code == 200 and data.get("messages"):
+                logger.info(f"[WhatsApp OTP] Sent OTP to {mobile}, wa_msg_id={data['messages'][0]['id']}")
+                return {"message": "OTP sent successfully via WhatsApp"}
+            else:
+                err = data.get("error", {}).get("message", str(data))
+                logger.error(f"[WhatsApp OTP] Failed to send OTP to {mobile}: {err}")
+                raise HTTPException(status_code=500, detail="Failed to send OTP via WhatsApp. Please try again.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[WhatsApp OTP] Exception sending OTP to {mobile}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send OTP via WhatsApp. Please try again.")
 
 @api_router.post("/otp/verify")
 async def verify_otp(body: OTPVerifyRequest):
@@ -337,6 +448,16 @@ async def get_registration_by_mobile(mobile: str):
     if reg.get("reference_person_id"):
         rp = await db.reference_persons.find_one({"id": reg["reference_person_id"]}, {"_id": 0, "name": 1})
         reg["reference_person_name"] = rp.get("name", "") if rp else ""
+    # Resolve volunteer mobile number if not already stored
+    if reg.get("assigned_swamsevak") and not reg.get("assigned_swamsevak_mobile"):
+        swam_name = reg["assigned_swamsevak"]
+        # Check custom_admins by name or username
+        swam = await db.custom_admins.find_one(
+            {"$or": [{"name": swam_name}, {"username": swam_name}]},
+            {"_id": 0, "mobile": 1}
+        )
+        if swam and swam.get("mobile"):
+            reg["assigned_swamsevak_mobile"] = swam["mobile"]
     return reg
 
 @api_router.post("/registrations")
@@ -360,6 +481,21 @@ async def create_registration(reg: RegistrationCreateV2):
         att["arrival_status"] = "not_arrived"
         attendees_data.append(att)
 
+    # Resolve group_head_id: if it matches a name (not a UUID), map it to the attendee's generated id
+    resolved_head_id = reg.group_head_id
+    if resolved_head_id:
+        head_found = False
+        for att in attendees_data:
+            if att["id"] == resolved_head_id:
+                head_found = True
+                break
+        if not head_found:
+            # group_head_id is likely a name, resolve to the attendee id
+            for att in attendees_data:
+                if att.get("name", "").strip() == resolved_head_id.strip():
+                    resolved_head_id = att["id"]
+                    break
+
     sorted_days = sorted(reg.selected_days) if reg.selected_days else []
     arrival_date = sorted_days[0] if sorted_days else ""
     departure_date = sorted_days[-1] if sorted_days else ""
@@ -373,7 +509,7 @@ async def create_registration(reg: RegistrationCreateV2):
         "address": reg.address.model_dump() if hasattr(reg.address, 'model_dump') else dict(reg.address),
         "num_people": reg.num_people,
         "attendees": attendees_data,
-        "group_head_id": reg.group_head_id,
+        "group_head_id": resolved_head_id,
         "family_special_request": reg.family_special_request,
         "attendance_intent": reg.attendance_intent,
         "selected_days": sorted_days,
@@ -400,6 +536,28 @@ async def create_registration(reg: RegistrationCreateV2):
     }
     await db.registrations.insert_one(doc)
     doc.pop("_id", None)
+
+    # ─── System trigger: registration_submitted (fire to guest's registered mobile) ───
+    try:
+        _group_head_name = ""
+        for a in attendees_data:
+            if a.get("id") == resolved_head_id:
+                _group_head_name = a.get("name", "")
+                break
+        if not _group_head_name and attendees_data:
+            _group_head_name = attendees_data[0].get("name", "")
+        _trigger_vars = {
+            "name": _group_head_name, "guest_name": _group_head_name,
+            "shraddhalu_name": _group_head_name, "full_name": _group_head_name,
+            "mobile": reg.primary_mobile, "phone": reg.primary_mobile,
+            "num_people": str(reg.num_people), "members": str(reg.num_people),
+            "arrival_date": arrival_date, "departure_date": departure_date,
+            "registration_id": doc["id"][:8].upper(), "reg_id": doc["id"][:8].upper(),
+            "_positional": [_group_head_name, str(reg.num_people), arrival_date],
+        }
+        await fire_system_trigger("registration_submitted", reg.primary_mobile, _trigger_vars)
+    except Exception as e:
+        logger.warning(f"[Trigger] registration_submitted failed: {e}")
 
     # Mock WhatsApp confirmation after form submission
     logger.info(f"[MOCK WHATSAPP] Sending registration confirmation to {reg.primary_mobile}")
@@ -492,7 +650,13 @@ async def list_reference_persons(request: Request):
 @api_router.post("/admin/reference-persons")
 async def create_reference_person(body: ReferencePersonCreate, request: Request):
     user = await require_superadmin(request)
-    doc = {"id": str(uuid.uuid4()), "name": body.name, "description": body.description, "created_at": datetime.now(timezone.utc).isoformat()}
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": body.name,
+        "description": body.description,
+        "relation_categories": [c.strip() for c in (body.relation_categories or []) if c.strip()],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
     await db.reference_persons.insert_one(doc)
     doc.pop("_id", None)
     await log_audit("create", "reference_person", doc["id"], body.name, "Reference person created", user["name"])
@@ -836,6 +1000,45 @@ async def mark_arrival(reg_id: str, body: ArrivalUpdateBody, request: Request):
         if att.get("id") == reg.get("group_head_id"):
             head_name = att.get("name", "")
     await log_audit("mark_arrival", "registration", reg_id, head_name or reg.get("primary_mobile", ""), f"Arrival: {old_status} → {body.arrival_status}", user["name"])
+
+    # ─── System triggers on arrival/departure transitions ───
+    try:
+        _primary_phone = reg.get("primary_mobile", "")
+        _room = ""
+        ra = reg.get("room_assignments") or []
+        if ra:
+            _room = (ra[0].get("room_code") if isinstance(ra[0], dict) else str(ra[0])) or ""
+        _base_vars = {
+            "name": head_name, "guest_name": head_name, "shraddhalu_name": head_name,
+            "mobile": _primary_phone, "phone": _primary_phone,
+            "room": _room, "room_code": _room, "room_no": _room,
+            "_positional": [head_name, _room],
+        }
+        # arrival transitions → arrival_confirmed + guest_arrived (POC notify)
+        if body.arrival_status in ("arrived", "partially_arrived") and old_status not in ("arrived", "partially_arrived"):
+            await fire_system_trigger("arrival_confirmed", _primary_phone, _base_vars)
+            _assigned_swamsevak_val = reg.get("assigned_swamsevak", "")
+            if _assigned_swamsevak_val:
+                # assigned_swamsevak may store a name OR username — try both
+                _swam = await db.custom_admins.find_one({"username": _assigned_swamsevak_val}, {"_id": 0})
+                if not _swam:
+                    _swam = await db.custom_admins.find_one({"name": _assigned_swamsevak_val}, {"_id": 0})
+                _swam_phone = (_swam.get("phone") or _swam.get("mobile") or "") if _swam else ""
+                if _swam and _swam_phone:
+                    _admin_vars = {
+                        "swamsevak_name": _swam.get("name", ""), "sevak_name": _swam.get("name", ""),
+                        "guest_name": head_name, "name": head_name,
+                        "room": _room, "room_code": _room,
+                        "mobile": _primary_phone, "guest_mobile": _primary_phone,
+                        "_positional": [_swam.get("name", ""), head_name, _room],
+                    }
+                    await fire_system_trigger("guest_arrived", _swam_phone, _admin_vars)
+        # departure transition → departure_marked
+        if body.arrival_status == "departed" and old_status != "departed":
+            await fire_system_trigger("departure_marked", _primary_phone, _base_vars)
+    except Exception as e:
+        logger.warning(f"[Trigger] arrival/departure trigger failed: {e}")
+
     return {"message": "Arrival updated", "id": reg_id}
 
 # ─── Admin: Mark Not Coming ───
@@ -1357,7 +1560,10 @@ async def export_csv(request: Request, bucket: str = "expected", search: str = "
         ]
     regs = await db.registrations.find(query, {"_id": 0}).to_list(5000)
     output = io.StringIO()
-    fields = ["id", "primary_mobile", "additional_phone", "email", "num_people", "arrival_date", "departure_date", "arrival_status", "attendance_intent", "assigned_swamsevak", "admin_notes", "created_at"]
+    is_arrived_bucket = (bucket == "arrived")
+    fields = ["id", "group_head", "primary_mobile", "additional_phone", "email", "num_people",
+              "family_members", "arrival_date", "departure_date", "arrival_status",
+              "attendance_intent", "assigned_swamsevak", "rooms", "admin_notes", "created_at"]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction='ignore')
     writer.writeheader()
     for reg in regs:
@@ -1365,9 +1571,54 @@ async def export_csv(request: Request, bucket: str = "expected", search: str = "
         for att in reg.get("attendees", []):
             if att.get("id") == reg.get("group_head_id"):
                 head_name = att.get("name", "")
+                break
+        if is_arrived_bucket:
+            arrived_members = []
+            not_arrived_members = []
+            for att in reg.get("attendees", []):
+                name = att.get("name", "")
+                age = att.get("age", "")
+                special = att.get("special_needs", "")
+                is_head = att.get("id") == reg.get("group_head_id")
+                att_status = att.get("arrival_status", "")
+                parts = [name]
+                if age:
+                    parts.append(f"(Age:{age})")
+                if special:
+                    parts.append(f"[Special:{special}]")
+                if is_head:
+                    parts.append("[Head]")
+                member_str = " ".join(parts)
+                if att_status == "arrived":
+                    arrived_members.append(member_str)
+                else:
+                    not_arrived_members.append(member_str)
+            family_text_parts = []
+            if arrived_members:
+                family_text_parts.append("PRESENT: " + "; ".join(arrived_members))
+            if not_arrived_members:
+                family_text_parts.append("NOT PRESENT: " + "; ".join(not_arrived_members))
+            family_text = " | ".join(family_text_parts) if family_text_parts else ""
+        else:
+            member_lines = []
+            for att in reg.get("attendees", []):
+                name = att.get("name", "")
+                age = att.get("age", "")
+                special = att.get("special_needs", "")
+                is_head = att.get("id") == reg.get("group_head_id")
+                parts = [name]
+                if age:
+                    parts.append(f"(Age:{age})")
+                if special:
+                    parts.append(f"[Special:{special}]")
+                if is_head:
+                    parts.append("[Head]")
+                member_lines.append(" ".join(parts))
+            family_text = "; ".join(member_lines)
         row = {k: reg.get(k, "") for k in fields}
         row["group_head"] = head_name
         row["rooms"] = ", ".join(reg.get("room_assignments", []))
+        row["family_members"] = family_text
         writer.writerow(row)
     output.seek(0)
     return StreamingResponse(output, media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
@@ -1461,27 +1712,74 @@ async def export_pdf(request: Request, report_type: str = "guestlist", bucket: s
                 {"attendees.name": {"$regex": search, "$options": "i"}},
                 {"primary_mobile": {"$regex": search, "$options": "i"}},
             ]
+        is_arrived_bucket = (bucket == "arrived")
         pdf.cell(0, 10, f"{title} - Katha 2026", new_x="LMARGIN", new_y="NEXT", align="C")
         pdf.set_font("Helvetica", "", 8)
         pdf.cell(0, 6, f"Generated: {datetime.now(timezone.utc).strftime('%d %b %Y %H:%M UTC')}", new_x="LMARGIN", new_y="NEXT", align="C")
         pdf.ln(5)
         regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
-        headers = ["#", "Group Head", "People", "Arrival", "Departure", "Rooms", "Status", "Mobile"]
-        col_w = [12, 60, 20, 32, 32, 40, 30, 40]
-        pdf.set_font("Helvetica", "B", 9)
+        headers = ["#", "Group Head", "Ppl", "Arrival", "Departure", "Rooms", "Status", "Mobile", "Family Members"]
+        col_w = [10, 40, 14, 26, 26, 28, 26, 34, 73]
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_fill_color(230, 230, 230)
         for i, h in enumerate(headers):
-            pdf.cell(col_w[i], 8, h, border=1, align="C")
+            pdf.cell(col_w[i], 8, h, border=1, align="C", fill=True)
         pdf.ln()
-        pdf.set_font("Helvetica", "", 8)
+        pdf.set_font("Helvetica", "", 7)
         for idx, reg in enumerate(regs, 1):
             head_name = ""
             for att in reg.get("attendees", []):
                 if att.get("id") == reg.get("group_head_id"):
                     head_name = att.get("name", "")
+                    break
             rooms_str = ", ".join(reg.get("room_assignments", [])) or "-"
-            vals = [str(idx), (head_name or reg.get("primary_mobile", ""))[:25], str(reg.get("num_people", 1)), reg.get("arrival_date", ""), reg.get("departure_date", ""), rooms_str[:15], reg.get("arrival_status", ""), reg.get("primary_mobile", "")]
+            # Build family members text
+            if is_arrived_bucket:
+                arrived_parts = []
+                not_arrived_parts = []
+                for att in reg.get("attendees", []):
+                    nm = att.get("name", "")
+                    age = att.get("age", "")
+                    special = att.get("special_needs", "")
+                    is_head = att.get("id") == reg.get("group_head_id")
+                    desc = nm
+                    if age:
+                        desc += f"({age})"
+                    if special:
+                        desc += f"[{special}]"
+                    if is_head:
+                        desc += "*"
+                    if att.get("arrival_status") == "arrived":
+                        arrived_parts.append(desc)
+                    else:
+                        not_arrived_parts.append(desc)
+                fam_lines = []
+                if arrived_parts:
+                    fam_lines.append("Present: " + ", ".join(arrived_parts))
+                if not_arrived_parts:
+                    fam_lines.append("Not Present: " + ", ".join(not_arrived_parts))
+                family_str = " | ".join(fam_lines)
+            else:
+                member_parts = []
+                for att in reg.get("attendees", []):
+                    nm = att.get("name", "")
+                    age = att.get("age", "")
+                    special = att.get("special_needs", "")
+                    is_head = att.get("id") == reg.get("group_head_id")
+                    desc = nm
+                    if age:
+                        desc += f"({age})"
+                    if special:
+                        desc += f"[{special}]"
+                    if is_head:
+                        desc += "*"
+                    member_parts.append(desc)
+                family_str = ", ".join(member_parts)
+            # Truncate for cell display
+            family_display = family_str[:55] + "..." if len(family_str) > 58 else family_str
+            vals = [str(idx), (head_name or reg.get("primary_mobile", ""))[:20], str(reg.get("num_people", 1)), reg.get("arrival_date", "")[-5:], reg.get("departure_date", "")[-5:], rooms_str[:12], reg.get("arrival_status", "")[:10], reg.get("primary_mobile", ""), family_display]
             for i, v in enumerate(vals):
-                pdf.cell(col_w[i], 7, str(v), border=1, align="C")
+                pdf.cell(col_w[i], 7, str(v), border=1, align="C" if i < 8 else "L")
             pdf.ln()
     buf = io.BytesIO()
     pdf.output(buf)
@@ -1495,11 +1793,9 @@ async def export_pdf(request: Request, report_type: str = "guestlist", bucket: s
 # ─── Super Admin: Admin/Swamsevak Management ───
 @api_router.get("/admin/admins")
 async def list_admins(request: Request):
-    await require_superadmin(request)
+    # All admin roles can see the admin list (needed for guest assignment section)
+    await get_current_user(request)
     admins = []
-    for uname, acc in ADMIN_ACCOUNTS.items():
-        if acc.get("role") != "superadmin":
-            admins.append({"username": uname, "name": acc["name"], "city": acc["city"], "mobile": "", "role": acc.get("role", "swamsevak"), "source": "system"})
     custom = await db.custom_admins.find({}, {"_id": 0}).to_list(100)
     for c in custom:
         admins.append({**c, "source": "custom"})
@@ -1656,7 +1952,7 @@ async def invalidate_qr(reg_id: str, request: Request):
 
 # ─── HELP CENTRE / TICKETING ───
 class TicketCreate(BaseModel):
-    title: str
+    title: str = ""
     description: str = ""
     category: str = "other"
     priority: str = "low"
@@ -1664,6 +1960,8 @@ class TicketCreate(BaseModel):
     source_registration_id: str = ""
     assigned_to: str = ""
     resolution_time_minutes: int = 30
+    guest_name: str = ""
+    guest_mobile: str = ""
 
 class TicketUpdate(BaseModel):
     title: Optional[str] = None
@@ -1678,23 +1976,103 @@ class TicketResolve(BaseModel):
     closing_note: str
 
 TICKET_CATEGORIES = [
-    {"id": "water", "label": "Water / Beverages", "priority": "low", "sla_minutes": 30},
-    {"id": "wheelchair", "label": "Wheelchair Arrangement", "priority": "medium", "sla_minutes": 20},
-    {"id": "medical", "label": "Medical Help", "priority": "high", "sla_minutes": 10},
-    {"id": "medical_emergency", "label": "Medical Emergency", "priority": "high", "sla_minutes": 5},
-    {"id": "lost_found", "label": "Lost & Found", "priority": "medium", "sla_minutes": 60},
-    {"id": "support", "label": "Support Services", "priority": "low", "sla_minutes": 45},
-    {"id": "report", "label": "Report Something", "priority": "medium", "sla_minutes": 30},
-    {"id": "room_issue", "label": "Room Issue", "priority": "medium", "sla_minutes": 30},
-    {"id": "food", "label": "Food / Dining", "priority": "low", "sla_minutes": 30},
-    {"id": "transport", "label": "Transport Assistance", "priority": "low", "sla_minutes": 45},
-    {"id": "other", "label": "Other Assistance", "priority": "low", "sla_minutes": 30},
+    # 15 services from the WA Flow JSON — category IDs MUST match Flow's service_type IDs
+    {"id": "drinking_water", "label": "Drinking Water", "group": "stay_essentials", "priority": "medium", "sla_minutes": 15},
+    {"id": "tea_coffee", "label": "Tea / Coffee (On Availability)", "group": "food_beverages", "priority": "low", "sla_minutes": 30},
+    {"id": "daily_items", "label": "Daily Items (Soap, Shampoo)", "group": "stay_essentials", "priority": "low", "sla_minutes": 30},
+    {"id": "first_aid", "label": "First Aid Box", "group": "medical", "priority": "high", "sla_minutes": 10},
+    {"id": "medicines", "label": "Medicines (Headache / Cold / Fever)", "group": "medical", "priority": "high", "sla_minutes": 15},
+    {"id": "medical_emergency", "label": "Medical Emergency", "group": "medical", "priority": "high", "sla_minutes": 5},
+    {"id": "extra_meal", "label": "Extra Meal Request", "group": "food_beverages", "priority": "low", "sla_minutes": 45},
+    {"id": "room_cleaning", "label": "Room Cleaning", "group": "housekeeping", "priority": "medium", "sla_minutes": 30},
+    {"id": "washroom_cleaning", "label": "Washroom Cleaning", "group": "housekeeping", "priority": "medium", "sla_minutes": 30},
+    {"id": "garbage_pickup", "label": "Garbage Pickup", "group": "housekeeping", "priority": "low", "sla_minutes": 45},
+    {"id": "room_issue", "label": "Room Issue (Electricity / Water)", "group": "housekeeping", "priority": "high", "sla_minutes": 20},
+    {"id": "bedding", "label": "Bedding / Blanket / Pillow", "group": "stay_essentials", "priority": "medium", "sla_minutes": 30},
+    {"id": "mosquito_pest", "label": "Mosquito / Pest Control", "group": "stay_essentials", "priority": "medium", "sla_minutes": 30},
+    {"id": "lost_found", "label": "Lost & Found", "group": "other", "priority": "medium", "sla_minutes": 60},
+    {"id": "other_request", "label": "Other Request", "group": "other", "priority": "low", "sla_minutes": 45},
 ]
+
+async def seed_ticket_categories():
+    """Seed default categories on startup if the collection is empty."""
+    if await db.ticket_categories.count_documents({}) == 0:
+        for c in TICKET_CATEGORIES:
+            await db.ticket_categories.insert_one({**c, "is_active": True, "is_default": True})
+        logger.info(f"Seeded {len(TICKET_CATEGORIES)} ticket categories")
+
+async def get_categories():
+    """Read categories from DB, fall back to hardcoded defaults if empty."""
+    rows = await db.ticket_categories.find({"is_active": True}, {"_id": 0}).sort("label", 1).to_list(200)
+    return rows or TICKET_CATEGORIES
 
 @api_router.get("/admin/tickets/categories")
 async def get_ticket_categories(request: Request):
     await get_current_user(request)
-    return TICKET_CATEGORIES
+    return await get_categories()
+
+class CategoryCreate(BaseModel):
+    id: str
+    label: str
+    group: Optional[str] = "other"
+    priority: str = "low"
+    sla_minutes: int = 30
+    is_active: Optional[bool] = True
+
+class CategoryUpdate(BaseModel):
+    label: Optional[str] = None
+    group: Optional[str] = None
+    priority: Optional[str] = None
+    sla_minutes: Optional[int] = None
+    is_active: Optional[bool] = None
+
+@api_router.post("/admin/tickets/categories")
+async def create_category(body: CategoryCreate, request: Request):
+    user = await require_superadmin(request)
+    cid = body.id.strip().lower().replace(" ", "_")
+    if not cid:
+        raise HTTPException(status_code=400, detail="id is required")
+    if body.priority not in ("low", "medium", "high"):
+        raise HTTPException(status_code=400, detail="priority must be low/medium/high")
+    existing = await db.ticket_categories.find_one({"id": cid})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Category '{cid}' already exists")
+    doc = {
+        "id": cid, "label": body.label.strip(), "group": (body.group or "other").strip() or "other",
+        "priority": body.priority, "sla_minutes": max(1, int(body.sla_minutes)),
+        "is_active": bool(body.is_active), "is_default": False,
+    }
+    await db.ticket_categories.insert_one(doc)
+    await log_audit("category_create", "ticket_category", cid, body.label, "Category created", user["name"])
+    return doc
+
+@api_router.put("/admin/tickets/categories/{cid}")
+async def update_category(cid: str, body: CategoryUpdate, request: Request):
+    user = await require_superadmin(request)
+    updates = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    if "priority" in updates and updates["priority"] not in ("low", "medium", "high"):
+        raise HTTPException(status_code=400, detail="priority must be low/medium/high")
+    if "sla_minutes" in updates:
+        updates["sla_minutes"] = max(1, int(updates["sla_minutes"]))
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    result = await db.ticket_categories.update_one({"id": cid}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Category not found")
+    await log_audit("category_update", "ticket_category", cid, "", f"Updated: {list(updates.keys())}", user["name"])
+    return {"message": "Updated"}
+
+@api_router.delete("/admin/tickets/categories/{cid}")
+async def delete_category(cid: str, request: Request):
+    user = await require_superadmin(request)
+    existing = await db.ticket_categories.find_one({"id": cid})
+    if not existing:
+        raise HTTPException(status_code=404, detail="Category not found")
+    if existing.get("is_default"):
+        raise HTTPException(status_code=400, detail="Cannot delete a default seeded category. Disable it instead.")
+    await db.ticket_categories.delete_one({"id": cid})
+    await log_audit("category_delete", "ticket_category", cid, existing.get("label", ""), "Category deleted", user["name"])
+    return {"message": "Deleted"}
 
 @api_router.get("/admin/tickets/stats")
 async def get_ticket_stats(request: Request):
@@ -1745,11 +2123,14 @@ async def get_ticket_detail(ticket_id: str, request: Request):
 @api_router.post("/admin/tickets")
 async def create_ticket(body: TicketCreate, request: Request):
     user = await get_current_user(request)
-    cat = next((c for c in TICKET_CATEGORIES if c["id"] == body.category), None)
+    cats = await get_categories()
+    cat = next((c for c in cats if c["id"] == body.category), None)
     sla = body.resolution_time_minutes or (cat["sla_minutes"] if cat else 30)
+    # Auto-generate title from guest_name + category if title not provided
+    title = body.title.strip() if body.title.strip() else f"{body.guest_name or 'Guest'} — {cat['label'] if cat else body.category}"
     doc = {
         "id": str(uuid.uuid4()),
-        "title": body.title,
+        "title": title,
         "description": body.description,
         "category": body.category,
         "category_label": cat["label"] if cat else body.category,
@@ -1757,6 +2138,8 @@ async def create_ticket(body: TicketCreate, request: Request):
         "status": "open",
         "source_type": body.source_type,
         "source_registration_id": body.source_registration_id,
+        "guest_name": body.guest_name,
+        "guest_mobile": body.guest_mobile,
         "created_by": user["username"],
         "created_by_name": user["name"],
         "assigned_to": body.assigned_to or user["username"],
@@ -1771,7 +2154,7 @@ async def create_ticket(body: TicketCreate, request: Request):
     }
     await db.tickets.insert_one(doc)
     doc.pop("_id", None)
-    await log_audit("ticket_create", "ticket", doc["id"], body.title, f"Ticket created: {body.category} ({body.priority})", user["name"])
+    await log_audit("ticket_create", "ticket", doc["id"], title, f"Ticket created: {body.category} ({body.priority})", user["name"])
     return doc
 
 @api_router.put("/admin/tickets/{ticket_id}")
@@ -1784,6 +2167,26 @@ async def update_ticket(ticket_id: str, body: TicketUpdate, request: Request):
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.tickets.update_one({"id": ticket_id}, {"$set": updates})
     await log_audit("ticket_update", "ticket", ticket_id, ticket.get("title", ""), f"Updated: {', '.join(updates.keys())}", user["name"])
+
+    # ─── System trigger: help_ticket_response (when a note/response was added) ───
+    try:
+        _new_notes = (updates.get("notes") or "").strip()
+        _old_notes = (ticket.get("notes") or "").strip()
+        if _new_notes and _new_notes != _old_notes:
+            _phone = ticket.get("guest_mobile", "")
+            if _phone:
+                _vars = {
+                    "name": ticket.get("guest_name", ""), "guest_name": ticket.get("guest_name", ""),
+                    "ticket_id": ticket_id[:8].upper(),
+                    "response": _new_notes[:300], "reply": _new_notes[:300], "message": _new_notes[:300],
+                    "service": ticket.get("category_label") or ticket.get("category", ""),
+                    "responder_name": user.get("name", ""), "sevak_name": user.get("name", ""),
+                    "_positional": [ticket.get("guest_name", ""), ticket_id[:8].upper(), _new_notes[:300]],
+                }
+                await fire_system_trigger("help_ticket_response", _phone, _vars)
+    except Exception as e:
+        logger.warning(f"[Trigger] help_ticket_response failed: {e}")
+
     return {"message": "Ticket updated"}
 
 @api_router.put("/admin/tickets/{ticket_id}/assign")
@@ -1814,6 +2217,12 @@ async def resolve_ticket(ticket_id: str, body: TicketResolve, request: Request):
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }})
     await log_audit("ticket_resolve", "ticket", ticket_id, ticket.get("title", ""), f"Resolved by {user['name']}", user["name"])
+    # Session 4B: fire HC ticket-resolved system trigger (notifies guest)
+    try:
+        resolved_ticket = {**ticket, "resolved_by_name": user["name"], "closing_note": body.closing_note}
+        await fire_hc_ticket_resolved(resolved_ticket)
+    except Exception as e:
+        logger.warning(f"[HC Trigger] fire_hc_ticket_resolved failed: {e}")
     return {"message": "Ticket resolved"}
 
 # ─── TO-DO MODULE ───
@@ -1922,14 +2331,21 @@ async def delete_todo(todo_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Todo not found")
     is_super = user.get("role") == "superadmin"
     if not is_super:
-        # Volunteers cannot delete recurring tasks
+        # Non-superadmin cannot delete recurring tasks
         if todo.get("is_recurring"):
             raise HTTPException(status_code=403, detail="Cannot delete recurring tasks")
-        # Volunteers cannot delete tasks created by super admin
-        creator = await db.admins.find_one({"username": todo.get("created_by", "")}, {"_id": 0, "role": 1})
-        if creator and creator.get("role") == "superadmin":
+        # Non-superadmin cannot delete tasks created by super admin
+        creator_username = todo.get("created_by", "")
+        creator_role = todo.get("created_by_role", "")
+        if creator_role == "superadmin":
             raise HTTPException(status_code=403, detail="Cannot delete tasks created by Super Admin")
-        # Volunteers can only delete their own tasks
+        # Also check ADMIN_ACCOUNTS and custom_admins for creator role
+        if creator_username in ADMIN_ACCOUNTS and ADMIN_ACCOUNTS[creator_username].get("role") == "superadmin":
+            raise HTTPException(status_code=403, detail="Cannot delete tasks created by Super Admin")
+        creator_custom = await db.custom_admins.find_one({"username": creator_username}, {"_id": 0, "role": 1})
+        if creator_custom and creator_custom.get("role") == "superadmin":
+            raise HTTPException(status_code=403, detail="Cannot delete tasks created by Super Admin")
+        # Non-superadmin can only delete their own tasks
         if todo.get("created_by") != user["username"]:
             raise HTTPException(status_code=403, detail="Only creator or Super Admin can delete this task")
     await db.todos.delete_one({"id": todo_id})
@@ -1975,7 +2391,7 @@ DEFAULT_TEMPLATES = [
 
 @api_router.get("/admin/messages/templates")
 async def get_message_templates(request: Request):
-    user = await require_superadmin(request)
+    user = await require_admin_readable(request)
     templates = await db.message_templates.find({}, {"_id": 0}).sort("name", 1).to_list(100)
     return templates
 
@@ -2060,13 +2476,2505 @@ async def send_message(body: MessageSend, request: Request):
 
 @api_router.get("/admin/messages/campaigns")
 async def get_campaigns(request: Request, page: int = 1, per_page: int = 20):
-    user = await require_superadmin(request)
+    user = await require_admin_readable(request)
     total = await db.message_campaigns.count_documents({})
     skip = (page - 1) * per_page
     campaigns = await db.message_campaigns.find({}, {"_id": 0}).sort("sent_at", -1).skip(skip).limit(per_page).to_list(per_page)
     return {"data": campaigns, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
 
-# ─── CUSTOM FIELDS ───
+# ═══════════════════════════════════════════════════════════════
+# NOTIFICATION MANAGEMENT MODULE (Phase 1)
+# ═══════════════════════════════════════════════════════════════
+# (WA config + send_whatsapp_template moved above OTP section)
+
+# ─── Webhook Endpoints ───
+# Meta sends GET to verify, POST for events. Also handle HEAD for infra probes.
+
+async def run_flow_keyword_matcher(from_number: str, text: str):
+    """Match incoming WhatsApp text against active wa_flow_configs trigger_keywords.
+    If matched, send the configured template (with Flow CTA) to the user, minting a fresh
+    flow_token bound to their phone so the Flow submission can resolve who they are."""
+    try:
+        incoming = (text or "").strip().lower()
+        if not incoming:
+            return
+        flows = await db.wa_flow_configs.find({"is_active": True}, {"_id": 0}).to_list(200)
+        matched = None
+        matched_kw = ""
+        for f in flows:
+            keywords = [str(k).strip().lower() for k in (f.get("trigger_keywords") or []) if str(k).strip()]
+            for kw in keywords:
+                if incoming == kw or kw in incoming.split():
+                    matched = f
+                    matched_kw = kw
+                    break
+            if matched:
+                break
+        if not matched:
+            return
+        tmpl_name = (matched.get("keyword_template_name") or "").strip()
+        if not tmpl_name:
+            logger.warning(f"[FlowKeyword] keyword '{matched_kw}' matched flow '{matched.get('flow_name')}' but no keyword_template_name configured — nothing to send")
+            return
+        lang = (matched.get("keyword_template_language") or "en").strip() or "en"
+        flow_id = str(matched.get("flow_id") or "").strip()
+        logger.info(f"[FlowKeyword] matched '{matched_kw}' → sending template '{tmpl_name}' with flow CTA to {from_number}")
+        ok, result, flow_token = await send_wa_flow_template(
+            phone=from_number, template_name=tmpl_name, language=lang,
+            flow_id=flow_id, flow_cta_text="Open",
+        )
+        try:
+            await ensure_conversation(from_number, "", "flow_keyword")
+            conv_phone = normalize_phone_for_wa(from_number)
+            now_iso = datetime.now(timezone.utc).isoformat()
+            await db.wa_conversations.update_one({"phone": conv_phone}, {
+                "$push": {"messages": {
+                    "id": str(uuid.uuid4()), "direction": "outgoing",
+                    "text": f"[Flow CTA · keyword='{matched_kw}' · template={tmpl_name}]",
+                    "msg_type": "template_flow",
+                    "wa_message_id": result if ok else "",
+                    "flow_token": flow_token,
+                    "timestamp": now_iso, "status": "sent" if ok else "failed",
+                    "error_message": "" if ok else str(result),
+                }},
+                "$set": {"last_message": f"[Flow CTA · {tmpl_name}]", "last_message_at": now_iso}
+            })
+        except Exception as e:
+            logger.warning(f"[FlowKeyword] conv persist failed: {e}")
+    except Exception as e:
+        logger.exception(f"[FlowKeyword] matcher crashed: {e}")
+
+async def run_auto_response_matcher(from_number: str, text: str):
+    """Match incoming WhatsApp text against active auto-response rules and fire the step chain."""
+    try:
+        incoming = (text or "").strip().lower()
+        if not incoming:
+            return
+        rules = await db.wa_auto_responses.find({"is_active": True}, {"_id": 0}).to_list(200)
+        matched = None
+        for r in rules:
+            phrase = (r.get("trigger_phrase") or "").strip().lower()
+            if not phrase:
+                continue
+            if r.get("match_type", "exact") == "exact":
+                if incoming == phrase:
+                    matched = r
+                    break
+            else:  # contains
+                if phrase in incoming:
+                    matched = r
+                    break
+        if not matched:
+            return
+
+        run_id = str(uuid.uuid4())
+        await db.wa_auto_response_runs.insert_one({
+            "id": run_id,
+            "rule_id": matched["id"],
+            "trigger_phrase": matched.get("trigger_phrase", ""),
+            "phone": from_number,
+            "incoming_text": text,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "steps_results": [],
+        })
+
+        logger.info(f"[AutoResponse] Match: phrase='{matched['trigger_phrase']}' phone={from_number} rule={matched['id']}")
+
+        # Fire steps sequentially, honoring per-step delay
+        for idx, step in enumerate(matched.get("steps", [])):
+            delay = max(0, int(step.get("delay_seconds", 0) or 0))
+            if delay > 0:
+                await asyncio.sleep(delay)
+            tid = step.get("template_id", "")
+            tmpl = await db.wa_templates.find_one({"id": tid}, {"_id": 0})
+            if not tmpl:
+                await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
+                    "step_index": idx, "template_id": tid, "status": "skipped",
+                    "error": "template not found", "at": datetime.now(timezone.utc).isoformat(),
+                }}})
+                continue
+            meta_name = tmpl.get("meta_template_name", "")
+            language = tmpl.get("language", "en") or "en"
+            if not meta_name:
+                await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
+                    "step_index": idx, "template_id": tid, "status": "skipped",
+                    "error": "template has no meta_template_name", "at": datetime.now(timezone.utc).isoformat(),
+                }}})
+                continue
+            # Session 4B: If this step is marked as a Flow CTA step, mint a flow_token and send flow-template
+            step_flow_id = str(step.get("flow_id", "") or tmpl.get("flow_id", "") or "").strip()
+            is_flow_step = bool(step.get("is_flow_step") or tmpl.get("is_flow_template") or step_flow_id)
+            if is_flow_step:
+                ok, result, flow_token = await send_wa_flow_template(
+                    phone=from_number,
+                    template_name=meta_name,
+                    language=language,
+                    flow_id=step_flow_id,
+                    flow_cta_text=step.get("flow_cta_text", "Open"),
+                )
+                await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
+                    "step_index": idx, "template_id": tid, "meta_template_name": meta_name,
+                    "status": "sent" if ok else "failed",
+                    "wa_message_id": result if ok else "",
+                    "flow_token": flow_token,
+                    "error": "" if ok else str(result),
+                    "at": datetime.now(timezone.utc).isoformat(),
+                }}})
+                if not ok:
+                    continue
+                # Persist outgoing message in conversation (Flow-CTA)
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    await ensure_conversation(from_number, "", "auto_response")
+                    conv_phone = normalize_phone_for_wa(from_number)
+                    await db.wa_conversations.update_one({"phone": conv_phone}, {
+                        "$push": {"messages": {
+                            "id": str(uuid.uuid4()), "direction": "outgoing",
+                            "text": f"[Flow CTA sent · template: {meta_name}]",
+                            "msg_type": "template_flow", "wa_message_id": result,
+                            "flow_token": flow_token,
+                            "timestamp": now_iso, "status": "sent",
+                        }},
+                        "$set": {"last_message": f"[Flow CTA · {meta_name}]", "last_message_at": now_iso}
+                    })
+                except Exception as e:
+                    logger.warning(f"[AutoResponse] conv persist failed for flow step: {e}")
+                continue
+            ok, result = await send_whatsapp_template(
+                phone=from_number,
+                template_name=meta_name,
+                language=language,
+                body_params=None,
+                header_media_url=tmpl.get("header_media_url") or None,
+                header_type=tmpl.get("header_type") or None,
+            )
+            await db.wa_auto_response_runs.update_one({"id": run_id}, {"$push": {"steps_results": {
+                "step_index": idx, "template_id": tid, "meta_template_name": meta_name,
+                "status": "sent" if ok else "failed",
+                "wa_message_id": result if ok else "",
+                "error": "" if ok else str(result),
+                "at": datetime.now(timezone.utc).isoformat(),
+            }}})
+            if ok:
+                # Persist outgoing message in conversation
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    msg_doc = {
+                        "id": str(uuid.uuid4()), "direction": "outgoing",
+                        "text": f"[template: {meta_name}]", "msg_type": "template",
+                        "wa_message_id": result, "timestamp": now_iso,
+                        "status": "sent", "sent_by": "AutoResponse",
+                    }
+                    await db.wa_conversations.update_one({"phone": from_number}, {
+                        "$push": {"messages": msg_doc},
+                        "$set": {"last_message": f"[auto: {meta_name}]", "last_message_at": now_iso},
+                    })
+                except Exception as e:
+                    logger.warning(f"[AutoResponse] Conversation log failed: {e}")
+                logger.info(f"[AutoResponse] Step {idx} sent template='{meta_name}' wa_msg_id={result}")
+            else:
+                logger.error(f"[AutoResponse] Step {idx} failed template='{meta_name}': {result}")
+
+        await db.wa_auto_response_runs.update_one({"id": run_id}, {"$set": {
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }})
+    except Exception as e:
+        logger.exception(f"[AutoResponse] Matcher crashed: {e}")
+
+async def _check_auto_response_match(text: str) -> bool:
+    """Quick check: does any active auto-response rule match this text? (No side effects.)"""
+    incoming = (text or "").strip().lower()
+    if not incoming:
+        return False
+    rules = await db.wa_auto_responses.find({"is_active": True}, {"_id": 0}).to_list(200)
+    for r in rules:
+        phrase = (r.get("trigger_phrase") or "").strip().lower()
+        if not phrase:
+            continue
+        if r.get("match_type", "exact") == "exact":
+            if incoming == phrase:
+                return True
+        else:
+            if phrase in incoming:
+                return True
+    return False
+
+async def trigger_help_center_flow(from_number: str):
+    """Trigger the active Help Center flow for a user whose message didn't match any auto-response.
+    Sends the configured flow template so the user gets the WA Flow CTA."""
+    try:
+        flow = await db.wa_flow_configs.find_one({"is_active": True}, {"_id": 0})
+        if not flow:
+            logger.info(f"[HCFlow] No active flow config — cannot trigger flow for {from_number}")
+            return
+        tmpl_name = (flow.get("keyword_template_name") or "").strip()
+        if not tmpl_name:
+            logger.warning(f"[HCFlow] Active flow '{flow.get('flow_name')}' has no keyword_template_name — cannot send")
+            return
+        lang = (flow.get("keyword_template_language") or "en").strip() or "en"
+        flow_id = str(flow.get("flow_id") or "").strip()
+        logger.info(f"[HCFlow] Triggering Help Center flow for {from_number} — template='{tmpl_name}' flow_id={flow_id}")
+        ok, result, flow_token = await send_wa_flow_template(
+            phone=from_number, template_name=tmpl_name, language=lang,
+            flow_id=flow_id, flow_cta_text="Open",
+        )
+        # Persist outgoing message in conversation
+        try:
+            await ensure_conversation(from_number, "", "help_center_flow")
+            conv_phone = normalize_phone_for_wa(from_number)
+            now_iso = datetime.now(timezone.utc).isoformat()
+            err_text = "" if ok else str(result)
+            await db.wa_conversations.update_one({"phone": conv_phone}, {
+                "$push": {"messages": {
+                    "id": str(uuid.uuid4()), "direction": "outgoing",
+                    "text": (
+                        f"[Help Center Flow sent · template: {tmpl_name}]"
+                        if ok
+                        else f"[Help Center Flow FAILED · template: {tmpl_name} · err: {err_text[:200]}]"
+                    ),
+                    "msg_type": "template_flow",
+                    "wa_message_id": result if ok else "",
+                    "flow_token": flow_token,
+                    "timestamp": now_iso, "status": "sent" if ok else "failed",
+                    "error_message": err_text,
+                }},
+                "$set": {"last_message": f"[Help Center Flow · {tmpl_name}]", "last_message_at": now_iso}
+            })
+        except Exception as e:
+            logger.warning(f"[HCFlow] conversation persist failed: {e}")
+        if ok:
+            logger.info(f"[HCFlow] Flow template sent to {from_number}, flow_token={flow_token}")
+        else:
+            logger.error(f"[HCFlow] Failed to send flow to {from_number}: {result}")
+    except Exception as e:
+        logger.exception(f"[HCFlow] trigger crashed: {e}")
+
+async def _handle_flow_completion(from_number: str, response_json_str: str, nfm_data: dict):
+    """Handle flow completion (nfm_reply) from SUMMARY_SUBMIT's complete action.
+    Extracts guest data, creates ticket, fires triggers.
+
+    IMPORTANT: If the submitter is NOT in the arrived-guest list, we REJECT the request
+    outright — we fire ONLY the `hc_flow_not_on_premise` template and do NOT create a
+    ticket and do NOT notify a swayamsevak.
+    """
+    try:
+        # Parse the response_json (it's a JSON string from Meta)
+        if isinstance(response_json_str, str) and response_json_str.strip():
+            try:
+                flow_payload = json.loads(response_json_str)
+            except json.JSONDecodeError:
+                flow_payload = nfm_data
+        else:
+            flow_payload = nfm_data
+
+        logger.info(f"[FlowComplete] Processing flow completion from {from_number}: keys={list(flow_payload.keys())}")
+
+        # Extract fields (new JSON sends category, request_type, additional_details, *_title, flow_name)
+        category = (flow_payload.get("category") or "").strip()
+        category_title = (flow_payload.get("category_title") or "").strip()
+        request_type = (flow_payload.get("request_type") or "").strip()
+        request_type_title = (flow_payload.get("request_type_title") or "").strip()
+        additional_details = (flow_payload.get("additional_details") or "").strip()
+
+        if not request_type and not category:
+            logger.warning(f"[FlowComplete] No category/request_type in payload — skipping ticket creation")
+            return
+
+        # ── Arrived-guest gate (HARD REJECT when not on premise) ──
+        reg, arrived_status = await _find_arrived_guest_by_phone(from_number)
+        if arrived_status != "on_premise":
+            logger.info(
+                f"[FlowComplete] REJECT ticket — submitter {from_number} is not on premise "
+                f"(status={arrived_status}). Firing hc_flow_not_on_premise only, NO ticket created."
+            )
+            # Fire ONLY the not-on-premise template. No ticket, no swayamsevak ping.
+            try:
+                guest_name_reject = (reg.get("primary_guest_name") if reg else "") or "Guest"
+                _cat_hr = category_title or category or "-"
+                _req_hr = request_type_title or request_type or "-"
+                await fire_system_trigger(
+                    "hc_flow_not_on_premise",
+                    from_number,
+                    {
+                        "guest_name": guest_name_reject,
+                        "name": guest_name_reject,
+                        "service_type": _req_hr or _cat_hr,
+                        "category": _cat_hr,
+                        "category_title": _cat_hr,
+                        "request_type": _req_hr,
+                        "request_type_title": _req_hr,
+                        "additional_details": additional_details or "-",
+                        "details": additional_details or "-",
+                        "description": additional_details or "-",
+                        "arrived_status": arrived_status,
+                    },
+                )
+            except Exception as e:
+                logger.warning(f"[FlowComplete] hc_flow_not_on_premise fire failed: {e}")
+            # Log the rejection in conversation so the admin view has a trace
+            try:
+                conv_phone = normalize_phone_for_wa(from_number)
+                now_iso = datetime.now(timezone.utc).isoformat()
+                await db.wa_conversations.update_one({"phone": conv_phone}, {
+                    "$push": {"messages": {
+                        "id": str(uuid.uuid4()), "direction": "incoming",
+                        "text": f"[Flow rejected — not on premise] {category_title or category}: {request_type_title or request_type}",
+                        "msg_type": "flow_submission_rejected",
+                        "timestamp": now_iso, "status": "received",
+                    }},
+                    "$set": {"last_message": "[Flow rejected — not on premise]", "last_message_at": now_iso},
+                })
+            except Exception as e:
+                logger.warning(f"[FlowComplete] reject-log persist failed: {e}")
+            return
+
+        # ── On-premise path: create the ticket, notify swayamsevak ──
+        # service_type is the category id used for SLA/priority lookup in _create_ticket_from_flow.
+        service_type = request_type or category or "other_request"
+        description = additional_details or ""
+        # room_or_location comes from the guest's registration, not from the Flow payload.
+        room_location = ""
+        if reg:
+            ra = reg.get("room_assignments") or []
+            if ra:
+                first = ra[0]
+                room_location = first.get("room_code") if isinstance(first, dict) else str(first)
+        guest_name = ""
+        if reg:
+            guest_name = reg.get("primary_guest_name", "") or reg.get("head_name", "") or ""
+            if not guest_name:
+                for att in reg.get("attendees", []):
+                    if att.get("id") == reg.get("group_head_id"):
+                        guest_name = att.get("name", "")
+                        break
+
+        ticket, _reg, arrived_status2 = await _create_ticket_from_flow(
+            from_number, service_type, category, room_location, description
+        )
+        logger.info(
+            f"[FlowComplete] Ticket created: id={ticket['id']} cat={service_type} "
+            f"guest={guest_name} room={room_location or '-'} phone={from_number}"
+        )
+
+        # Enrich the ticket object (in-memory only) with the friendly titles so that
+        # the confirmation template can show readable labels instead of raw ids.
+        ticket["_category_title"] = category_title or category
+        ticket["_request_type_title"] = request_type_title or request_type
+        ticket["_additional_details"] = additional_details
+
+        # Fire HC system triggers (captured + POC)
+        try:
+            await fire_hc_flow_outcome(from_number, arrived_status2, ticket)
+        except Exception as e:
+            logger.warning(f"[FlowComplete] fire_hc_flow_outcome failed: {e}")
+
+        # Log in conversation
+        try:
+            conv_phone = normalize_phone_for_wa(from_number)
+            now_iso = datetime.now(timezone.utc).isoformat()
+            msg_doc = {
+                "id": str(uuid.uuid4()), "direction": "incoming",
+                "text": (
+                    f"[Flow Submitted] {guest_name or 'Guest'} — "
+                    f"{category_title or category}: {request_type_title or request_type}. "
+                    f"Details: {additional_details or '-'}"
+                ),
+                "msg_type": "flow_submission",
+                "timestamp": now_iso, "status": "received",
+            }
+            await db.wa_conversations.update_one({"phone": conv_phone}, {
+                "$push": {"messages": msg_doc},
+                "$set": {
+                    "last_message": f"[Flow: {request_type_title or request_type}]",
+                    "last_message_at": now_iso,
+                },
+            })
+        except Exception as e:
+            logger.warning(f"[FlowComplete] conv log failed: {e}")
+
+    except Exception as e:
+        logger.exception(f"[FlowComplete] handler crashed: {e}")
+
+@api_router.get("/webhooks/whatsapp")
+@api_router.head("/webhooks/whatsapp")
+async def whatsapp_webhook_verify(request: Request):
+    """Meta webhook verification — returns challenge as plain text"""
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
+    logger.info(f"[WA Webhook Verify] mode={mode!r} token_received={token!r} expected={WA_WEBHOOK_VERIFY!r} match={token == WA_WEBHOOK_VERIFY} challenge={challenge!r} UA={request.headers.get('user-agent','')[:80]}")
+    if mode == "subscribe" and token == WA_WEBHOOK_VERIFY:
+        return PlainTextResponse(content=str(challenge), status_code=200)
+    # If no verification params, return 200 for health checks
+    if not mode and not token:
+        return PlainTextResponse(content="ok", status_code=200)
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+@api_router.post("/webhooks/whatsapp")
+async def whatsapp_webhook_receive(request: Request):
+    """Receive status updates AND incoming messages from Meta"""
+    try:
+        body = await request.json()
+    except Exception:
+        return {"status": "ok"}
+    entries = body.get("entry", [])
+    for entry in entries:
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+
+            # ─── Handle incoming messages ───
+            messages = value.get("messages", [])
+            contacts = value.get("contacts", [])
+            contact_map = {}
+            for c in contacts:
+                waid = c.get("wa_id", "")
+                profile = c.get("profile", {})
+                contact_map[waid] = profile.get("name", "")
+
+            for msg in messages:
+                from_number = msg.get("from", "")
+                msg_id = msg.get("id", "")
+                msg_ts = msg.get("timestamp", "")
+                msg_type = msg.get("type", "text")
+                text_body = ""
+                if msg_type == "text":
+                    text_body = msg.get("text", {}).get("body", "")
+                elif msg_type == "button":
+                    text_body = msg.get("button", {}).get("text", "")
+                elif msg_type == "interactive":
+                    ir = msg.get("interactive", {})
+                    ir_type = ir.get("type", "")
+                    # Handle flow completion (nfm_reply)
+                    if ir_type == "nfm_reply":
+                        nfm_data = ir.get("nfm_reply", {})
+                        flow_response = nfm_data.get("response_json", "") or nfm_data.get("body", "")
+                        text_body = "[Flow submission received]"
+                        # Mark this so the fallback router below does NOT treat a completed
+                        # flow as a "user typed something" event and re-send the template.
+                        msg_type = "flow_submission"
+                        # Process flow completion in background
+                        asyncio.create_task(_handle_flow_completion(from_number, flow_response, nfm_data))
+                    else:
+                        text_body = ir.get("button_reply", {}).get("title", "") or ir.get("list_reply", {}).get("title", "")
+                else:
+                    text_body = f"[{msg_type} message]"
+
+                contact_name = contact_map.get(from_number, "")
+                now_iso = datetime.now(timezone.utc).isoformat()
+
+                # Store in wa_webhook_events
+                await db.wa_webhook_events.insert_one({
+                    "id": str(uuid.uuid4()), "wa_message_id": msg_id,
+                    "event_type": "incoming", "timestamp": msg_ts, "error_message": "",
+                    "raw": msg, "received_at": now_iso
+                })
+
+                # Upsert conversation
+                conv = await db.wa_conversations.find_one({"phone": from_number})
+                message_doc = {
+                    "id": str(uuid.uuid4()), "direction": "incoming",
+                    "text": text_body, "msg_type": msg_type,
+                    "wa_message_id": msg_id, "timestamp": now_iso,
+                    "status": "received",
+                }
+                if conv:
+                    await db.wa_conversations.update_one({"phone": from_number}, {
+                        "$push": {"messages": message_doc},
+                        "$set": {"last_message": text_body, "last_message_at": now_iso, "contact_name": contact_name or conv.get("contact_name", "")},
+                        "$inc": {"unread_count": 1}
+                    })
+                else:
+                    await db.wa_conversations.insert_one({
+                        "id": str(uuid.uuid4()), "phone": from_number,
+                        "contact_name": contact_name, "unread_count": 1,
+                        "last_message": text_body, "last_message_at": now_iso,
+                        "created_at": now_iso, "messages": [message_doc],
+                    })
+
+                # ─── Message routing: auto-response first, then Help Center flow fallback ───
+                if text_body and msg_type in ("text", "button", "interactive"):
+                    matched_auto = await _check_auto_response_match(text_body)
+                    if matched_auto:
+                        asyncio.create_task(run_auto_response_matcher(from_number, text_body))
+                    else:
+                        # No auto-response match → trigger Help Center Flow
+                        asyncio.create_task(trigger_help_center_flow(from_number))
+
+            # ─── Handle status updates ───
+            statuses = value.get("statuses", [])
+            for status in statuses:
+                wa_id = status.get("id", "")
+                st = status.get("status", "")  # sent, delivered, read, failed
+                ts = status.get("timestamp", "")
+                errors = status.get("errors", [])
+                err_msg = errors[0].get("message", "") if errors else ""
+                err_code = errors[0].get("code", "") if errors else ""
+                err_title = errors[0].get("title", "") if errors else ""
+                full_err = " | ".join([x for x in [str(err_code) if err_code else "", err_title, err_msg] if x])
+                await db.wa_webhook_events.insert_one({
+                    "id": str(uuid.uuid4()), "wa_message_id": wa_id,
+                    "event_type": st, "timestamp": ts, "error_message": err_msg,
+                    "error_code": err_code, "error_title": err_title,
+                    "raw": status, "received_at": datetime.now(timezone.utc).isoformat()
+                })
+                update_fields = {"status": st}
+                if st == "sent":
+                    update_fields["sent_at"] = datetime.now(timezone.utc).isoformat()
+                elif st == "delivered":
+                    update_fields["delivered_at"] = datetime.now(timezone.utc).isoformat()
+                elif st == "read":
+                    update_fields["read_at"] = datetime.now(timezone.utc).isoformat()
+                elif st == "failed":
+                    update_fields["error_message"] = err_msg
+                    update_fields["error_detail"] = full_err
+                await db.wa_campaign_recipients.update_one(
+                    {"wa_message_id": wa_id}, {"$set": update_fields}
+                )
+                await db.wa_message_queue.update_one(
+                    {"wa_message_id": wa_id},
+                    {"$set": {"status": st, "error_detail": full_err} if st == "failed" else {"status": st}}
+                )
+                # Update conversation message status + surface the failure reason inline
+                conv_set = {"messages.$.status": st}
+                if st == "failed" and full_err:
+                    conv_set["messages.$.error_message"] = full_err
+                    conv_set["messages.$.text"] = f"[UNDELIVERED: {full_err[:140]}]"
+                await db.wa_conversations.update_one(
+                    {"messages.wa_message_id": wa_id},
+                    {"$set": conv_set}
+                )
+    return {"status": "ok"}
+
+# ─── WhatsApp Template Registry ───
+class WATemplateCreate(BaseModel):
+    meta_template_name: str
+    display_name: str = ""
+    language: str = "en"
+    category: str = "UTILITY"
+    header_type: Optional[str] = None
+    header_media_url: str = ""
+    body_text: str = ""
+    footer_text: str = ""
+    buttons: List[Dict] = []
+    variable_count: int = 0
+    variable_labels: List[str] = []
+    sample_values: List[str] = []
+
+class WATemplateUpdate(BaseModel):
+    display_name: Optional[str] = None
+    language: Optional[str] = None
+    category: Optional[str] = None
+    header_type: Optional[str] = None
+    header_media_url: Optional[str] = None
+    body_text: Optional[str] = None
+    footer_text: Optional[str] = None
+    buttons: Optional[List[Dict]] = None
+    variable_count: Optional[int] = None
+    variable_labels: Optional[List[str]] = None
+    sample_values: Optional[List[str]] = None
+    status: Optional[str] = None
+
+@api_router.get("/admin/wa-templates")
+async def list_wa_templates(request: Request):
+    await require_admin_readable(request)
+    templates = await db.wa_templates.find({}, {"_id": 0}).sort("display_name", 1).to_list(200)
+    return templates
+
+@api_router.post("/admin/wa-templates")
+async def create_wa_template(body: WATemplateCreate, request: Request):
+    user = await require_superadmin(request)
+    doc = {
+        "id": str(uuid.uuid4()),
+        "meta_template_name": body.meta_template_name.strip(),
+        "display_name": body.display_name.strip() or body.meta_template_name.strip(),
+        "language": body.language,
+        "category": body.category,
+        "status": "approved",
+        "header_type": body.header_type,
+        "header_media_url": body.header_media_url,
+        "body_text": body.body_text,
+        "footer_text": body.footer_text,
+        "buttons": body.buttons,
+        "variable_count": body.variable_count,
+        "variable_labels": body.variable_labels,
+        "sample_values": body.sample_values,
+        "created_by": user["name"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.wa_templates.insert_one(doc)
+    doc.pop("_id", None)
+    await log_audit("wa_template_create", "wa_template", doc["id"], body.meta_template_name, "WA template registered", user["name"])
+    return doc
+
+@api_router.put("/admin/wa-templates/{tmpl_id}")
+async def update_wa_template(tmpl_id: str, body: WATemplateUpdate, request: Request):
+    user = await require_superadmin(request)
+    updates = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.wa_templates.update_one({"id": tmpl_id}, {"$set": updates})
+    await log_audit("wa_template_update", "wa_template", tmpl_id, "", "WA template updated", user["name"])
+    return {"message": "Updated"}
+
+@api_router.delete("/admin/wa-templates/{tmpl_id}")
+async def delete_wa_template(tmpl_id: str, request: Request):
+    user = await require_superadmin(request)
+    await db.wa_templates.delete_one({"id": tmpl_id})
+    await log_audit("wa_template_delete", "wa_template", tmpl_id, "", "WA template deleted", user["name"])
+    return {"message": "Deleted"}
+
+# ─── Bulk Campaign ───
+class CampaignCreate(BaseModel):
+    name: str
+    template_id: str
+    media_url: str = ""
+
+@api_router.get("/admin/wa-campaigns")
+async def list_wa_campaigns(request: Request, page: int = 1, per_page: int = 20):
+    await require_admin_readable(request)
+    total = await db.wa_campaigns.count_documents({})
+    skip = (page - 1) * per_page
+    campaigns = await db.wa_campaigns.find({}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": campaigns, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+@api_router.get("/admin/wa-campaigns/sample-excel")
+async def download_sample_excel(request: Request, template_id: str = ""):
+    await require_admin_readable(request)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Recipients"
+    headers = ["phone_number"]
+    if template_id:
+        tmpl = await db.wa_templates.find_one({"id": template_id}, {"_id": 0})
+        if tmpl and tmpl.get("variable_labels"):
+            headers.extend(tmpl["variable_labels"])
+        elif tmpl and tmpl.get("variable_count"):
+            headers.extend([f"var_{i+1}" for i in range(tmpl["variable_count"])])
+    else:
+        headers.extend(["var_1", "var_2", "var_3"])
+    for col, h in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=h)
+    sample = ["919876543210"]
+    sample.extend(["Sample Value"] * (len(headers) - 1))
+    for col, v in enumerate(sample, 1):
+        ws.cell(row=2, column=col, value=v)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": "attachment; filename=campaign_sample.xlsx"})
+
+@api_router.post("/admin/wa-campaigns/upload-excel")
+async def upload_campaign_excel(request: Request, file: UploadFile = File(...)):
+    await require_superadmin(request)
+    content = await file.read()
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(content))
+        ws = wb.active
+        raw_headers = [str(cell.value or "").strip() for cell in ws[1]]
+        headers_lower = [h.lower() for h in raw_headers]
+        if not any(h in ("phone_number", "phone", "mobile") for h in headers_lower):
+            raise HTTPException(status_code=400, detail="Excel must have a 'phone_number', 'phone', or 'mobile' column")
+        phone_col = next((i for i, h in enumerate(headers_lower) if h in ("phone_number", "phone", "mobile")), 0)
+        rows = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or not row[phone_col]:
+                continue
+            phone = str(row[phone_col]).strip().replace(".0", "")
+            variables = {}
+            for i, h in enumerate(raw_headers):
+                if i != phone_col and i < len(row):
+                    variables[h] = str(row[i] or "")
+            rows.append({"phone_number": phone, "variables": variables})
+        non_phone_headers = [h for i, h in enumerate(raw_headers) if i != phone_col]
+        return {
+            "rows": rows, "total": len(rows),
+            "headers": non_phone_headers,
+            "all_columns": raw_headers,
+            "phone_column": raw_headers[phone_col],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse Excel: {str(e)}")
+
+@api_router.get("/admin/wa-campaigns/{camp_id}")
+async def get_wa_campaign(camp_id: str, request: Request):
+    await require_admin_readable(request)
+    camp = await db.wa_campaigns.find_one({"id": camp_id}, {"_id": 0})
+    if not camp:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return camp
+
+@api_router.get("/admin/wa-campaigns/{camp_id}/recipients")
+async def get_campaign_recipients(camp_id: str, request: Request, page: int = 1, per_page: int = 50, status_filter: str = ""):
+    await require_admin_readable(request)
+    query = {"campaign_id": camp_id}
+    if status_filter:
+        query["status"] = status_filter
+    total = await db.wa_campaign_recipients.count_documents(query)
+    skip = (page - 1) * per_page
+    recs = await db.wa_campaign_recipients.find(query, {"_id": 0}).sort("created_at", 1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": recs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+@api_router.post("/admin/wa-campaigns/launch")
+async def launch_campaign(request: Request):
+    user = await require_superadmin(request)
+    body = await request.json()
+    name = body.get("name", "").strip()
+    template_id = body.get("template_id", "")
+    media_url = body.get("media_url", "")
+    recipients = body.get("recipients", [])
+
+    if not name:
+        raise HTTPException(status_code=400, detail="Campaign name required")
+    if not template_id:
+        raise HTTPException(status_code=400, detail="Template required")
+    if not recipients:
+        raise HTTPException(status_code=400, detail="No recipients")
+
+    tmpl = await db.wa_templates.find_one({"id": template_id}, {"_id": 0})
+    if not tmpl:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    campaign_id = str(uuid.uuid4())
+    campaign = {
+        "id": campaign_id,
+        "name": name,
+        "template_id": template_id,
+        "template_name": tmpl.get("meta_template_name", ""),
+        "template_display": tmpl.get("display_name", ""),
+        "media_url": media_url,
+        "status": "sending",
+        "total_recipients": len(recipients),
+        "sent_count": 0, "delivered_count": 0, "read_count": 0, "failed_count": 0,
+        "created_by": user["name"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": "",
+    }
+    await db.wa_campaigns.insert_one(campaign)
+
+    # Create recipient records
+    recipient_docs = []
+    for r in recipients:
+        phone = str(r.get("phone_number", "")).strip()
+        variables = r.get("variables", {})
+        # Build ordered body params from variable labels
+        body_params = []
+        if tmpl.get("variable_labels"):
+            for label in tmpl["variable_labels"]:
+                body_params.append(variables.get(label, variables.get(label.lower(), "")))
+        elif tmpl.get("variable_count"):
+            for i in range(tmpl["variable_count"]):
+                key = f"var_{i+1}"
+                body_params.append(variables.get(key, ""))
+
+        recipient_docs.append({
+            "id": str(uuid.uuid4()),
+            "campaign_id": campaign_id,
+            "phone_number": phone,
+            "variable_values": variables,
+            "body_params": body_params,
+            "wa_message_id": "",
+            "status": "queued",
+            "error_code": "", "error_message": "",
+            "sent_at": "", "delivered_at": "", "read_at": "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    if recipient_docs:
+        await db.wa_campaign_recipients.insert_many(recipient_docs)
+
+    # Launch sending in background — use campaign media_url or fall back to template's stored media URL
+    effective_media_url = media_url or tmpl.get("header_media_url", "")
+    asyncio.create_task(process_campaign(campaign_id, tmpl, effective_media_url))
+
+    await log_audit("campaign_launch", "wa_campaign", campaign_id, name,
+                    f"Campaign launched: {len(recipients)} recipients", user["name"])
+    campaign.pop("_id", None)
+    return {"campaign_id": campaign_id, "total": len(recipients), "status": "sending"}
+
+async def process_campaign(campaign_id: str, tmpl: dict, media_url: str):
+    """Background task to send campaign messages"""
+    recipients = await db.wa_campaign_recipients.find(
+        {"campaign_id": campaign_id, "status": "queued"}, {"_id": 0}
+    ).to_list(50000)
+    sent = 0
+    failed = 0
+    for rec in recipients:
+        success, result = await send_whatsapp_template(
+            phone=rec["phone_number"],
+            template_name=tmpl.get("meta_template_name", ""),
+            language=tmpl.get("language", "en"),
+            body_params=rec.get("body_params", []) or None,
+            header_media_url=media_url or None,
+            header_type=tmpl.get("header_type") or None,
+        )
+        if success:
+            await db.wa_campaign_recipients.update_one(
+                {"id": rec["id"]},
+                {"$set": {"status": "sent", "wa_message_id": result, "sent_at": datetime.now(timezone.utc).isoformat()}}
+            )
+            # Auto-create conversation thread
+            contact_name = rec.get("variable_values", {}).get("name", "") or rec.get("variable_values", {}).get("guest_name", "")
+            await ensure_conversation(rec["phone_number"], contact_name, "campaign")
+            # Add outgoing message to conversation
+            conv_phone = rec["phone_number"].strip().replace(" ", "").replace("-", "").lstrip("+")
+            if not conv_phone.startswith("91") and len(conv_phone) == 10:
+                conv_phone = "91" + conv_phone
+            tmpl_text = tmpl.get("body_text", "")
+            for idx, p in enumerate(rec.get("body_params", []) or []):
+                tmpl_text = tmpl_text.replace(f"{{{{{idx+1}}}}}", str(p))
+            await db.wa_conversations.update_one({"phone": conv_phone}, {
+                "$push": {"messages": {
+                    "id": str(uuid.uuid4()), "direction": "outgoing",
+                    "text": tmpl_text or f"[Campaign template: {tmpl.get('meta_template_name', '')}]",
+                    "msg_type": "template", "wa_message_id": result,
+                    "timestamp": datetime.now(timezone.utc).isoformat(), "status": "sent",
+                }},
+                "$set": {"last_message": tmpl_text[:100] or f"[Campaign message]", "last_message_at": datetime.now(timezone.utc).isoformat()}
+            })
+            sent += 1
+        else:
+            await db.wa_campaign_recipients.update_one(
+                {"id": rec["id"]},
+                {"$set": {"status": "failed", "error_message": result}}
+            )
+            failed += 1
+        # Rate limit: ~50/sec to stay safe
+        await asyncio.sleep(0.02)
+
+    status = "completed" if failed == 0 else ("partially_failed" if sent > 0 else "failed")
+    await db.wa_campaigns.update_one({"id": campaign_id}, {"$set": {
+        "status": status, "sent_count": sent, "failed_count": failed,
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }})
+
+# ─── Campaign Stats (live refresh) ───
+@api_router.get("/admin/wa-campaigns/{camp_id}/stats")
+async def get_campaign_stats(camp_id: str, request: Request):
+    await require_admin_readable(request)
+    pipeline = [
+        {"$match": {"campaign_id": camp_id}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]
+    results = await db.wa_campaign_recipients.aggregate(pipeline).to_list(20)
+    stats = {r["_id"]: r["count"] for r in results}
+    total = sum(stats.values())
+    # Update campaign doc with latest counts
+    await db.wa_campaigns.update_one({"id": camp_id}, {"$set": {
+        "sent_count": stats.get("sent", 0) + stats.get("delivered", 0) + stats.get("read", 0),
+        "delivered_count": stats.get("delivered", 0) + stats.get("read", 0),
+        "read_count": stats.get("read", 0),
+        "failed_count": stats.get("failed", 0),
+    }})
+    return {"total": total, "queued": stats.get("queued", 0), "sent": stats.get("sent", 0),
+            "delivered": stats.get("delivered", 0), "read": stats.get("read", 0),
+            "failed": stats.get("failed", 0)}
+
+# ─── Campaign Export (CSV / PDF) ───
+async def _load_campaign_for_export(camp_id: str):
+    camp = await db.wa_campaigns.find_one({"id": camp_id}, {"_id": 0})
+    if not camp:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    recs = await db.wa_campaign_recipients.find(
+        {"campaign_id": camp_id}, {"_id": 0}
+    ).sort("created_at", 1).to_list(100000)
+    # Live stats
+    pipeline = [
+        {"$match": {"campaign_id": camp_id}},
+        {"$group": {"_id": "$status", "count": {"$sum": 1}}}
+    ]
+    agg = await db.wa_campaign_recipients.aggregate(pipeline).to_list(20)
+    stats = {r["_id"]: r["count"] for r in agg}
+    return camp, recs, stats
+
+@api_router.get("/admin/wa-campaigns/{camp_id}/export.csv")
+async def export_campaign_csv(camp_id: str, request: Request):
+    await require_admin_readable(request)
+    camp, recs, stats = await _load_campaign_for_export(camp_id)
+
+    # Collect union of variable keys across all recipients
+    var_keys = []
+    seen = set()
+    for r in recs:
+        for k in (r.get("variable_values") or {}).keys():
+            if k not in seen:
+                seen.add(k)
+                var_keys.append(k)
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    # ─── Campaign summary block ───
+    w.writerow(["Campaign Export"])
+    w.writerow(["Name", camp.get("name", "") or camp.get("campaign_name", "")])
+    w.writerow(["Campaign ID", camp.get("id", "")])
+    w.writerow(["Template (Meta name)", camp.get("template_name", "")])
+    w.writerow(["Template (Display)", camp.get("template_display", "")])
+    w.writerow(["Media URL", camp.get("media_url", "")])
+    w.writerow(["Status", camp.get("status", "")])
+    w.writerow(["Created By", camp.get("created_by", "")])
+    w.writerow(["Created At", camp.get("created_at", "")])
+    w.writerow(["Started At", camp.get("started_at", "")])
+    w.writerow(["Completed At", camp.get("completed_at", "")])
+    w.writerow(["Total Recipients", camp.get("total_recipients", len(recs))])
+    w.writerow(["Queued", stats.get("queued", 0)])
+    w.writerow(["Sent", stats.get("sent", 0)])
+    w.writerow(["Delivered", stats.get("delivered", 0)])
+    w.writerow(["Read", stats.get("read", 0)])
+    w.writerow(["Failed", stats.get("failed", 0)])
+    w.writerow([])
+    # ─── Recipient header row ───
+    headers = [
+        "phone_number", "status", "wa_message_id",
+        "sent_at", "delivered_at", "read_at",
+        "error_code", "error_message", "created_at",
+    ] + [f"var: {k}" for k in var_keys]
+    w.writerow(headers)
+    for r in recs:
+        vv = r.get("variable_values") or {}
+        row = [
+            r.get("phone_number", ""),
+            r.get("status", ""),
+            r.get("wa_message_id", ""),
+            r.get("sent_at", ""),
+            r.get("delivered_at", ""),
+            r.get("read_at", ""),
+            r.get("error_code", ""),
+            r.get("error_message", ""),
+            r.get("created_at", ""),
+        ] + [str(vv.get(k, "")) for k in var_keys]
+        w.writerow(row)
+
+    data = buf.getvalue().encode("utf-8-sig")  # BOM for Excel compat
+    fname = f"campaign_{(camp.get('name') or camp.get('id') or 'export').replace(' ', '_')}.csv"
+    return Response(
+        content=data,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+@api_router.get("/admin/wa-campaigns/{camp_id}/export.pdf")
+async def export_campaign_pdf(camp_id: str, request: Request):
+    await require_admin_readable(request)
+    camp, recs, stats = await _load_campaign_for_export(camp_id)
+
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 8, "WhatsApp Campaign Report", ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(90, 90, 90)
+    pdf.cell(0, 5, f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", ln=1)
+    pdf.ln(2)
+
+    # ── Summary box ──
+    pdf.set_text_color(11, 28, 61)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 6, camp.get("name", "") or camp.get("campaign_name", "Untitled"), ln=1)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(60, 60, 60)
+
+    def _row(label, value):
+        safe = str(value if value not in (None, "") else "-").encode("latin-1", "replace").decode("latin-1")
+        # Truncate long values to keep them on one line (avoid multi_cell edge cases)
+        if len(safe) > 180:
+            safe = safe[:177] + "..."
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.cell(45, 5, label, border=0, ln=0)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(0, 5, safe, border=0, ln=1)
+
+    _row("Campaign ID", camp.get("id", ""))
+    _row("Template", f"{camp.get('template_display', '')}  ({camp.get('template_name', '')})")
+    if camp.get("media_url"):
+        _row("Media URL", camp.get("media_url", ""))
+    _row("Status", camp.get("status", ""))
+    _row("Created By", camp.get("created_by", ""))
+    _row("Created At", camp.get("created_at", ""))
+    if camp.get("completed_at"):
+        _row("Completed At", camp.get("completed_at", ""))
+
+    pdf.ln(2)
+    # ── Stats row ──
+    pdf.set_fill_color(240, 244, 255)
+    pdf.set_text_color(11, 28, 61)
+    pdf.set_font("Helvetica", "B", 9)
+    total = sum(stats.values()) or camp.get("total_recipients", len(recs))
+    boxes = [
+        ("Total", total),
+        ("Queued", stats.get("queued", 0)),
+        ("Sent", stats.get("sent", 0)),
+        ("Delivered", stats.get("delivered", 0)),
+        ("Read", stats.get("read", 0)),
+        ("Failed", stats.get("failed", 0)),
+    ]
+    box_w = 45
+    for label, val in boxes:
+        pdf.cell(box_w, 10, f"{label}: {val}", border=1, fill=True)
+    pdf.ln(12)
+
+    # ── Recipient table ──
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_fill_color(11, 28, 61)
+    pdf.set_text_color(255, 255, 255)
+    headers = [("Phone", 38), ("Status", 22), ("Sent", 36), ("Delivered", 36), ("Read", 36), ("Error", 109)]
+    for h, w in headers:
+        pdf.cell(w, 7, h, border=1, fill=True, align="L")
+    pdf.ln(7)
+    pdf.set_text_color(40, 40, 40)
+    pdf.set_font("Helvetica", "", 8)
+    fill = False
+    for r in recs:
+        if pdf.get_y() > 190:
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_fill_color(11, 28, 61)
+            pdf.set_text_color(255, 255, 255)
+            for h, w in headers:
+                pdf.cell(w, 7, h, border=1, fill=True, align="L")
+            pdf.ln(7)
+            pdf.set_text_color(40, 40, 40)
+            pdf.set_font("Helvetica", "", 8)
+
+        def _fmt_dt(v):
+            if not v:
+                return "-"
+            return str(v).replace("T", " ")[:19]
+
+        pdf.set_fill_color(248, 250, 252) if fill else pdf.set_fill_color(255, 255, 255)
+        cells = [
+            ("+" + str(r.get("phone_number", "")), 38),
+            (str(r.get("status", "")), 22),
+            (_fmt_dt(r.get("sent_at", "")), 36),
+            (_fmt_dt(r.get("delivered_at", "")), 36),
+            (_fmt_dt(r.get("read_at", "")), 36),
+            ((str(r.get("error_message") or "") or "-")[:180], 109),
+        ]
+        for text, w in cells:
+            # Safe-encode (latin-1 for FPDF core font)
+            safe = str(text).encode("latin-1", "replace").decode("latin-1")
+            pdf.cell(w, 6, safe, border=1, fill=True, align="L")
+        pdf.ln(6)
+        fill = not fill
+
+    out = pdf.output(dest="S")
+    if isinstance(out, str):
+        out = out.encode("latin-1")
+    fname = f"campaign_{(camp.get('name') or camp.get('id') or 'export').replace(' ', '_')}.pdf"
+    return Response(
+        content=bytes(out),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+# ═══════════════════════════════════════════════════════════════
+# CONVERSATIONS MODULE
+# ═══════════════════════════════════════════════════════════════
+
+@api_router.get("/admin/wa-conversations")
+async def list_conversations(request: Request, search: str = "", page: int = 1, per_page: int = 50):
+    await require_admin_readable(request)
+    query = {}
+    if search:
+        query["$or"] = [
+            {"phone": {"$regex": search, "$options": "i"}},
+            {"contact_name": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.wa_conversations.count_documents(query)
+    skip = (page - 1) * per_page
+    # Return conversations WITHOUT full messages array for list view (just metadata)
+    convos = await db.wa_conversations.find(query, {
+        "_id": 0, "id": 1, "phone": 1, "contact_name": 1,
+        "last_message": 1, "last_message_at": 1, "unread_count": 1, "created_at": 1,
+    }).sort("last_message_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": convos, "total": total, "page": page}
+
+@api_router.get("/admin/wa-conversations/{phone}")
+async def get_conversation(phone: str, request: Request):
+    await require_admin_readable(request)
+    conv = await db.wa_conversations.find_one({"phone": phone}, {"_id": 0})
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return conv
+
+@api_router.put("/admin/wa-conversations/{phone}/read")
+async def mark_conversation_read(phone: str, request: Request):
+    await require_superadmin(request)
+    await db.wa_conversations.update_one({"phone": phone}, {"$set": {"unread_count": 0}})
+    return {"message": "Marked as read"}
+
+@api_router.post("/admin/wa-conversations/{phone}/send")
+async def send_conversation_message(phone: str, request: Request):
+    """Send a free-form text message to a contact (uses 24h conversation window)."""
+    user = await require_superadmin(request)
+    body = await request.json()
+    text = body.get("text", "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Message text required")
+
+    # Send via WhatsApp Cloud API (free-form text, within 24h window)
+    clean_phone = normalize_phone_for_wa(phone)
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": clean_phone,
+        "type": "text",
+        "text": {"body": text}
+    }
+    wa_msg_id = ""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client_http:
+            resp = await client_http.post(
+                f"{WA_API_BASE}/{WA_PHONE_ID}/messages",
+                headers={"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"},
+                json=payload
+            )
+            data = resp.json()
+            if resp.status_code == 200 and data.get("messages"):
+                wa_msg_id = data["messages"][0]["id"]
+            else:
+                err = data.get("error", {}).get("message", str(data))
+                raise HTTPException(status_code=500, detail=f"WhatsApp API error: {err}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send: {str(e)}")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    msg_doc = {
+        "id": str(uuid.uuid4()), "direction": "outgoing",
+        "text": text, "msg_type": "text",
+        "wa_message_id": wa_msg_id, "timestamp": now_iso,
+        "status": "sent", "sent_by": user["name"],
+    }
+
+    # Upsert conversation
+    conv = await db.wa_conversations.find_one({"phone": phone})
+    if conv:
+        await db.wa_conversations.update_one({"phone": phone}, {
+            "$push": {"messages": msg_doc},
+            "$set": {"last_message": text, "last_message_at": now_iso}
+        })
+    else:
+        await db.wa_conversations.insert_one({
+            "id": str(uuid.uuid4()), "phone": phone,
+            "contact_name": "", "unread_count": 0,
+            "last_message": text, "last_message_at": now_iso,
+            "created_at": now_iso, "messages": [msg_doc],
+        })
+
+    return {"message": "Sent", "wa_message_id": wa_msg_id}
+
+async def ensure_conversation(phone: str, contact_name: str = "", source: str = "campaign"):
+    """Helper to auto-create/update conversation when a message is sent via campaign or trigger."""
+    phone = phone.strip().replace(" ", "").replace("-", "").lstrip("+")
+    if not phone.startswith("91") and len(phone) == 10:
+        phone = "91" + phone
+    conv = await db.wa_conversations.find_one({"phone": phone})
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if not conv:
+        await db.wa_conversations.insert_one({
+            "id": str(uuid.uuid4()), "phone": phone,
+            "contact_name": contact_name, "unread_count": 0,
+            "last_message": f"[{source} message sent]", "last_message_at": now_iso,
+            "created_at": now_iso, "messages": [],
+        })
+    else:
+        updates = {"last_message_at": now_iso}
+        if contact_name and not conv.get("contact_name"):
+            updates["contact_name"] = contact_name
+        await db.wa_conversations.update_one({"phone": phone}, {"$set": updates})
+
+# ─── Room Stats Endpoint ───
+@api_router.get("/admin/room-stats")
+async def get_room_stats(request: Request):
+    await get_current_user(request)
+    rooms = await db.rooms.find({}, {"_id": 0}).to_list(2000)
+    total = len(rooms)
+    occupied = sum(1 for r in rooms if r.get("status") == "occupied")
+    available = total - occupied
+
+    ac_total = sum(1 for r in rooms if r.get("ac_type") == "AC")
+    ac_occupied = sum(1 for r in rooms if r.get("ac_type") == "AC" and r.get("status") == "occupied")
+    nonac_total = sum(1 for r in rooms if r.get("ac_type") != "AC")
+    nonac_occupied = sum(1 for r in rooms if r.get("ac_type") != "AC" and r.get("status") == "occupied")
+
+    # Dynamic capacity breakdown
+    capacity_map = {}
+    for r in rooms:
+        cap = r.get("capacity", 0)
+        if cap not in capacity_map:
+            capacity_map[cap] = {"total": 0, "occupied": 0}
+        capacity_map[cap]["total"] += 1
+        if r.get("status") == "occupied":
+            capacity_map[cap]["occupied"] += 1
+    capacity_breakdown = [{"capacity": k, "total": v["total"], "occupied": v["occupied"]} for k, v in sorted(capacity_map.items())]
+
+    return {
+        "total": total, "occupied": occupied, "available": available,
+        "ac": {"total": ac_total, "occupied": ac_occupied},
+        "non_ac": {"total": nonac_total, "occupied": nonac_occupied},
+        "capacity_breakdown": capacity_breakdown,
+    }
+
+# ─── OTP Logs Endpoint ───
+@api_router.get("/admin/otp-logs")
+async def get_otp_logs(request: Request, search: str = "", page: int = 1, per_page: int = 50):
+    await require_admin_readable(request)
+    query = {}
+    if search:
+        query["$or"] = [
+            {"mobile": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.otp_sessions.count_documents(query)
+    skip = (page - 1) * per_page
+    logs = await db.otp_sessions.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    
+    # Enrich with registration name
+    for log in logs:
+        mobile = log.get("mobile", "")
+        # Try to find guest name from registrations
+        reg = await db.registrations.find_one({"mobile": mobile}, {"_id": 0, "primary_guest_name": 1, "id": 1})
+        if reg:
+            log["guest_name"] = reg.get("primary_guest_name", "")
+            log["registration_id"] = reg.get("id", "")
+        else:
+            log["guest_name"] = ""
+            log["registration_id"] = ""
+    
+    return {"data": logs, "total": total, "page": page, "total_pages": max(1, (total + per_page - 1) // per_page)}
+
+# ─── Media Upload for Conversations ───
+@api_router.post("/admin/wa-conversations/{phone}/send-media")
+async def send_conversation_media(phone: str, request: Request, file: UploadFile = File(...)):
+    """Upload and send a media file via WhatsApp."""
+    user = await require_superadmin(request)
+    
+    # Save file to static dir
+    import os as _os
+    static_dir = _os.path.join(_os.path.dirname(__file__), "static", "uploads")
+    _os.makedirs(static_dir, exist_ok=True)
+    
+    safe_name = f"{uuid.uuid4().hex[:8]}_{file.filename.replace(' ', '_')}"
+    file_path = _os.path.join(static_dir, safe_name)
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    # Determine media type from content_type
+    ct = (file.content_type or "").lower()
+    if "image" in ct:
+        media_type = "image"
+    elif "video" in ct:
+        media_type = "video"
+    elif "audio" in ct:
+        media_type = "audio"
+    else:
+        media_type = "document"
+    
+    # Build public URL for the file
+    app_url = os.environ.get("APP_URL", "")
+    if not app_url:
+        # Fallback: construct from request
+        app_url = str(request.base_url).rstrip("/")
+    file_url = f"{app_url}/api/static/uploads/{safe_name}"
+    
+    # Send via WhatsApp Cloud API
+    clean_phone = normalize_phone_for_wa(phone)
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": clean_phone,
+        "type": media_type,
+        media_type: {"link": file_url}
+    }
+    if media_type == "document":
+        payload[media_type]["filename"] = file.filename
+    
+    wa_msg_id = ""
+    error_detail = ""
+    try:
+        async with httpx.AsyncClient(timeout=30) as client_http:
+            resp = await client_http.post(
+                f"{WA_API_BASE}/{WA_PHONE_ID}/messages",
+                headers={"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"},
+                json=payload
+            )
+            data = resp.json()
+            if resp.status_code == 200 and data.get("messages"):
+                wa_msg_id = data["messages"][0]["id"]
+            else:
+                error_detail = data.get("error", {}).get("message", str(data))
+                raise HTTPException(status_code=500, detail=f"WhatsApp API error: {error_detail}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send: {str(e)}")
+    
+    now_iso = datetime.now(timezone.utc).isoformat()
+    msg_doc = {
+        "id": str(uuid.uuid4()), "direction": "outgoing",
+        "text": f"[{media_type}: {file.filename}]", "msg_type": media_type,
+        "wa_message_id": wa_msg_id, "timestamp": now_iso,
+        "status": "sent", "sent_by": user["name"],
+        "media_url": file_url, "media_type": media_type, "filename": file.filename,
+    }
+    
+    conv = await db.wa_conversations.find_one({"phone": phone})
+    if conv:
+        await db.wa_conversations.update_one({"phone": phone}, {
+            "$push": {"messages": msg_doc},
+            "$set": {"last_message": f"📎 {file.filename}", "last_message_at": now_iso}
+        })
+    else:
+        await db.wa_conversations.insert_one({
+            "id": str(uuid.uuid4()), "phone": phone,
+            "contact_name": "", "unread_count": 0,
+            "last_message": f"📎 {file.filename}", "last_message_at": now_iso,
+            "created_at": now_iso, "messages": [msg_doc],
+        })
+    
+    return {"message": "Media sent", "wa_message_id": wa_msg_id, "media_url": file_url}
+
+# ─── Bundled send: text + multi-media (grouped like mobile WhatsApp) ───
+@api_router.post("/admin/wa-conversations/{phone}/send-bundle")
+async def send_conversation_bundle(
+    phone: str,
+    request: Request,
+    text: str = Form(default=""),
+    files: List[UploadFile] = File(default=[]),
+):
+    """
+    Send a bundle of text + multiple media in one action.
+    Strategy: If N>=1 media, text becomes the caption on the FIRST media; remaining
+    media are sent plain, sequentially, so mobile WhatsApp groups them visually.
+    If no media, send a single text message.
+    """
+    user = await require_superadmin(request)
+    text = (text or "").strip()
+    if not text and not files:
+        raise HTTPException(status_code=400, detail="Provide text or at least one file")
+    if not WA_PHONE_ID or not WA_TOKEN:
+        raise HTTPException(status_code=500, detail="WhatsApp API not configured")
+
+    clean_phone = normalize_phone_for_wa(phone)
+
+    import os as _os
+    static_dir = _os.path.join(_os.path.dirname(__file__), "static", "uploads")
+    _os.makedirs(static_dir, exist_ok=True)
+    app_url = os.environ.get("APP_URL", "") or str(request.base_url).rstrip("/")
+
+    sent_msg_docs = []
+    headers = {"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"}
+
+    async def _send(payload: dict):
+        async with httpx.AsyncClient(timeout=30) as client_http:
+            resp = await client_http.post(f"{WA_API_BASE}/{WA_PHONE_ID}/messages", headers=headers, json=payload)
+            data = resp.json()
+            if resp.status_code == 200 and data.get("messages"):
+                return data["messages"][0]["id"], ""
+            return "", data.get("error", {}).get("message", str(data))
+
+    # Case A: text only (no media)
+    if not files:
+        wa_msg_id, err = await _send({
+            "messaging_product": "whatsapp", "to": clean_phone,
+            "type": "text", "text": {"body": text}
+        })
+        if err:
+            raise HTTPException(status_code=500, detail=f"WhatsApp API error: {err}")
+        now_iso = datetime.now(timezone.utc).isoformat()
+        sent_msg_docs.append({
+            "id": str(uuid.uuid4()), "direction": "outgoing",
+            "text": text, "msg_type": "text",
+            "wa_message_id": wa_msg_id, "timestamp": now_iso,
+            "status": "sent", "sent_by": user["name"],
+        })
+    else:
+        # Case B: 1..N media, optionally text as caption on first
+        for idx, file in enumerate(files):
+            safe_name = f"{uuid.uuid4().hex[:8]}_{(file.filename or 'file').replace(' ', '_')}"
+            file_path = _os.path.join(static_dir, safe_name)
+            content = await file.read()
+            with open(file_path, "wb") as f:
+                f.write(content)
+            file_url = f"{app_url}/api/static/uploads/{safe_name}"
+
+            ct = (file.content_type or "").lower()
+            if "image" in ct:
+                media_type = "image"
+            elif "video" in ct:
+                media_type = "video"
+            elif "audio" in ct:
+                media_type = "audio"
+            else:
+                media_type = "document"
+
+            media_body: Dict[str, Any] = {"link": file_url}
+            if media_type == "document":
+                media_body["filename"] = file.filename or safe_name
+            # Attach text as caption on FIRST media (audio doesn't support captions)
+            if idx == 0 and text and media_type != "audio":
+                media_body["caption"] = text
+
+            wa_msg_id, err = await _send({
+                "messaging_product": "whatsapp", "to": clean_phone,
+                "type": media_type, media_type: media_body
+            })
+            if err:
+                raise HTTPException(status_code=500, detail=f"WhatsApp API error on file '{file.filename}': {err}")
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            caption = media_body.get("caption", "")
+            sent_msg_docs.append({
+                "id": str(uuid.uuid4()), "direction": "outgoing",
+                "text": caption or f"[{media_type}: {file.filename}]",
+                "msg_type": media_type,
+                "wa_message_id": wa_msg_id, "timestamp": now_iso,
+                "status": "sent", "sent_by": user["name"],
+                "media_url": file_url, "media_type": media_type,
+                "filename": file.filename or safe_name,
+            })
+        # If text was provided but got rolled into first media, don't re-send.
+        # If ALL files were audio (no caption support), send text as separate message.
+        if text and all(d.get("msg_type") == "audio" for d in sent_msg_docs):
+            wa_msg_id, err = await _send({
+                "messaging_product": "whatsapp", "to": clean_phone,
+                "type": "text", "text": {"body": text}
+            })
+            if not err:
+                sent_msg_docs.insert(0, {
+                    "id": str(uuid.uuid4()), "direction": "outgoing",
+                    "text": text, "msg_type": "text",
+                    "wa_message_id": wa_msg_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "status": "sent", "sent_by": user["name"],
+                })
+
+    # Persist in conversation
+    if sent_msg_docs:
+        last = sent_msg_docs[-1]
+        last_text = last.get("text") or (f"📎 {last.get('filename','')}" if last.get("filename") else "")
+        conv = await db.wa_conversations.find_one({"phone": phone})
+        if conv:
+            await db.wa_conversations.update_one({"phone": phone}, {
+                "$push": {"messages": {"$each": sent_msg_docs}},
+                "$set": {"last_message": last_text, "last_message_at": last["timestamp"]}
+            })
+        else:
+            await db.wa_conversations.insert_one({
+                "id": str(uuid.uuid4()), "phone": phone,
+                "contact_name": "", "unread_count": 0,
+                "last_message": last_text, "last_message_at": last["timestamp"],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "messages": sent_msg_docs,
+            })
+
+    return {"message": "Bundle sent", "count": len(sent_msg_docs), "messages": sent_msg_docs}
+
+# ─── Auto Response Rules (keyword → template chain with delays) ───
+@api_router.get("/admin/wa-auto-responses")
+async def list_auto_responses(request: Request):
+    await require_admin_readable(request)
+    rules = await db.wa_auto_responses.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return rules
+
+@api_router.post("/admin/wa-auto-responses")
+async def create_auto_response(request: Request):
+    user = await require_superadmin(request)
+    body = await request.json()
+    phrase = (body.get("trigger_phrase") or "").strip()
+    if not phrase:
+        raise HTTPException(status_code=400, detail="trigger_phrase is required")
+    steps = body.get("steps") or []
+    if not steps or not isinstance(steps, list):
+        raise HTTPException(status_code=400, detail="At least one step is required")
+    cleaned_steps = []
+    for s in steps:
+        tid = (s or {}).get("template_id", "")
+        if not tid:
+            continue
+        try:
+            delay = max(0, int(s.get("delay_seconds", 0)))
+        except Exception:
+            delay = 0
+        cleaned_steps.append({"template_id": tid, "delay_seconds": delay})
+    if not cleaned_steps:
+        raise HTTPException(status_code=400, detail="At least one step with a template is required")
+    match_type = body.get("match_type", "exact")
+    if match_type not in ("exact", "contains"):
+        match_type = "exact"
+    doc = {
+        "id": str(uuid.uuid4()),
+        "trigger_phrase": phrase,
+        "match_type": match_type,
+        "description": (body.get("description") or "").strip(),
+        "steps": cleaned_steps,
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_by": user["name"],
+    }
+    await db.wa_auto_responses.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.put("/admin/wa-auto-responses/{rule_id}")
+async def update_auto_response(rule_id: str, request: Request):
+    await require_superadmin(request)
+    body = await request.json()
+    updates: Dict[str, Any] = {}
+    if "trigger_phrase" in body:
+        p = (body["trigger_phrase"] or "").strip()
+        if not p:
+            raise HTTPException(status_code=400, detail="trigger_phrase cannot be empty")
+        updates["trigger_phrase"] = p
+    if "match_type" in body and body["match_type"] in ("exact", "contains"):
+        updates["match_type"] = body["match_type"]
+    if "description" in body:
+        updates["description"] = (body["description"] or "").strip()
+    if "is_active" in body:
+        updates["is_active"] = bool(body["is_active"])
+    if "steps" in body:
+        cleaned = []
+        for s in (body["steps"] or []):
+            tid = (s or {}).get("template_id", "")
+            if not tid:
+                continue
+            try:
+                delay = max(0, int(s.get("delay_seconds", 0)))
+            except Exception:
+                delay = 0
+            cleaned.append({"template_id": tid, "delay_seconds": delay})
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="At least one step with a template is required")
+        updates["steps"] = cleaned
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    result = await db.wa_auto_responses.update_one({"id": rule_id}, {"$set": updates})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Updated"}
+
+@api_router.delete("/admin/wa-auto-responses/{rule_id}")
+async def delete_auto_response(rule_id: str, request: Request):
+    await require_superadmin(request)
+    result = await db.wa_auto_responses.delete_one({"id": rule_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"message": "Deleted"}
+
+@api_router.get("/admin/wa-auto-responses/runs")
+async def list_auto_response_runs(request: Request, limit: int = 50):
+    """View recent auto-response executions for debugging."""
+    await require_admin_readable(request)
+    runs = await db.wa_auto_response_runs.find({}, {"_id": 0}).sort("started_at", -1).limit(min(limit, 200)).to_list(200)
+    return runs
+
+@api_router.post("/admin/wa-auto-responses/test")
+async def test_auto_response(request: Request):
+    """Simulate an incoming WhatsApp message to test auto-response rules without needing Meta."""
+    await require_superadmin(request)
+    body = await request.json()
+    phone = (body.get("phone") or "").strip().lstrip("+")
+    text = (body.get("text") or "").strip()
+    if not phone or not text:
+        raise HTTPException(status_code=400, detail="phone and text are required")
+    # Run synchronously so caller sees result
+    await run_auto_response_matcher(phone, text)
+    # Return most recent run for this phone
+    run = await db.wa_auto_response_runs.find_one({"phone": phone}, {"_id": 0}, sort=[("started_at", -1)])
+    return {"matched": run is not None, "run": run}
+
+# ─── WhatsApp Flows Data Exchange Endpoint (with RSA+AES encryption) ───
+# Protocol: https://developers.facebook.com/docs/whatsapp/flows/reference/implementingyourflowendpoint
+# Request JSON: { encrypted_flow_data, encrypted_aes_key, initial_vector }
+# Response: base64(AES-GCM(flipped_iv, aes_key, plaintext_json))
+
+_FLOW_PRIVATE_KEY_CACHE: Any = None
+
+def _load_flow_private_key():
+    global _FLOW_PRIVATE_KEY_CACHE
+    if _FLOW_PRIVATE_KEY_CACHE is not None:
+        return _FLOW_PRIVATE_KEY_CACHE
+    from cryptography.hazmat.primitives import serialization
+    key_path = os.environ.get("WA_FLOW_PRIVATE_KEY_PATH", "")
+    passphrase = os.environ.get("WA_FLOW_PRIVATE_KEY_PASSPHRASE", "")
+    if not key_path or not os.path.exists(key_path):
+        return None
+    with open(key_path, "rb") as f:
+        pem = f.read()
+    _FLOW_PRIVATE_KEY_CACHE = serialization.load_pem_private_key(
+        pem, password=passphrase.encode("utf-8") if passphrase else None
+    )
+    return _FLOW_PRIVATE_KEY_CACHE
+
+def _decrypt_flow_request(encrypted_flow_data_b64: str, encrypted_aes_key_b64: str, iv_b64: str) -> (dict, bytes, bytes):
+    """Returns (decrypted_body, aes_key_bytes, iv_bytes). Raises on failure."""
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    pk = _load_flow_private_key()
+    if pk is None:
+        raise RuntimeError("Flow private key not configured")
+    encrypted_aes_key = base64.b64decode(encrypted_aes_key_b64)
+    aes_key = pk.decrypt(
+        encrypted_aes_key,
+        padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None),
+    )
+    iv = base64.b64decode(iv_b64)
+    blob = base64.b64decode(encrypted_flow_data_b64)
+    # Per Meta spec, last 16 bytes of blob are the GCM tag; AESGCM().decrypt handles both combined
+    plaintext = AESGCM(aes_key).decrypt(iv, blob, None)
+    return json.loads(plaintext.decode("utf-8")), aes_key, iv
+
+def _encrypt_flow_response(response_obj: dict, aes_key: bytes, iv: bytes) -> str:
+    """Encrypts response with the SAME aes_key, using FLIPPED iv. Returns base64 string."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    flipped_iv = bytes(b ^ 0xFF for b in iv)
+    ct = AESGCM(aes_key).encrypt(flipped_iv, json.dumps(response_obj).encode("utf-8"), None)
+    return base64.b64encode(ct).decode("utf-8")
+
+async def _find_arrived_guest_by_phone(phone: str):
+    """Locate a registration record by phone. Check if guest is on-premise (arrived/partially_arrived)."""
+    raw = (phone or "").lstrip("+").strip().replace(" ", "").replace("-", "")
+    candidates = {raw}
+    if raw.startswith("91") and len(raw) > 10:
+        candidates.add(raw[2:])
+    candidates.add("91" + raw if not raw.startswith("91") else raw)
+    # Also try with + prefix variations
+    candidates.add("+" + raw)
+    if not raw.startswith("91"):
+        candidates.add("+91" + raw)
+        candidates.add("+91 " + raw)
+    # Try stored formats like "+917229900422" or "+91 7229900422"
+    if raw.startswith("91") and len(raw) > 10:
+        bare = raw[2:]
+        candidates.add("+91" + bare)
+        candidates.add("+91 " + bare)
+        candidates.add(bare)
+    reg = await db.registrations.find_one(
+        {
+            "primary_mobile": {"$in": list(candidates)},
+            "approval_status": {"$ne": "deleted"},
+        },
+        {"_id": 0},
+    )
+    if not reg:
+        return None, "not_found"
+    arrival = reg.get("arrival_status", "not_arrived")
+    is_onsite = arrival in ("arrived", "partially_arrived")
+    return reg, ("on_premise" if is_onsite else "not_arrived")
+
+async def _create_ticket_from_flow(phone: str, service_type: str, category_group: str, room_location: str, description: str):
+    """Create a help-centre ticket from a Flow submission. Returns (ticket_doc, reg_doc_or_none, arrived_status)."""
+    reg, arrived_status = await _find_arrived_guest_by_phone(phone)
+
+    # Look up category (service_type) from DB
+    cats = await get_categories()
+    cat = next((c for c in cats if c["id"] == service_type), None)
+    if not cat:
+        # Fallback generic
+        cat = {"id": "other_request", "label": service_type or "Other Request", "priority": "low", "sla_minutes": 45}
+
+    sla = int(cat.get("sla_minutes", 30))
+    priority = cat.get("priority", "low")
+
+    assigned_to = ""
+    assigned_to_name = ""
+    guest_name = ""
+    guest_mobile = phone
+
+    if reg:
+        guest_name = reg.get("primary_guest_name", "") or reg.get("head_name", "") or ""
+        if not guest_name:
+            for att in reg.get("attendees", []):
+                if att.get("id") == reg.get("group_head_id"):
+                    guest_name = att.get("name", "")
+                    break
+        guest_mobile = reg.get("primary_mobile", phone)
+        # Auto-derive room_or_location from the registration if caller didn't supply one.
+        if not room_location:
+            ra = reg.get("room_assignments") or []
+            if ra:
+                first = ra[0]
+                room_location = first.get("room_code") if isinstance(first, dict) else str(first)
+        # Point-of-contact = assigned swamsevak on the registration
+        _swam_val = reg.get("assigned_swamsevak", "")
+        if _swam_val:
+            assigned_to_name = _swam_val
+            # Try username first, then name
+            swam = await db.custom_admins.find_one({"username": _swam_val})
+            if not swam:
+                swam = await db.custom_admins.find_one({"name": _swam_val})
+            if swam:
+                assigned_to = swam.get("username", "")
+
+    title = f"{guest_name or 'Guest'} — {cat['label']}" if guest_name else cat["label"]
+    description_full = description or ""
+    if room_location:
+        description_full = f"Location: {room_location}\n\n{description_full}".strip()
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "title": title,
+        "description": description_full,
+        "category": cat["id"],
+        "category_label": cat["label"],
+        "priority": priority,
+        "status": "open",
+        "source_type": "wa_flow",
+        "source_registration_id": reg.get("id", "") if reg else "",
+        "guest_name": guest_name,
+        "guest_mobile": guest_mobile,
+        "room_or_location": room_location,
+        "created_by": "wa_flow",
+        "created_by_name": "WhatsApp Flow",
+        "assigned_to": assigned_to,
+        "assigned_to_name": assigned_to_name,
+        "resolution_time_minutes": sla,
+        "notes": "",
+        "closing_note": "",
+        "resolved_at": "",
+        "resolved_by": "",
+        "created_at": now_iso,
+        "updated_at": now_iso,
+    }
+    await db.tickets.insert_one(doc)
+    doc.pop("_id", None)
+    await log_audit("ticket_create", "ticket", doc["id"], title, f"Ticket auto-created from WA Flow: {cat['id']} ({priority})", "WhatsApp Flow")
+    return doc, reg, arrived_status
+
+@api_router.get("/webhooks/wa-flow")
+async def wa_flow_health():
+    """Health check for WhatsApp Flow endpoint (browser only)."""
+    return {"status": "ok", "service": "wa-flow-data-exchange"}
+
+@api_router.get("/admin/wa-flow-json")
+async def get_flow_json(request: Request):
+    """Download the Panchariya Seva Desk Flow JSON for Meta Flow Builder."""
+    await require_admin_readable(request)
+    flow_path = ROOT_DIR / "static" / "panchariya_seva_desk_flow.json"
+    if not flow_path.exists():
+        raise HTTPException(status_code=404, detail="Flow JSON file not found")
+    with open(flow_path) as f:
+        return json.load(f)
+
+@api_router.post("/webhooks/wa-flow")
+async def wa_flow_data_exchange(request: Request):
+    """
+    WhatsApp Flows Data Exchange — Panchariya Seva Desk (Help Center).
+    Aligned EXACTLY with the current /static/panchariya_seva_desk_flow.json (v7.1, data_api 3.0):
+
+        INTRO (static) → CATEGORY_SELECTION → [data_exchange] → ISSUE_* (static) → [navigate] → SUMMARY_SUBMIT (terminal)
+
+    Only two actions actually require the backend:
+      • INIT            → open the flow at INTRO (first screen is static, no data required).
+      • data_exchange   → from CATEGORY_SELECTION only: route to the correct ISSUE_* screen,
+                          forwarding the chosen `category` id so the ISSUE_* screen's
+                          data-schema (`data.category`) is populated and can later be carried
+                          into SUMMARY_SUBMIT by the client-side `navigate` payload.
+
+    (The client-side navigate from ISSUE_* → SUMMARY_SUBMIT carries `category`, `request_type`
+     and `additional_details` directly — the backend is NOT involved there.)
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        return PlainTextResponse(content="Bad Request", status_code=400)
+
+    aes_key = None
+    iv = None
+    is_encrypted = all(k in body for k in ("encrypted_flow_data", "encrypted_aes_key", "initial_vector"))
+    if is_encrypted:
+        try:
+            decrypted, aes_key, iv = _decrypt_flow_request(
+                body["encrypted_flow_data"], body["encrypted_aes_key"], body["initial_vector"]
+            )
+            body = decrypted
+        except Exception as e:
+            logger.exception(f"[WA Flow] Decryption failed: {e}")
+            return PlainTextResponse(content="Decryption error", status_code=421)
+
+    action = body.get("action", "")
+    flow_token = body.get("flow_token", "")
+    screen = body.get("screen", "")
+    flow_data = body.get("data", {}) or {}
+    # Always echo the request's data_api version back, per Meta spec.
+    version = body.get("version", "3.0")
+
+    logger.info(f"[WA Flow] action={action} screen={screen} flow_token={flow_token} encrypted={is_encrypted} data_keys={list(flow_data.keys())}")
+
+    # Store event for debugging
+    await db.wa_flow_events.insert_one({
+        "id": str(uuid.uuid4()),
+        "action": action, "screen": screen, "flow_token": flow_token,
+        "data": flow_data, "encrypted": is_encrypted,
+        "received_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    def _respond(payload: dict):
+        if is_encrypted:
+            encrypted = _encrypt_flow_response(payload, aes_key, iv)
+            return PlainTextResponse(content=encrypted, status_code=200)
+        return payload
+
+    # Category id → human-readable title (for SUMMARY display + admin ticket/template)
+    CATEGORY_TITLES = {
+        "paani_chai_coffee":     "Paani / Chai / Coffee",
+        "daily_use_items":       "Daily Use Items",
+        "medical_sahayata":      "Medical Sahayata",
+        "meal_request":          "Meal Request",
+        "safai_hygiene":         "Safai & Hygiene",
+        "room_utility_issue":    "Room / Utility Issue",
+        "bedding_comfort":       "Bedding / Comfort",
+        "lost_found_other_help": "Lost & Found / Other Help",
+    }
+    # Request-type id → title (covers all ISSUE_* screens)
+    REQUEST_TYPE_TITLES = {
+        # ISSUE_WATER
+        "drinking_water_request":   "Drinking Water Request",
+        "tea_request":              "Tea Request",
+        "coffee_request":           "Coffee Request",
+        # ISSUE_DAILY
+        "soap_request":             "Soap",
+        "shampoo_request":          "Shampoo",
+        "toothpaste_request":       "Toothpaste",
+        "towel_request":            "Towel",
+        "other_daily_item":         "Other Daily Use Item",
+        "essential_kit_all_items":  "Essential Kit (All Items)",
+        # ISSUE_MEDICAL
+        "first_aid_box":            "First Aid Box",
+        "headache_medicine":        "Medicine for Headache",
+        "cold_medicine":            "Medicine for Cold",
+        "fever_medicine":           "Medicine for Fever",
+        "medical_emergency":        "Medical Emergency",
+        # ISSUE_MEAL
+        "extra_meal_request":       "Extra Meal Request",
+        "special_meal_request":     "Special Meal Request",
+        "meal_not_received":        "Meal Not Received",
+        # ISSUE_CLEANING
+        "room_cleaning":            "Room Cleaning",
+        "washroom_cleaning":        "Washroom Cleaning",
+        "garbage_pickup":           "Garbage Pickup",
+        "mosquito_pest_control":    "Mosquito / Pest Control",
+        # ISSUE_ROOM
+        "electricity_issue":        "Electricity Issue",
+        "water_supply_issue":       "Water Supply Issue",
+        "ac_fan_issue":             "AC / Fan Issue",
+        "other_room_utility_issue": "Other Room / Utility Issue",
+        # ISSUE_BEDDING
+        "blanket_request":          "Blanket Request",
+        "pillow_request":           "Pillow Request",
+        "bedsheet_request":         "Bedsheet Request",
+        "extra_bedding_request":    "Extra Bedding Request",
+        # ISSUE_OTHER
+        "lost_found":               "Lost & Found",
+        "general_help":             "General Help",
+        "other_request":            "Other Request",
+    }
+    ISSUE_SCREENS = {
+        "ISSUE_WATER", "ISSUE_DAILY", "ISSUE_MEDICAL", "ISSUE_MEAL",
+        "ISSUE_CLEANING", "ISSUE_ROOM", "ISSUE_BEDDING", "ISSUE_OTHER",
+    }
+
+    # Category id (as set in CATEGORY_SELECTION Dropdown) → target ISSUE_* screen id.
+    # Keys MUST match the Dropdown ids in panchariya_seva_desk_flow.json.
+    CATEGORY_TO_ISSUE_SCREEN = {
+        "paani_chai_coffee":     "ISSUE_WATER",
+        "daily_use_items":       "ISSUE_DAILY",
+        "medical_sahayata":      "ISSUE_MEDICAL",
+        "meal_request":          "ISSUE_MEAL",
+        "safai_hygiene":         "ISSUE_CLEANING",
+        "room_utility_issue":    "ISSUE_ROOM",
+        "bedding_comfort":       "ISSUE_BEDDING",
+        "lost_found_other_help": "ISSUE_OTHER",
+    }
+
+    # ── ping — Meta periodic health check ──
+    if action == "ping":
+        return _respond({"version": version, "data": {"status": "active"}})
+
+    # ── INIT — user just opened the Flow. First screen is static INTRO. ──
+    if action == "INIT":
+        return _respond({"version": version, "screen": "INTRO", "data": {}})
+
+    # ── BACK — echo current screen & data ──
+    if action == "BACK":
+        return _respond({"version": version, "screen": screen or "INTRO", "data": flow_data or {}})
+
+    # ── data_exchange — two hops in this flow ──
+    if action == "data_exchange":
+        # HOP 1 — CATEGORY_SELECTION → ISSUE_*
+        if screen == "CATEGORY_SELECTION":
+            category = (flow_data.get("category") or "").strip()
+            target_screen = CATEGORY_TO_ISSUE_SCREEN.get(category, "ISSUE_OTHER")
+            logger.info(f"[WA Flow] CATEGORY_SELECTION → {target_screen} (category={category})")
+            return _respond({
+                "version": version,
+                "screen": target_screen,
+                "data": {"category": category},
+            })
+
+        # HOP 2 — ISSUE_* → SUMMARY_SUBMIT
+        # Backend binds category/request_type (ids + friendly titles) + additional_details
+        # onto SUMMARY_SUBMIT's data so the three text lines auto-populate reliably.
+        if screen in ISSUE_SCREENS:
+            category = (flow_data.get("category") or "").strip()
+            request_type = (flow_data.get("request_type") or "").strip()
+            additional_details = (flow_data.get("additional_details") or "").strip()
+            category_title = CATEGORY_TITLES.get(category, category or "-")
+            request_type_title = REQUEST_TYPE_TITLES.get(request_type, request_type or "-")
+            logger.info(
+                f"[WA Flow] {screen} → SUMMARY_SUBMIT "
+                f"(category={category}, request_type={request_type}, details_len={len(additional_details)})"
+            )
+            return _respond({
+                "version": version,
+                "screen": "SUMMARY_SUBMIT",
+                "data": {
+                    "category": category,
+                    "request_type": request_type,
+                    "additional_details": additional_details or "-",
+                    "category_title": category_title,
+                    "request_type_title": request_type_title,
+                },
+            })
+
+        # Any other data_exchange is unexpected — just acknowledge without changing screen.
+        logger.warning(f"[WA Flow] Unexpected data_exchange from screen={screen!r}, data={flow_data}")
+        return _respond({"version": version, "screen": screen or "INTRO", "data": flow_data or {}})
+
+    # Unknown action — safe fallback.
+    logger.warning(f"[WA Flow] Unknown action={action!r} — falling back to INTRO")
+    return _respond({"version": version, "screen": "INTRO", "data": {}})
+
+# ─── Flow Session CRUD (for testing / manual flow_token→phone mapping) ───
+@api_router.post("/admin/wa-flow-sessions")
+async def create_flow_session(request: Request):
+    """Manually bind a flow_token to a phone number. Normally done when sending the template with Flow CTA (Session 4B)."""
+    await require_superadmin(request)
+    body = await request.json()
+    flow_token = (body.get("flow_token") or "").strip()
+    phone = (body.get("phone") or "").strip().lstrip("+")
+    if not flow_token or not phone:
+        raise HTTPException(status_code=400, detail="flow_token and phone are required")
+    doc = {
+        "id": str(uuid.uuid4()), "flow_token": flow_token, "phone": phone,
+        "status": "pending", "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.wa_flow_sessions.update_one({"flow_token": flow_token}, {"$set": doc}, upsert=True)
+    return doc
+
+# ─── Flow Configuration CRUD ───
+@api_router.get("/admin/wa-flows")
+async def list_flows(request: Request):
+    await require_admin_readable(request)
+    flows = await db.wa_flow_configs.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return flows
+
+@api_router.post("/admin/wa-flows")
+async def create_flow(request: Request):
+    user = await require_superadmin(request)
+    body = await request.json()
+    doc = {
+        "id": str(uuid.uuid4()),
+        "flow_name": body.get("flow_name", ""),
+        "flow_id": body.get("flow_id", ""),
+        "flow_token": body.get("flow_token", ""),
+        "description": body.get("description", ""),
+        "trigger_keywords": body.get("trigger_keywords", []),
+        "keyword_template_name": body.get("keyword_template_name", ""),
+        "keyword_template_language": body.get("keyword_template_language", "en"),
+        "is_active": True,
+        "init_response": body.get("init_response", {}),
+        "screens": body.get("screens", {}),
+        "created_by": user["name"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.wa_flow_configs.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+@api_router.put("/admin/wa-flows/{flow_id}")
+async def update_flow(flow_id: str, request: Request):
+    await require_superadmin(request)
+    body = await request.json()
+    updates = {k: v for k, v in body.items() if k in ("flow_name", "flow_id", "flow_token", "description", "trigger_keywords", "keyword_template_name", "keyword_template_language", "is_active", "init_response", "screens")}
+    updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.wa_flow_configs.update_one({"id": flow_id}, {"$set": updates})
+    return {"message": "Updated"}
+
+@api_router.delete("/admin/wa-flows/{flow_id}")
+async def delete_flow(flow_id: str, request: Request):
+    await require_superadmin(request)
+    await db.wa_flow_configs.delete_one({"id": flow_id})
+    return {"message": "Deleted"}
+
+@api_router.get("/admin/wa-flow-events")
+async def list_flow_events(request: Request, page: int = 1, per_page: int = 50):
+    await require_admin_readable(request)
+    total = await db.wa_flow_events.count_documents({})
+    skip = (page - 1) * per_page
+    events = await db.wa_flow_events.find({}, {"_id": 0}).sort("received_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": events, "total": total, "page": page}
+
+# ─── System Message Triggers ───
+SYSTEM_TRIGGERS = [
+    {"key": "registration_submitted", "type": "user", "label": "Registration Submitted", "description": "When a guest submits registration form", "recipient_logic": "registrant_mobile"},
+    {"key": "arrival_confirmed", "type": "user", "label": "Arrival Confirmed", "description": "When guest is checked in via QR scan", "recipient_logic": "registrant_mobile"},
+    {"key": "help_ticket_response", "type": "user", "label": "Help Ticket Response", "description": "When admin responds to a help request", "recipient_logic": "registrant_mobile"},
+    {"key": "departure_marked", "type": "user", "label": "Departure Marked", "description": "When guest is marked as departed", "recipient_logic": "registrant_mobile"},
+    # ── Help Centre / WA Flow triggers (Session 4B) ──
+    {"key": "hc_flow_captured", "type": "user", "label": "HC: Query Captured", "description": "Confirms ticket capture with SLA + escalation notice (guest is on-premise)", "recipient_logic": "registrant_mobile"},
+    {"key": "hc_flow_not_on_premise", "type": "user", "label": "HC: Not on Premise", "description": "Sent when help-form submitter is NOT in arrived-guest list", "recipient_logic": "registrant_mobile"},
+    {"key": "hc_ticket_resolved", "type": "user", "label": "HC: Ticket Resolved", "description": "Sent to guest when swayamsevak marks ticket resolved", "recipient_logic": "registrant_mobile"},
+    # ── Admin / Swayamsevak triggers ──
+    {"key": "help_ticket_created", "type": "admin", "label": "Help Ticket Created", "description": "When a guest raises a help request — notifies assigned Swayamsevak (POC)", "recipient_logic": "assigned_swamsevak_mobile"},
+    {"key": "hc_ticket_escalated_all", "type": "admin", "label": "HC: Ticket Escalated (All Swayamsevaks)", "description": "When SLA breached — broadcasts to ALL swayamsevaks", "recipient_logic": "all_swamsevaks_mobile"},
+    {"key": "guest_arrived", "type": "admin", "label": "Guest Arrived", "description": "When assigned guest checks in", "recipient_logic": "assigned_swamsevak_mobile"},
+]
+
+@api_router.get("/admin/wa-triggers")
+async def list_wa_triggers(request: Request):
+    await require_admin_readable(request)
+    configs = await db.wa_triggers.find({}, {"_id": 0}).to_list(100)
+    config_map = {c["trigger_key"]: c for c in configs}
+    result = []
+    for t in SYSTEM_TRIGGERS:
+        existing = config_map.get(t["key"], {})
+        result.append({
+            **t,
+            "id": existing.get("id", ""),
+            "enabled": existing.get("enabled", False),
+            "template_id": existing.get("template_id", ""),
+            "template_name": existing.get("template_name", ""),
+            "delay_minutes": existing.get("delay_minutes", 0),
+        })
+    return result
+
+@api_router.put("/admin/wa-triggers/{trigger_key}")
+async def update_wa_trigger(trigger_key: str, request: Request):
+    user = await require_superadmin(request)
+    body = await request.json()
+    existing = await db.wa_triggers.find_one({"trigger_key": trigger_key})
+    updates = {
+        "trigger_key": trigger_key,
+        "enabled": body.get("enabled", False),
+        "template_id": body.get("template_id", ""),
+        "template_name": body.get("template_name", ""),
+        "delay_minutes": int(body.get("delay_minutes", 0) or 0),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if existing:
+        await db.wa_triggers.update_one({"trigger_key": trigger_key}, {"$set": updates})
+    else:
+        updates["id"] = str(uuid.uuid4())
+        updates["created_at"] = datetime.now(timezone.utc).isoformat()
+        await db.wa_triggers.insert_one(updates)
+    await log_audit("wa_trigger_update", "wa_trigger", trigger_key, trigger_key,
+                    f"Trigger {'enabled' if updates['enabled'] else 'disabled'}", user["name"])
+    return {"message": "Updated"}
+
+async def fire_system_trigger(trigger_key: str, phone: str, variables: dict = None):
+    """Fire a system message trigger if enabled.
+    The `variables` dict should include MULTIPLE alias keys (e.g., 'name', 'guest_name',
+    'shraddhalu_name') so the trigger resolves regardless of which variable label the admin
+    used when they configured the Meta template."""
+    config = await db.wa_triggers.find_one({"trigger_key": trigger_key, "enabled": True})
+    if not config or not config.get("template_id"):
+        logger.info(f"[Trigger] {trigger_key}: skipped (not enabled or no template set)")
+        return
+    tmpl = await db.wa_templates.find_one({"id": config["template_id"]}, {"_id": 0})
+    if not tmpl:
+        logger.warning(f"[Trigger] {trigger_key}: template_id {config['template_id']} not found in wa_templates — cannot send")
+        return
+    body_params = []
+    # Build a case-insensitive alias map of the passed variables, so labels like "Name",
+    # "guest_name", "GUEST_NAME", "shraddhalu_name" all resolve to the same value.
+    vmap = {}
+    for k, v in (variables or {}).items():
+        if v is None:
+            v = ""
+        key = str(k).strip().lower().replace(" ", "_")
+        vmap[key] = str(v)
+    def _resolve(label):
+        key = str(label).strip().lower().replace(" ", "_").lstrip("{").rstrip("}")
+        # strip leading numeric sign ($, #) and "var_" prefix
+        if key.startswith("var_"):
+            key = key[4:]
+        return vmap.get(key, "")
+    if tmpl.get("variable_labels"):
+        for label in tmpl["variable_labels"]:
+            body_params.append(_resolve(label))
+    elif tmpl.get("variable_count"):
+        # Template uses positional {{1}}, {{2}} placeholders only (no labels).
+        # Use passed-in list in `variables["_positional"]` if any, else fallback to alias keys named var_1, var_2...
+        positional = (variables or {}).get("_positional") or []
+        for i in range(int(tmpl.get("variable_count") or 0)):
+            if i < len(positional):
+                body_params.append(str(positional[i]))
+            else:
+                body_params.append(vmap.get(f"var_{i+1}", vmap.get(str(i+1), "")))
+    logger.info(f"[Trigger] {trigger_key}: firing template='{tmpl.get('meta_template_name')}' to {phone} params={body_params}")
+    # Honor delay_minutes setting
+    delay_minutes = int(config.get("delay_minutes", 0) or 0)
+    if delay_minutes > 0:
+        logger.info(f"[Trigger] {trigger_key}: delaying {delay_minutes} minute(s)")
+        await asyncio.sleep(delay_minutes * 60)
+    # Queue the message
+    queue_doc = {
+        "id": str(uuid.uuid4()),
+        "type": "system_trigger",
+        "trigger_key": trigger_key,
+        "phone_number": phone,
+        "template_name": tmpl.get("meta_template_name", ""),
+        "template_language": tmpl.get("language", "en"),
+        "body_params": body_params,
+        "media_url": "",
+        "status": "queued",
+        "retry_count": 0, "max_retries": 3,
+        "wa_message_id": "",
+        "error_detail": "",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.wa_message_queue.insert_one(queue_doc)
+    # Process immediately in background
+    asyncio.create_task(process_queue_item(queue_doc["id"]))
+
+# ═══════════════════════════════════════════════════════════════
+# HELP CENTRE · SYSTEM TRIGGER WIRING (Session 4B)
+# ═══════════════════════════════════════════════════════════════
+async def fire_hc_flow_outcome(phone: str, arrived_status: str, ticket: dict):
+    """Called after a WA Flow submission creates a ticket. Fires either
+    hc_flow_captured (on-premise) or hc_flow_not_on_premise (off-premise)."""
+    sla_minutes = int(ticket.get("resolution_time_minutes") or 0)
+    sla_human = f"{sla_minutes} minutes" if sla_minutes and sla_minutes < 60 else (f"{sla_minutes // 60} hour(s)" if sla_minutes else "")
+    # Friendly titles (injected by _handle_flow_completion into the in-memory ticket dict)
+    _cat_title = ticket.get("_category_title") or ticket.get("category_label") or ticket.get("category", "")
+    _req_title = ticket.get("_request_type_title") or ticket.get("category_label") or ""
+    _addl = ticket.get("_additional_details") or ""
+    _room = ticket.get("room_or_location", "") or "-"
+    variables = {
+        # Guest identity
+        "guest_name": ticket.get("guest_name", ""),
+        "name": ticket.get("guest_name", ""),
+        # Ticket identity
+        "ticket_id": (ticket.get("id") or "")[:8].upper(),
+        # What was requested (multiple aliases so any template labeling works)
+        "service_type": _req_title or _cat_title,
+        "category": _cat_title,
+        "category_title": _cat_title,
+        "request_type": _req_title,
+        "request_type_title": _req_title,
+        "additional_details": _addl or "-",
+        "details": _addl or "-",
+        "description": _addl or "-",
+        # Room (all aliases)
+        "room": _room, "room_no": _room, "room_number": _room,
+        "room_or_location": _room, "location": _room,
+        # SLA / priority
+        "priority": ticket.get("priority", ""),
+        "sla_minutes": str(sla_minutes),
+        "sla": sla_human,
+        "arrived_status": arrived_status,
+    }
+    if arrived_status == "on_premise":
+        await fire_system_trigger("hc_flow_captured", phone, variables)
+    else:
+        await fire_system_trigger("hc_flow_not_on_premise", phone, variables)
+    # Also notify the assigned Swayamsevak (POC) if any
+    if ticket.get("assigned_to"):
+        swam = await db.custom_admins.find_one({"username": ticket["assigned_to"]}, {"_id": 0})
+        if not swam:
+            swam = await db.custom_admins.find_one({"name": ticket.get("assigned_to_name", "")}, {"_id": 0})
+        swam_phone = (swam.get("phone") or swam.get("mobile") or "") if swam else ""
+        if swam and swam_phone:
+            poc_vars = {
+                "swamsevak_name": swam.get("name", ""),
+                "guest_name": ticket.get("guest_name", ""),
+                "guest_mobile": ticket.get("guest_mobile", ""),
+                "ticket_id": (ticket.get("id") or "")[:8].upper(),
+                "service_type": _req_title or _cat_title,
+                "category": _cat_title,
+                "request_type": _req_title,
+                "priority": ticket.get("priority", ""),
+                "room_or_location": _room, "room": _room,
+                "room_no": _room, "room_number": _room, "location": _room,
+                "description": (_addl or ticket.get("description", "") or "")[:200],
+                "details": (_addl or ticket.get("description", "") or "")[:200],
+                "additional_details": (_addl or ticket.get("description", "") or "")[:200],
+            }
+            await fire_system_trigger("help_ticket_created", swam_phone, poc_vars)
+
+async def fire_hc_ticket_resolved(ticket: dict):
+    """Called when a ticket is marked resolved. Notifies the guest."""
+    phone = ticket.get("guest_mobile", "")
+    if not phone:
+        return
+    variables = {
+        "guest_name": ticket.get("guest_name", ""),
+        "ticket_id": (ticket.get("id") or "")[:8].upper(),
+        "service_type": ticket.get("category_label") or ticket.get("category", ""),
+        "resolved_by_name": ticket.get("resolved_by_name", ""),
+        "closing_note": (ticket.get("closing_note", "") or "")[:300],
+    }
+    await fire_system_trigger("hc_ticket_resolved", phone, variables)
+
+async def fire_hc_ticket_escalated_all(ticket: dict):
+    """Called when a ticket breaches SLA. Broadcasts to all swayamsevaks."""
+    swamsevaks = await db.custom_admins.find({"role": {"$in": ["swamsevak", "admin"]}}, {"_id": 0}).to_list(1000)
+    base_vars = {
+        "ticket_id": (ticket.get("id") or "")[:8].upper(),
+        "guest_name": ticket.get("guest_name", ""),
+        "guest_mobile": ticket.get("guest_mobile", ""),
+        "service_type": ticket.get("category_label") or ticket.get("category", ""),
+        "priority": ticket.get("priority", ""),
+        "room_or_location": ticket.get("room_or_location", ""),
+        "description": (ticket.get("description", "") or "")[:200],
+        "assigned_to_name": ticket.get("assigned_to_name", ""),
+    }
+    fired = 0
+    for s in swamsevaks:
+        s_phone = s.get("phone") or s.get("mobile") or ""
+        if s_phone:
+            vars_for_s = {**base_vars, "swamsevak_name": s.get("name", "")}
+            await fire_system_trigger("hc_ticket_escalated_all", s_phone, vars_for_s)
+            fired += 1
+    logger.info(f"[HC Escalation] Ticket {ticket.get('id')} broadcast to {fired} swayamsevaks")
+    return fired
+
+async def sla_escalation_scanner():
+    """Background task: every 60s, find tickets whose SLA is breached & not yet escalated, fire escalation broadcast."""
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            # Find open tickets past SLA that haven't been escalated yet
+            cursor = db.tickets.find({
+                "status": {"$in": ["open", "in_progress"]},
+                "escalated_at": {"$in": [None, ""]},
+            }, {"_id": 0})
+            count = 0
+            async for t in cursor:
+                try:
+                    created = t.get("created_at", "")
+                    sla_min = int(t.get("resolution_time_minutes") or 0)
+                    if not created or not sla_min:
+                        continue
+                    created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    age_min = (now - created_dt).total_seconds() / 60
+                    if age_min >= sla_min:
+                        await db.tickets.update_one({"id": t["id"]}, {"$set": {
+                            "escalated_at": now.isoformat(), "escalation_level": "all_swamsevaks",
+                        }})
+                        await fire_hc_ticket_escalated_all(t)
+                        count += 1
+                except Exception as e:
+                    logger.warning(f"[SLA Scanner] error on ticket {t.get('id')}: {e}")
+            if count:
+                logger.info(f"[SLA Scanner] Escalated {count} tickets to all swayamsevaks")
+        except Exception as e:
+            logger.exception(f"[SLA Scanner] loop error: {e}")
+        await asyncio.sleep(60)
+
+@api_router.post("/admin/tickets/escalate-check")
+async def admin_escalate_check(request: Request):
+    """Manual endpoint to run SLA escalation check immediately (admin tool)."""
+    await require_superadmin(request)
+    now = datetime.now(timezone.utc)
+    escalated = []
+    async for t in db.tickets.find({
+        "status": {"$in": ["open", "in_progress"]},
+        "escalated_at": {"$in": [None, ""]},
+    }, {"_id": 0}):
+        created = t.get("created_at", "")
+        sla_min = int(t.get("resolution_time_minutes") or 0)
+        if not created or not sla_min:
+            continue
+        created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        age_min = (now - created_dt).total_seconds() / 60
+        if age_min >= sla_min:
+            await db.tickets.update_one({"id": t["id"]}, {"$set": {
+                "escalated_at": now.isoformat(), "escalation_level": "all_swamsevaks",
+            }})
+            fired = await fire_hc_ticket_escalated_all(t)
+            escalated.append({"ticket_id": t["id"], "swamsevaks_notified": fired})
+    return {"escalated_count": len(escalated), "details": escalated}
+
+# ─── Keyword → Template-with-Flow-CTA helper (Session 4B) ───
+async def send_wa_flow_template(phone: str, template_name: str, language: str, flow_id: str,
+                                flow_cta_text: str = "Open", flow_action: str = "data_exchange",
+                                body_params: list = None):
+    """Send a WhatsApp template that contains a Flow CTA button.
+    Mints a flow_token, binds it to the phone (so Flow submission knows the user), then sends
+    the template with the flow parameters. Returns (success, wa_message_id_or_error, flow_token).
+
+    Automatically attaches the header media (image / video / document) from our wa_templates
+    record so that templates with a media header on Meta don't error with
+    (#132012) Parameter format does not match format in the created template.
+    """
+    if not WA_PHONE_ID or not WA_TOKEN:
+        return False, "WhatsApp API not configured", ""
+    flow_token = f"hc_{uuid.uuid4().hex[:16]}"
+    # Bind token → phone first so Flow submission can resolve phone
+    await db.wa_flow_sessions.update_one(
+        {"flow_token": flow_token},
+        {"$set": {
+            "id": str(uuid.uuid4()), "flow_token": flow_token,
+            "phone": normalize_phone_for_wa(phone),
+            "status": "awaiting_submission",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True
+    )
+    clean_phone = normalize_phone_for_wa(phone)
+
+    # Look up the template doc to figure out header media (if any) so we attach the
+    # header component when Meta's template requires one.
+    tmpl_doc = await db.wa_templates.find_one(
+        {"meta_template_name": template_name, "language": language}, {"_id": 0}
+    )
+    if not tmpl_doc:
+        tmpl_doc = await db.wa_templates.find_one({"meta_template_name": template_name}, {"_id": 0}) or {}
+
+    components = []
+
+    # 1. Header media (only if the template has one)
+    header_type = (tmpl_doc.get("header_type") or "").lower()
+    header_url = tmpl_doc.get("header_media_url") or ""
+    if header_type in ("image", "video", "document") and header_url:
+        components.append({
+            "type": "header",
+            "parameters": [{"type": header_type, header_type: {"link": header_url}}],
+        })
+
+    # 2. Body params (only if template has variables)
+    if body_params:
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": str(v)} for v in body_params],
+        })
+
+    # 3. Flow CTA button. For templates configured with action type = "Complete flow" +
+    # "Pre-defined screen", Meta does NOT accept flow_action_data — sending an empty
+    # object causes (#132012). Only include it when we actually have data to pass.
+    flow_action_obj = {"flow_token": flow_token}
+    components.append({
+        "type": "button",
+        "sub_type": "flow",
+        "index": "0",
+        "parameters": [{"type": "action", "action": flow_action_obj}],
+    })
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": clean_phone,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language},
+            "components": components,
+        }
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client_http:
+            resp = await client_http.post(
+                f"{WA_API_BASE}/{WA_PHONE_ID}/messages",
+                headers={"Authorization": f"Bearer {WA_TOKEN}", "Content-Type": "application/json"},
+                json=payload
+            )
+            data = resp.json()
+            if resp.status_code == 200 and data.get("messages"):
+                return True, data["messages"][0]["id"], flow_token
+            err = data.get("error", {}).get("message", str(data))
+            err_code = data.get("error", {}).get("code", "")
+            logger.error(
+                f"[send_wa_flow_template] Meta rejected template={template_name} "
+                f"code={err_code} msg={err} payload_components={[c['type'] for c in components]}"
+            )
+            return False, f"({err_code}) {err}" if err_code else err, flow_token
+    except Exception as e:
+        return False, str(e), flow_token
+
+async def process_queue_item(queue_id: str):
+    """Process a single queued message"""
+    item = await db.wa_message_queue.find_one({"id": queue_id})
+    if not item:
+        return
+    await db.wa_message_queue.update_one({"id": queue_id}, {"$set": {"status": "processing"}})
+    success, result = await send_whatsapp_template(
+        phone=item["phone_number"],
+        template_name=item["template_name"],
+        language=item.get("template_language", "en"),
+        body_params=item.get("body_params") or None,
+        header_media_url=item.get("media_url") or None,
+    )
+    if success:
+        await db.wa_message_queue.update_one({"id": queue_id}, {"$set": {
+            "status": "sent", "wa_message_id": result,
+            "processed_at": datetime.now(timezone.utc).isoformat()
+        }})
+        # Log outgoing system notification in conversation so it's visible in chat view
+        try:
+            conv_phone = normalize_phone_for_wa(item["phone_number"])
+            now_iso = datetime.now(timezone.utc).isoformat()
+            trigger_key = item.get("trigger_key", "")
+            trigger_label = trigger_key.replace("_", " ").title() if trigger_key else "System"
+            msg_doc = {
+                "id": str(uuid.uuid4()), "direction": "outgoing",
+                "text": f"[System: {trigger_label}] Template: {item['template_name']}",
+                "msg_type": "system_notification",
+                "wa_message_id": result, "timestamp": now_iso,
+                "status": "sent", "sent_by": "System Trigger",
+                "trigger_key": trigger_key,
+            }
+            conv = await db.wa_conversations.find_one({"phone": conv_phone})
+            if conv:
+                await db.wa_conversations.update_one({"phone": conv_phone}, {
+                    "$push": {"messages": msg_doc},
+                    "$set": {"last_message": f"[{trigger_label}]", "last_message_at": now_iso}
+                })
+            else:
+                await db.wa_conversations.insert_one({
+                    "id": str(uuid.uuid4()), "phone": conv_phone,
+                    "contact_name": "", "unread_count": 0,
+                    "last_message": f"[{trigger_label}]", "last_message_at": now_iso,
+                    "created_at": now_iso, "messages": [msg_doc],
+                })
+        except Exception as e:
+            logger.warning(f"[Trigger] conversation log failed for queue {queue_id}: {e}")
+    else:
+        retry = item.get("retry_count", 0) + 1
+        if retry < item.get("max_retries", 3):
+            await db.wa_message_queue.update_one({"id": queue_id}, {"$set": {
+                "status": "retry", "retry_count": retry, "error_detail": result,
+                "next_retry_at": (datetime.now(timezone.utc) + timedelta(minutes=retry * 5)).isoformat()
+            }})
+        else:
+            await db.wa_message_queue.update_one({"id": queue_id}, {"$set": {
+                "status": "failed", "retry_count": retry, "error_detail": result,
+                "processed_at": datetime.now(timezone.utc).isoformat()
+            }})
+
+# ─── Message Queue Log ───
+@api_router.get("/admin/wa-queue")
+async def list_wa_queue(request: Request, page: int = 1, per_page: int = 50, status_filter: str = ""):
+    await require_admin_readable(request)
+    query = {}
+    if status_filter:
+        query["status"] = status_filter
+    total = await db.wa_message_queue.count_documents(query)
+    skip = (page - 1) * per_page
+    items = await db.wa_message_queue.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
+    return {"data": items, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+# ═══════════════════════════════════════════════════════════════
 class CustomFieldCreate(BaseModel):
     name: str
     field_type: str = "text"
@@ -2168,6 +5076,22 @@ async def confirm_departure(reg_id: str, request: Request):
         if a.get("id") == reg.get("group_head_id"):
             head_name = a.get("name", "")
     await log_audit("departure_confirm", "registration", reg_id, head_name or reg.get("primary_mobile", ""), "Departure confirmed, rooms freed", user["name"])
+    # Fire departure_marked trigger
+    try:
+        _primary_phone = reg.get("primary_mobile", "")
+        _room = ""
+        ra = reg.get("room_assignments") or []
+        if ra:
+            _room = (ra[0].get("room_code") if isinstance(ra[0], dict) else str(ra[0])) if ra else ""
+        _base_vars = {
+            "name": head_name, "guest_name": head_name, "shraddhalu_name": head_name,
+            "mobile": _primary_phone, "phone": _primary_phone,
+            "room": _room, "room_code": _room, "room_no": _room,
+            "_positional": [head_name, _room],
+        }
+        await fire_system_trigger("departure_marked", _primary_phone, _base_vars)
+    except Exception as e:
+        logger.warning(f"[Trigger] departure trigger failed in confirm_departure: {e}")
     return {"message": "Departure confirmed, rooms freed"}
 
 # ─── SWAMSEVAK ASSIGNMENT ───
@@ -2254,7 +5178,7 @@ async def get_cutoff_status():
     }
 
 @extra_router.get("/admin/dashboard/drill-down")
-async def dashboard_drill_down(request: Request, field: str = "", value: str = ""):
+async def dashboard_drill_down(request: Request, field: str = "", value: str = "", ref_person: str = ""):
     await get_current_user(request)
     query = {"approval_status": "approved"}
     if field == "arrival_date":
@@ -2274,7 +5198,15 @@ async def dashboard_drill_down(request: Request, field: str = "", value: str = "
         query["reference_person_name"] = value
     elif field == "relation_category":
         query["relation_category"] = value
-    regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).to_list(200)
+        if ref_person:
+            query["reference_person_name"] = ref_person
+    elif field == "ref_relation":
+        # Combined: reference person + relation category
+        parts = value.split("|", 1)
+        if len(parts) == 2:
+            query["reference_person_name"] = parts[0]
+            query["relation_category"] = parts[1]
+    regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
     results = []
     for r in regs:
         head_name = ""
@@ -2286,6 +5218,8 @@ async def dashboard_drill_down(request: Request, field: str = "", value: str = "
             "num_people": r.get("num_people", 1), "rooms": r.get("room_assignments", []),
             "arrival_status": r.get("arrival_status", ""), "arrival_date": r.get("arrival_date", ""),
             "departure_date": r.get("departure_date", ""), "primary_mobile": r.get("primary_mobile", ""),
+            "reference_person_name": r.get("reference_person_name", ""),
+            "relation_category": r.get("relation_category", ""),
         })
     return results
 
@@ -2302,6 +5236,69 @@ async def get_rejected_registrations(request: Request, page: int = 1, per_page: 
     skip = (page - 1) * per_page
     regs = await db.registrations.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(per_page).to_list(per_page)
     return {"data": regs, "total": total, "page": page, "total_pages": max(1, math.ceil(total / per_page))}
+
+@extra_router.get("/admin/ref-relation-stats")
+async def get_ref_relation_stats(request: Request):
+    """Reference Person × Relation breakdown: expected + arrived guests only (exclude pending)"""
+    await get_current_user(request)
+    # Get all approved registrations (expected + arrived, not pending)
+    regs = await db.registrations.find(
+        {"approval_status": "approved"},
+        {"_id": 0, "reference_person_name": 1, "reference_person_id": 1, "relation_category": 1,
+         "num_people": 1, "attendees": 1, "group_head_id": 1, "arrival_status": 1, "primary_mobile": 1, "id": 1}
+    ).to_list(5000)
+    # Resolve reference person names where needed
+    ref_map = {}
+    ref_ids_to_resolve = set()
+    for r in regs:
+        if r.get("reference_person_name"):
+            continue
+        if r.get("reference_person_id"):
+            ref_ids_to_resolve.add(r["reference_person_id"])
+    if ref_ids_to_resolve:
+        rps = await db.reference_persons.find({"id": {"$in": list(ref_ids_to_resolve)}}, {"_id": 0, "id": 1, "name": 1}).to_list(100)
+        for rp in rps:
+            ref_map[rp["id"]] = rp["name"]
+    # Build stats
+    ref_stats = {}  # ref_name -> { total_families, total_people, relations: { rel_name -> { families, people, expected_families, expected_people, arrived_families, arrived_people } } }
+    for r in regs:
+        ref_name = r.get("reference_person_name") or ref_map.get(r.get("reference_person_id", ""), "")
+        if not ref_name:
+            ref_name = "Unknown"
+        rel = r.get("relation_category", "") or "Other"
+        n_people = r.get("num_people", 1)
+        is_arrived = r.get("arrival_status") in ("arrived", "partially_arrived", "departed")
+        if ref_name not in ref_stats:
+            ref_stats[ref_name] = {"total_families": 0, "total_people": 0, "expected_families": 0, "expected_people": 0, "arrived_families": 0, "arrived_people": 0, "relations": {}}
+        ref_stats[ref_name]["total_families"] += 1
+        ref_stats[ref_name]["total_people"] += n_people
+        if is_arrived:
+            ref_stats[ref_name]["arrived_families"] += 1
+            ref_stats[ref_name]["arrived_people"] += n_people
+        else:
+            ref_stats[ref_name]["expected_families"] += 1
+            ref_stats[ref_name]["expected_people"] += n_people
+        if rel not in ref_stats[ref_name]["relations"]:
+            ref_stats[ref_name]["relations"][rel] = {"families": 0, "people": 0, "expected_families": 0, "expected_people": 0, "arrived_families": 0, "arrived_people": 0}
+        ref_stats[ref_name]["relations"][rel]["families"] += 1
+        ref_stats[ref_name]["relations"][rel]["people"] += n_people
+        if is_arrived:
+            ref_stats[ref_name]["relations"][rel]["arrived_families"] += 1
+            ref_stats[ref_name]["relations"][rel]["arrived_people"] += n_people
+        else:
+            ref_stats[ref_name]["relations"][rel]["expected_families"] += 1
+            ref_stats[ref_name]["relations"][rel]["expected_people"] += n_people
+    # Convert to list sorted by total_families desc
+    result = []
+    for name, stats in sorted(ref_stats.items(), key=lambda x: x[1]["total_families"], reverse=True):
+        relations = []
+        for rel_name, rel_stats in sorted(stats["relations"].items(), key=lambda x: x[1]["families"], reverse=True):
+            relations.append({"name": rel_name, **rel_stats})
+        result.append({"name": name, "total_families": stats["total_families"], "total_people": stats["total_people"],
+                        "expected_families": stats["expected_families"], "expected_people": stats["expected_people"],
+                        "arrived_families": stats["arrived_families"], "arrived_people": stats["arrived_people"],
+                        "relations": relations})
+    return result
 
 @extra_router.put("/admin/registrations/{reg_id}/undo-arrival")
 async def undo_arrival(reg_id: str, request: Request):
@@ -2573,6 +5570,13 @@ async def room_vacancy_forecast(request: Request):
 
 app.include_router(phase_router)
 
+# Serve static files (documents, media)
+from fastapi.staticfiles import StaticFiles
+import os as _os
+_static_dir = _os.path.join(_os.path.dirname(__file__), "static")
+if _os.path.isdir(_static_dir):
+    app.mount("/api/static", StaticFiles(directory=_static_dir), name="static")
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=False,
@@ -2593,6 +5597,15 @@ async def startup():
     await db.todos.create_index("id", unique=True, sparse=True)
     await db.message_templates.create_index("id", unique=True, sparse=True)
     await db.custom_fields.create_index("id", unique=True, sparse=True)
+    await db.wa_templates.create_index("id", unique=True, sparse=True)
+    await db.wa_campaigns.create_index("id", unique=True, sparse=True)
+    await db.wa_campaign_recipients.create_index("campaign_id")
+    await db.wa_campaign_recipients.create_index("wa_message_id", sparse=True)
+    await db.wa_message_queue.create_index("id", unique=True, sparse=True)
+    await db.wa_triggers.create_index("trigger_key", unique=True, sparse=True)
+    await db.wa_webhook_events.create_index("wa_message_id")
+    await db.wa_conversations.create_index("phone", unique=True, sparse=True)
+    await db.wa_conversations.create_index("last_message_at")
 
     # Seed default relation categories if empty
     cat_count = await db.relation_categories.count_documents({})
@@ -2608,6 +5621,24 @@ async def startup():
         for t in DEFAULT_TEMPLATES:
             await db.message_templates.insert_one({"id": str(uuid.uuid4()), **t, "enabled": True, "created_at": datetime.now(timezone.utc).isoformat(), "created_by": "System"})
         logger.info(f"Seeded {len(DEFAULT_TEMPLATES)} default message templates")
+
+    # Seed default ticket categories (matching WA Flow service IDs) if empty
+    await db.ticket_categories.create_index("id", unique=True, sparse=True)
+    await seed_ticket_categories()
+
+    # Indexes for Flow + auto-response
+    await db.wa_flow_sessions.create_index("flow_token", unique=True, sparse=True)
+    await db.wa_auto_responses.create_index("id", unique=True, sparse=True)
+
+    # Purge wa_triggers rows for triggers that have been removed from SYSTEM_TRIGGERS
+    _valid_trigger_keys = [t["key"] for t in SYSTEM_TRIGGERS]
+    _removed = await db.wa_triggers.delete_many({"trigger_key": {"$nin": _valid_trigger_keys}})
+    if _removed.deleted_count:
+        logger.info(f"[Cleanup] Removed {_removed.deleted_count} obsolete wa_triggers rows")
+
+    # Session 4B: kick off SLA escalation scanner (runs every 60s)
+    asyncio.create_task(sla_escalation_scanner())
+    logger.info("[HC] SLA escalation scanner started")
 
     logger.info("V2 startup complete")
 
