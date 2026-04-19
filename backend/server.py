@@ -2225,6 +2225,18 @@ async def resolve_ticket(ticket_id: str, body: TicketResolve, request: Request):
         logger.warning(f"[HC Trigger] fire_hc_ticket_resolved failed: {e}")
     return {"message": "Ticket resolved"}
 
+@api_router.delete("/admin/tickets/{ticket_id}")
+async def delete_ticket(ticket_id: str, request: Request):
+    """Super admin only — permanently delete a Help Centre ticket."""
+    user = await require_superadmin(request)
+    ticket = await db.tickets.find_one({"id": ticket_id})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    await db.tickets.delete_one({"id": ticket_id})
+    await log_audit("ticket_delete", "ticket", ticket_id, ticket.get("title", "") or ticket.get("guest_name", ""),
+                    f"Deleted ticket (status={ticket.get('status')}, category={ticket.get('category')})", user["name"])
+    return {"message": "Ticket deleted"}
+
 # ─── TO-DO MODULE ───
 class TodoCreate(BaseModel):
     title: str

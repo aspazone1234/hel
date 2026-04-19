@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Headphones, Plus, Search, Clock, AlertTriangle, CheckCircle, Eye, UserPlus, GitBranch, LayoutGrid } from "lucide-react";
+import { Headphones, Plus, Search, Clock, AlertTriangle, CheckCircle, Eye, UserPlus, GitBranch, LayoutGrid, Trash2 } from "lucide-react";
 import axios from "axios";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
@@ -108,6 +108,19 @@ export default function HelpCentre({ user }) {
       toast.success("Ticket assigned");
       fetchTickets();
     } catch { toast.error("Failed"); }
+  };
+
+  const deleteTicket = async (ticketId) => {
+    if (!window.confirm("Permanently delete this ticket? This cannot be undone.")) return;
+    try {
+      await axios.delete(`${API}/api/admin/tickets/${ticketId}`, { headers: authHeaders() });
+      toast.success("Ticket deleted");
+      setViewTicket(null);
+      fetchTickets();
+      fetchStats();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Delete failed");
+    }
   };
 
   const getSLAColor = (ticket) => {
@@ -270,6 +283,13 @@ export default function HelpCentre({ user }) {
                     className="bg-blue-50 text-blue-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-blue-100">
                     <Eye size={12} /> View
                   </button>
+                  {isSuper && (
+                    <button onClick={() => deleteTicket(t.id)} data-testid={`delete-ticket-${t.id}`}
+                      className="bg-red-50 text-red-700 px-2.5 py-1.5 rounded-lg text-xs flex items-center gap-1 hover:bg-red-100"
+                      title="Super admin: delete ticket">
+                      <Trash2 size={12} /> Delete
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -362,6 +382,16 @@ export default function HelpCentre({ user }) {
                   <button onClick={() => resolveTicket(viewTicket.id)} data-testid="resolve-ticket-btn"
                     className="w-full bg-green-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-green-700">
                     <CheckCircle size={14} className="inline mr-1" /> Resolve
+                  </button>
+                </div>
+              )}
+
+              {/* Delete — super admin only */}
+              {isSuper && (
+                <div className="border-t pt-3">
+                  <button onClick={() => deleteTicket(viewTicket.id)} data-testid="delete-ticket-btn"
+                    className="w-full bg-red-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-red-700 flex items-center justify-center gap-1">
+                    <Trash2 size={14} /> Delete Ticket (Super Admin)
                   </button>
                 </div>
               )}
