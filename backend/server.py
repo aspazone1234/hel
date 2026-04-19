@@ -224,11 +224,13 @@ class ReferencePersonCreate(BaseModel):
     name: str
     description: str = ""
     relation_categories: List[str] = []  # per-person relation category names
+    rank: int = 100  # Lower rank = appears higher in the list (defaults new entries to 100)
 
 class ReferencePersonUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     relation_categories: Optional[List[str]] = None
+    rank: Optional[int] = None
 
 class RelationCategoryCreate(BaseModel):
     name: str
@@ -420,7 +422,8 @@ async def verify_otp(body: OTPVerifyRequest):
 # ─── Public: Reference Persons & Relation Categories ───
 @api_router.get("/reference-persons/public")
 async def get_reference_persons_public():
-    persons = await db.reference_persons.find({}, {"_id": 0}).sort("name", 1).to_list(100)
+    # Rank ASC (custom order set by super admin), then alphabetical as tiebreaker
+    persons = await db.reference_persons.find({}, {"_id": 0}).sort([("rank", 1), ("name", 1)]).to_list(100)
     return persons
 
 @api_router.get("/relation-categories/public")
@@ -644,7 +647,7 @@ async def update_registration_public(reg_id: str, body: RegistrationUpdateV2):
 @api_router.get("/admin/reference-persons")
 async def list_reference_persons(request: Request):
     await get_current_user(request)
-    persons = await db.reference_persons.find({}, {"_id": 0}).sort("name", 1).to_list(100)
+    persons = await db.reference_persons.find({}, {"_id": 0}).sort([("rank", 1), ("name", 1)]).to_list(100)
     return persons
 
 @api_router.post("/admin/reference-persons")
@@ -655,6 +658,7 @@ async def create_reference_person(body: ReferencePersonCreate, request: Request)
         "name": body.name,
         "description": body.description,
         "relation_categories": [c.strip() for c in (body.relation_categories or []) if c.strip()],
+        "rank": int(body.rank) if body.rank is not None else 100,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.reference_persons.insert_one(doc)
@@ -3190,21 +3194,31 @@ async def upload_campaign_excel(request: Request, file: UploadFile = File(...)):
         if not any(h in ("phone_number", "phone", "mobile") for h in headers_lower):
             raise HTTPException(status_code=400, detail="Excel must have a 'phone_number', 'phone', or 'mobile' column")
         phone_col = next((i for i, h in enumerate(headers_lower) if h in ("phone_number", "phone", "mobile")), 0)
+        # Identify valid (non-empty header, not phone) column indices to include
+        data_col_indices = [i for i, h in enumerate(raw_headers) if h and i != phone_col]
         rows = []
         for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or not row[phone_col]:
+            if not row or phone_col >= len(row) or not row[phone_col]:
                 continue
-            phone = str(row[phone_col]).strip().replace(".0", "")
+            phone_val = row[phone_col]
+            # Normalize phone: strip, drop trailing ".0" that openpyxl adds for numeric cells
+            phone = str(phone_val).strip()
+            if phone.endswith(".0"):
+                phone = phone[:-2]
+            phone = phone.replace(" ", "").replace("-", "").replace("+", "")
+            if not phone.isdigit():
+                # Skip malformed rows rather than crashing later
+                continue
             variables = {}
-            for i, h in enumerate(raw_headers):
-                if i != phone_col and i < len(row):
-                    variables[h] = str(row[i] or "")
+            for i in data_col_indices:
+                if i < len(row):
+                    variables[raw_headers[i]] = str(row[i]) if row[i] is not None else ""
             rows.append({"phone_number": phone, "variables": variables})
-        non_phone_headers = [h for i, h in enumerate(raw_headers) if i != phone_col]
+        non_phone_headers = [raw_headers[i] for i in data_col_indices]
         return {
             "rows": rows, "total": len(rows),
             "headers": non_phone_headers,
-            "all_columns": raw_headers,
+            "all_columns": [h for h in raw_headers if h],
             "phone_column": raw_headers[phone_col],
         }
     except HTTPException:

@@ -70,6 +70,21 @@ export default function ReferencePersonManager({ user }) {
     }
   };
 
+  const saveRank = async (person, newRank) => {
+    const rank = parseInt(newRank, 10);
+    if (Number.isNaN(rank)) { toast.error("Rank must be a number"); return; }
+    if (rank === (person.rank ?? 100)) return;
+    try {
+      await axios.put(`${API}/admin/reference-persons/${person.id}`,
+        { rank },
+        { headers: authHeaders() });
+      toast.success(`Rank updated to ${rank}`);
+      fetchAll();
+    } catch (e) {
+      if (e.response?.status !== 403) toast.error("Failed to update rank");
+    }
+  };
+
   const deletePerson = async (id) => {
     if (!window.confirm("Delete this reference person? Existing registrations that reference them will keep the link but it may no longer resolve.")) return;
     try {
@@ -150,6 +165,7 @@ export default function ReferencePersonManager({ user }) {
         </div>
         <p className="text-[11px] text-gray-500 mt-2">
           Leave the categories blank if this reference person doesn't need a relation dropdown on the registration form.
+          &nbsp;•&nbsp;<b>Rank</b>: lower numbers appear higher in the registration form dropdown (e.g. <code>1</code> is top-most).
         </p>
       </div>
 
@@ -179,7 +195,19 @@ export default function ReferencePersonManager({ user }) {
                   </div>
                 )}
                 {editId !== p.id && (
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex gap-1 shrink-0 items-center">
+                    <div className="flex items-center gap-1" title="Lower rank appears higher in the registration form dropdown">
+                      <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Rank</span>
+                      <Input
+                        type="number"
+                        defaultValue={p.rank ?? 100}
+                        onBlur={e => saveRank(p, e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } }}
+                        disabled={!isSuper}
+                        className="h-7 w-16 text-xs text-center bg-white border-[#D4AF37]/30"
+                        data-testid={`rank-input-${p.id}`}
+                      />
+                    </div>
                     <Button size="sm" variant="ghost" onClick={() => { setEditId(p.id); setEditName(p.name); }} className="h-7 w-7 p-0" data-testid={`edit-ref-${p.id}`}>
                       <Edit2 size={12} />
                     </Button>

@@ -972,7 +972,7 @@ function CreateCampaignFlow({ authHeaders, templates, onClose, onDone }) {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value=" ">-- Not mapped --</SelectItem>
-                          {(uploadResult.headers || []).map(h => (
+                          {(uploadResult.headers || []).filter(h => h && String(h).trim() !== "").map(h => (
                             <SelectItem key={h} value={h}>{h}</SelectItem>
                           ))}
                         </SelectContent>
