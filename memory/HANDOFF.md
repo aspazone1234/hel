@@ -29,7 +29,7 @@
 ### 2.2 WhatsApp Meta Cloud API
 - **Phone Number ID:** `1051687811364641`
 - **Business Account ID:** `92620841022712`
-- **Permanent Access Token:** `EAAL7LGRz8XsBRK2rLPsqapguZBf5vXrPuZBoPJElxCpw7NHGPK4vRE0PCbwa4p683pzSfd4sh2TVcUSe7DuhdgT1zSOlRy89mGg2e140rA9eN46zewApbaK9cRHzoVZBbUcjiF6OXtes3hRQsZC7Nm3RXyocpVX7q1FbFcIFl328ZByebvVE6ZBcS6FyaFQgZDZD`
+- **Permanent Access Token:** `EAAL7LGRz8XsBRWKZBVuuYkVqE6drb72snVc4yi1LLn5ZBtZA1ZC0OZAAge9KB6WGS0vjR8PBQfsslZAXNeiyk0huBB4arAnrwp6tZCPZCymkXNo0B5rriteM9SkSWegQkaL5G5uBcwLyb5KhcynE0KzsMsZBGFDhb3rZAtBvIP0DjRxDnulPlUu08rRkTVR8ZCGsgZDZD`
 - **Webhook Verify Token:** `swamsevak2026`
 - **Webhook URL:** `{APP_URL}/api/webhooks/whatsapp`
 - **Flow Data Exchange URL:** `{APP_URL}/api/webhooks/wa-flow`
@@ -46,7 +46,7 @@ MONGO_URL="mongodb://localhost:27017"
 DB_NAME="test_database"
 JWT_SECRET="1f09d9fc14187c31af1ff358ade688c04ff69fd1d2138dc6ed2dfa186bee8e83"
 WA_PHONE_NUMBER_ID="1051687811364641"
-WA_ACCESS_TOKEN="EAAL7LGRz8XsBRK2rLPsqapguZBf5vXrPuZBoPJElxCpw7NHGPK4vRE0PCbwa4p683pzSfd4sh2TVcUSe7DuhdgT1zSOlRy89mGg2e140rA9eN46zewApbaK9cRHzoVZBbUcjiF6OXtes3hRQsZC7Nm3RXyocpVX7q1FbFcIFl328ZByebvVE6ZBcS6FyaFQgZDZD"
+WA_ACCESS_TOKEN="EAAL7LGRz8XsBRWKZBVuuYkVqE6drb72snVc4yi1LLn5ZBtZA1ZC0OZAAge9KB6WGS0vjR8PBQfsslZAXNeiyk0huBB4arAnrwp6tZCPZCymkXNo0B5rriteM9SkSWegQkaL5G5uBcwLyb5KhcynE0KzsMsZBGFDhb3rZAtBvIP0DjRxDnulPlUu08rRkTVR8ZCGsgZDZD"
 WA_BUSINESS_ACCOUNT_ID="92620841022712"
 WA_WEBHOOK_VERIFY_TOKEN="swamsevak2026"
 WA_FLOW_PRIVATE_KEY_PATH="/app/backend/keys/flow_private.pem"
