@@ -4309,6 +4309,39 @@ async def wa_flow_health():
     """Health check for WhatsApp Flow endpoint (browser only)."""
     return {"status": "ok", "service": "wa-flow-data-exchange"}
 
+@api_router.get("/admin/wa-config-status")
+async def wa_config_status(request: Request):
+    """Diagnostic: shows which WA credentials the RUNNING backend is using RIGHT NOW.
+    Does not expose the full token — only the last 6 chars for verification.
+    Use this after a deploy to confirm the new token actually propagated into the live container."""
+    await require_superadmin(request)
+    tok = os.environ.get("WA_ACCESS_TOKEN", "")
+    phone_id = os.environ.get("WA_PHONE_NUMBER_ID", "")
+    # Live check: does this token work against Meta right now?
+    live_status = "untested"
+    verified_name = None
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            r = await client.get(
+                f"{WA_API_BASE}/{phone_id}?fields=display_phone_number,verified_name",
+                headers={"Authorization": f"Bearer {tok}"},
+            )
+            if r.status_code == 200:
+                j = r.json()
+                live_status = "valid"
+                verified_name = j.get("verified_name")
+            else:
+                live_status = f"invalid (HTTP {r.status_code})"
+    except Exception as e:
+        live_status = f"error: {e}"
+    return {
+        "token_length": len(tok),
+        "token_last6": tok[-6:] if tok else "",
+        "phone_number_id": phone_id,
+        "business_account_id": os.environ.get("WA_BUSINESS_ACCOUNT_ID", ""),
+        "meta_verification": {"status": live_status, "verified_name": verified_name},
+    }
+
 @api_router.get("/admin/wa-flow-public-key")
 async def get_flow_public_key(request: Request):
     """Return the current PEM-encoded RSA public key for WhatsApp Flows data-exchange.
