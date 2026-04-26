@@ -357,9 +357,21 @@ export default function RegisterPage() {
     return (
       <div className="min-h-screen bg-[#F8F1E5] flex items-center justify-center px-4">
         <div className="w-full max-w-md">
-          <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-8" data-testid="register-back-home">
+          <Link to="/" className="text-[#0B1C3D]/60 hover:text-[#0B1C3D] text-sm flex items-center gap-1 mb-4" data-testid="register-back-home">
             <ChevronLeft size={16} /> {t.register.backHome}
           </Link>
+
+          {/* OTP guidance GIF — mobile only */}
+          <div className="md:hidden mb-4 flex justify-center">
+            <img
+              src="https://customer-assets.emergentagent.com/job_crazy-wilbur-1/artifacts/z6lgn4zg_Copy%20of%20Your%20paragraph%20text.gif"
+              alt={lang === "hi" ? "OTP को WhatsApp नोटिफिकेशन से कॉपी करें" : "Copy OTP from WhatsApp notification"}
+              className="w-full max-w-[320px] h-auto rounded-2xl block"
+              style={{ aspectRatio: "1 / 1" }}
+              loading="eager"
+              data-testid="otp-help-gif"
+            />
+          </div>
 
           <div className="bg-white rounded-2xl p-6 sm:p-8 border border-[#D4AF37]/20 shadow-lg">
             <div className="flex items-center justify-between mb-6">
@@ -834,14 +846,19 @@ export default function RegisterPage() {
                 </label>
               </div>
 
-              <Button onClick={handleSubmit} disabled={submitting || !form.consent} data-testid="submit-registration-btn"
-                className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90 py-3 text-base font-bold">
-                {submitting
-                  ? (lang === "hi" ? "\u091C\u092E\u093E \u0939\u094B \u0930\u0939\u093E \u0939\u0948..." : "Submitting...")
-                  : isEditMode
-                    ? (lang === "hi" ? "\u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0905\u092A\u0921\u0947\u091F \u0915\u0930\u0947\u0902" : "Update Registration")
-                    : t.register.submit}
-              </Button>
+              <div className="flex flex-col-reverse sm:flex-row gap-3 sm:gap-4">
+                <Button onClick={handlePrev} variant="outline" className="sm:w-1/3 border-[#D4AF37]/30 text-[#0B1C3D] hover:bg-[#D4AF37]/10 py-3" data-testid="form-prev-btn-summary">
+                  <ArrowLeft size={16} className="mr-2" /> {t.register.previous}
+                </Button>
+                <Button onClick={handleSubmit} disabled={submitting || !form.consent} data-testid="submit-registration-btn"
+                  className="flex-1 bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90 py-3 text-base font-bold">
+                  {submitting
+                    ? (lang === "hi" ? "\u091C\u092E\u093E \u0939\u094B \u0930\u0939\u093E \u0939\u0948..." : "Submitting...")
+                    : isEditMode
+                      ? (lang === "hi" ? "\u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0905\u092A\u0921\u0947\u091F \u0915\u0930\u0947\u0902" : "Update Registration")
+                      : t.register.submit}
+                </Button>
+              </div>
             </div>
           )}
 

@@ -5818,6 +5818,7 @@ async def startup():
                     {"$set": {
                         "id": n["id"],
                         "name": n["name"],
+                        "name_hi": n.get("name_hi", ""),
                         "parent_id": n.get("parent_id"),
                         "path": _path(n["id"]),
                         "is_family_tree": True,

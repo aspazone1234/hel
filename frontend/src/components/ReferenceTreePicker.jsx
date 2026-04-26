@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import Fuse from "fuse.js";
 import { Tree } from "react-d3-tree";
-import { Search, Check, X, MousePointerClick, RefreshCw, ArrowDown, Crosshair } from "lucide-react";
+import { Search, Check, X, MousePointerClick, RefreshCw, ArrowDown } from "lucide-react";
 import { Input } from "./ui/input";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -51,25 +51,31 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     const rootNode = byId[tree.root_id] || null;
     const selectable = (tree.nodes || []).filter(n => n.id !== tree.root_id);
     const fuse = new Fuse(selectable, {
-      keys: ["name"],
+      keys: ["name", "name_hi"],
       threshold: 0.4,
       ignoreLocation: true,
       minMatchCharLength: 2,
       includeScore: true,
     });
+    const displayName = (n) => (lang === "hi" && n.name_hi) ? n.name_hi : n.name;
     const buildHierarchy = (nodeId) => {
       const node = byId[nodeId];
       if (!node) return null;
       const children = (childrenOf[nodeId] || []).map(c => buildHierarchy(c.id)).filter(Boolean);
       return {
-        name: node.name,
+        name: displayName(node),
         attributes: { id: node.id },
         children: children.length ? children : undefined,
       };
     };
     const hierarchy = rootNode ? buildHierarchy(rootNode.id) : null;
     return { byId, childrenOf, rootNode, fuse, hierarchy };
-  }, [tree]);
+  }, [tree, lang]);
+
+  const nameOf = useCallback((node) => {
+    if (!node) return "";
+    return (lang === "hi" && node.name_hi) ? node.name_hi : node.name;
+  }, [lang]);
 
   // ── Helpers ──
   const lineageOf = useCallback((id) => {
@@ -122,7 +128,9 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
   }, [query, fuse]);
 
   const select = (nodeId, name) => {
-    onChange?.(nodeId, { name, path: lineageOf(nodeId).map(n => n.name) });
+    const node = byId[nodeId];
+    const finalName = node ? nameOf(node) : name;
+    onChange?.(nodeId, { name: finalName, path: lineageOf(nodeId).map(n => nameOf(n)) });
     setQuery("");
     setShowResults(false);
   };
@@ -176,7 +184,9 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     const isRoot = id === tree.root_id;
     const isSelected = id === value;
     const onLineage = lineageIds.has(id);
-    const initials = computeInitials(nodeDatum.name);
+    const node = byId[id];
+    const display = node ? nameOf(node) : nodeDatum.name;
+    const initials = computeInitials(display);
 
     let cls = "rd3-node";
     if (isRoot) cls += " is-root";
@@ -184,16 +194,19 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     else if (onLineage) cls += " is-lineage";
     else cls += " is-muted";
 
+    // Card sized for readable text. Wider on lineage/selected so longer names fit.
+    const w = 200;
+    const h = 60;
     return (
       <g className={cls}>
-        <rect className="rd3-node-card" x={-58} y={-20} width={116} height={40} rx={20} ry={20} />
-        <circle className="rd3-node-avatar" cx={-44} cy={0} r={12} />
-        <text className="rd3-node-initials" x={-44} y={4} textAnchor="middle">{initials}</text>
-        <text className="rd3-node-name" x={-26} y={4}>{truncate(nodeDatum.name, 14)}</text>
+        <rect className="rd3-node-card" x={-w/2} y={-h/2} width={w} height={h} rx={h/2} ry={h/2} />
+        <circle className="rd3-node-avatar" cx={-w/2 + 22} cy={0} r={17} />
+        <text className="rd3-node-initials" x={-w/2 + 22} y={1} textAnchor="middle">{initials}</text>
+        <text className="rd3-node-name" x={-w/2 + 46} y={1}>{truncate(display, 18)}</text>
         {isSelected && (
           <g className="rd3-node-glow">
-            <circle cx={0} cy={0} r={36} className="rd3-pulse-1" />
-            <circle cx={0} cy={0} r={36} className="rd3-pulse-2" />
+            <circle cx={0} cy={0} r={50} className="rd3-pulse-1" />
+            <circle cx={0} cy={0} r={50} className="rd3-pulse-2" />
           </g>
         )}
       </g>
@@ -204,24 +217,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     const targetId = linkDatum.target.data?.attributes?.id;
     if (lineageIds.has(targetId)) return "rd3-link rd3-link-lineage";
     return "rd3-link rd3-link-muted";
-  };
-
-  const centerSelected = () => {
-    if (!treeContainerRef.current) return;
-    const container = treeContainerRef.current;
-    const svg = container.querySelector("svg");
-    if (!svg) return;
-    const sel = svg.querySelector(".rd3-node.is-selected");
-    if (!sel) {
-      const { clientWidth, clientHeight } = container;
-      setTranslate({ x: clientWidth / 2, y: clientHeight / 6 });
-      return;
-    }
-    const cBox = container.getBoundingClientRect();
-    const sBox = sel.getBoundingClientRect();
-    const dx = cBox.left + cBox.width / 2 - (sBox.left + sBox.width / 2);
-    const dy = cBox.top + cBox.height / 2 - (sBox.top + sBox.height / 2);
-    setTranslate(prev => ({ x: prev.x + dx, y: prev.y + dy }));
   };
 
   // ── Render ──
@@ -281,18 +276,18 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
               <ul className="divide-y divide-[#D4AF37]/10">
                 {results.map(({ item }, idx) => {
                   const parent = parentOf(item.id);
-                  const path = lineageOf(item.id).map(n => n.name);
+                  const path = lineageOf(item.id).map(n => nameOf(n));
                   return (
                     <li key={item.id}>
                       <button
                         type="button"
-                        onClick={() => select(item.id, item.name)}
+                        onClick={() => select(item.id, nameOf(item))}
                         data-testid={`ref-result-${item.id}`}
                         className={`w-full text-left px-4 py-3 hover:bg-[#F8F1E5]/60 active:bg-[#F8F1E5] transition-colors ${idx === 0 ? "ref-result-first" : ""}`}
                       >
-                        <p className="text-sm sm:text-base font-semibold text-[#0B1C3D] leading-tight">{item.name}</p>
+                        <p className="text-sm sm:text-base font-semibold text-[#0B1C3D] leading-tight">{nameOf(item)}</p>
                         {parent && parent.id !== tree.root_id && (
-                          <p className="text-xs text-[#0B1C3D]/60 mt-0.5">{copy.sonOf} {parent.name}</p>
+                          <p className="text-xs text-[#0B1C3D]/60 mt-0.5">{copy.sonOf} {nameOf(parent)}</p>
                         )}
                         {path.length > 1 && (
                           <p className="text-[11px] text-[#0B1C3D]/40 mt-1 truncate">{path.slice(0, -1).join(" → ")}</p>
@@ -330,14 +325,14 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-base sm:text-lg font-bold text-emerald-900 leading-tight" data-testid="ref-selected-name">
-                  {selectedNode.name}
+                  {nameOf(selectedNode)}
                 </p>
                 {selectedParent && selectedParent.id !== tree.root_id && (
-                  <p className="text-xs sm:text-sm text-emerald-800/80 mt-1">{copy.sonOf} {selectedParent.name}</p>
+                  <p className="text-xs sm:text-sm text-emerald-800/80 mt-1">{copy.sonOf} {nameOf(selectedParent)}</p>
                 )}
                 {selectedLineage.length > 1 && (
                   <p className="text-[11px] sm:text-xs text-emerald-700/65 mt-1.5 leading-relaxed break-words">
-                    {selectedLineage.slice(0, -1).map(n => n.name).join(" → ")}
+                    {selectedLineage.slice(0, -1).map(n => nameOf(n)).join(" → ")}
                   </p>
                 )}
               </div>
@@ -355,24 +350,13 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
 
           {/* Family tree mind-map */}
           <div className="ref-card-enter">
-            <div className="flex items-end justify-between gap-3 mb-2">
-              <div className="min-w-0">
-                <h4 className="text-sm font-bold text-[#0B1C3D]">{copy.treeTitle}</h4>
-                <p className="text-[11px] text-[#0B1C3D]/55 leading-snug">{copy.treeSub}</p>
-              </div>
-              <button
-                type="button"
-                onClick={centerSelected}
-                data-testid="ref-center"
-                className="text-[11px] sm:text-xs font-medium text-[#0B1C3D]/70 hover:text-[#0B1C3D] inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[#0B1C3D]/5"
-              >
-                <Crosshair size={12} /> {copy.centerBtn}
-              </button>
+            <div className="mb-2">
+              <h4 className="text-sm font-bold text-[#0B1C3D]">{copy.treeTitle}</h4>
+              <p className="text-[11px] text-[#0B1C3D]/55 leading-snug">{copy.treeSub}</p>
             </div>
             <div
               ref={treeContainerRef}
               className="rd3-tree-wrap rounded-2xl border border-[#D4AF37]/20 bg-gradient-to-b from-[#F8F1E5]/40 to-white"
-              style={{ width: "100%", height: 420 }}
             >
               {hierarchy && (
                 <Tree
@@ -384,10 +368,10 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
                   renderCustomNodeElement={renderNode}
                   zoomable
                   collapsible={false}
-                  separation={{ siblings: 1.1, nonSiblings: 1.4 }}
-                  nodeSize={{ x: 130, y: 80 }}
-                  scaleExtent={{ min: 0.3, max: 1.6 }}
-                  zoom={0.55}
+                  separation={{ siblings: 1.35, nonSiblings: 1.7 }}
+                  nodeSize={{ x: 220, y: 100 }}
+                  scaleExtent={{ min: 0.4, max: 1.8 }}
+                  zoom={0.8}
                 />
               )}
             </div>
@@ -410,7 +394,8 @@ function ScopedTreeStyles() {
       .ref-result-first { box-shadow: inset 3px 0 0 #D4AF37; }
       .ref-idle-hint { letter-spacing: .03em; }
 
-      .rd3-tree-wrap { overflow: hidden; touch-action: none; }
+      .rd3-tree-wrap { overflow: hidden; touch-action: none; height: 280px; }
+      @media (min-width: 640px) { .rd3-tree-wrap { height: 360px; } }
       .rd3-tree-wrap svg { background: transparent; }
 
       /* Default link */
@@ -440,23 +425,25 @@ function ScopedTreeStyles() {
       }
       .rd3-node-initials {
         font-family: system-ui, sans-serif;
-        font-size: 9px; font-weight: 700;
-        fill: rgba(11,28,61,0.7);
+        font-size: 13px; font-weight: 800;
+        fill: #ffffff;
         pointer-events: none;
+        dominant-baseline: middle;
       }
       .rd3-node-name {
-        font-family: system-ui, sans-serif;
-        font-size: 10px; font-weight: 600;
-        fill: rgba(11,28,61,0.7);
+        font-family: system-ui, "Noto Sans Devanagari", sans-serif;
+        font-size: 15px; font-weight: 600;
+        fill: rgba(11,28,61,0.9);
         dominant-baseline: middle;
         pointer-events: none;
+        letter-spacing: 0.1px;
       }
 
       /* Root (decorative, non-interactive feel) */
       .rd3-node.is-root .rd3-node-card { fill: #0B1C3D; stroke: #D4AF37; stroke-width: 1.5; }
       .rd3-node.is-root .rd3-node-avatar { fill: #D4AF37; }
       .rd3-node.is-root .rd3-node-initials { fill: #0B1C3D; }
-      .rd3-node.is-root .rd3-node-name { fill: #F8F1E5; }
+      .rd3-node.is-root .rd3-node-name { fill: #F8F1E5; font-weight: 700; }
 
       /* Lineage (gold) */
       .rd3-node.is-lineage .rd3-node-card {
@@ -467,11 +454,13 @@ function ScopedTreeStyles() {
       }
       .rd3-node.is-lineage .rd3-node-avatar { fill: #D4AF37; }
       .rd3-node.is-lineage .rd3-node-initials { fill: #0B1C3D; }
-      .rd3-node.is-lineage .rd3-node-name { fill: #0B1C3D; font-weight: 700; }
+      .rd3-node.is-lineage .rd3-node-name { fill: #0B1C3D; font-weight: 800; }
 
       /* Muted */
-      .rd3-node.is-muted .rd3-node-card { fill: #ffffff; stroke: rgba(11,28,61,0.1); opacity: 0.85; }
-      .rd3-node.is-muted .rd3-node-name { opacity: 0.75; }
+      .rd3-node.is-muted .rd3-node-card { fill: #ffffff; stroke: rgba(11,28,61,0.18); }
+      .rd3-node.is-muted .rd3-node-avatar { fill: rgba(11,28,61,0.7); }
+      .rd3-node.is-muted .rd3-node-initials { fill: #ffffff; }
+      .rd3-node.is-muted .rd3-node-name { fill: rgba(11,28,61,0.85); }
 
       /* Selected (green + animated pulse) */
       .rd3-node.is-selected .rd3-node-card {
