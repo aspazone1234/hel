@@ -124,3 +124,13 @@ credentials.json
 *.pem
 *.key
 .credentials
+-e 
+# Environment and credential files
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
+backend/static/handoffs/katha2026_handoff_20260426_111332.zip
