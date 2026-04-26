@@ -50,7 +50,6 @@ const emptyForm = {
   expected_arrival_time: "",
   expected_departure_time: "",
   reference_person_id: "",
-  relation_category: "",
   message: "",
   consent: false,
   travel_mode: "",
@@ -253,9 +252,6 @@ export default function RegisterPage() {
     }
     if (step === 2) {
       if (!form.reference_person_id) e.reference_person = true;
-      const rp = refPersons.find(p => p.id === form.reference_person_id);
-      const rpCats = rp?.relation_categories || [];
-      if (rpCats.length > 0 && !form.relation_category) e.relation_category = true;
     }
     if (step === 3) {
       if (!form.consent) e.consent = true;
@@ -273,7 +269,6 @@ export default function RegisterPage() {
       if (e.expected_arrival_time) msgs.push(lang === "hi" ? "\u0906\u0917\u092E\u0928 \u0938\u092E\u092F \u091A\u0941\u0928\u0947\u0902" : "Expected arrival time is required");
       if (e.expected_departure_time) msgs.push(lang === "hi" ? "\u092A\u094D\u0930\u0938\u094D\u0925\u093E\u0928 \u0938\u092E\u092F \u091A\u0941\u0928\u0947\u0902" : "Expected departure time is required");
       if (e.reference_person) msgs.push(lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Reference person is required");
-      if (e.relation_category) msgs.push(lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 \u091A\u0941\u0928\u0947\u0902" : "Relation with reference person is required");
       if (msgs.length > 0) toast.error(msgs[0]);
     }
     return Object.keys(e).length === 0;
@@ -783,7 +778,6 @@ export default function RegisterPage() {
                 value={form.reference_person_id}
                 onChange={(id, meta) => {
                   set("reference_person_id", id);
-                  set("relation_category", "");
                   setReferenceLabel(meta?.name || "");
                 }}
                 lang={lang}
@@ -832,7 +826,6 @@ export default function RegisterPage() {
                     <SummaryRow label={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D" : "Reference"}
                       value={referenceLabel || refPersons.find(p => p.id === form.reference_person_id)?.name || form.reference_person_id} />
                   )}
-                  {form.relation_category && <SummaryRow label={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927" : "Relation with Reference Person"} value={form.relation_category} />}
                 </div>
               </div>
 

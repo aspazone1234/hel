@@ -310,41 +310,6 @@ export default function AdminDashboard({ user }) {
         </div>
       )}
 
-      {/* By Reference — nested reference + relation + top geographies */}
-      {data.nested_ref_stats?.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="nested-ref-stats">
-          <div className="p-4 border-b flex items-center gap-2">
-            <Heart size={16} className="text-rose-500" />
-            <h2 className="font-semibold text-[#0B1C3D] text-base">By Reference</h2>
-            <span className="text-xs text-gray-400 ml-1">— nested by relation</span>
-          </div>
-          <div className="divide-y">
-            {data.nested_ref_stats.map((ref) => (
-              <div key={ref.name} className="p-4">
-                <button onClick={() => openDrillDown("reference_person", ref.name, `Guests — Ref: ${ref.name}`)}
-                  className="w-full text-left group" data-testid={`nested-ref-${ref.name}`}>
-                  <div className="flex items-center justify-between">
-                    <p className="font-semibold text-[#0B1C3D] group-hover:text-amber-700 transition">{ref.name}</p>
-                    <span className="text-sm font-bold text-amber-700">{ref.total_families} fam · {ref.total_people} ppl</span>
-                  </div>
-                </button>
-                {/* Sub-breakdown by relation */}
-                <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-1.5 pl-2 border-l-2 border-amber-200">
-                  {(ref.relations || []).map((rel) => (
-                    <button key={rel.name}
-                      onClick={() => openDrillDown("relation_category", rel.name, `${rel.name} — ${ref.name}`)}
-                      className="text-left bg-rose-50 hover:bg-rose-100 rounded-lg p-2 transition text-xs" data-testid={`rel-stat-${rel.name}`}>
-                      <p className="font-medium text-[#0B1C3D] truncate">{rel.name || "Other"}</p>
-                      <p className="text-rose-600">{rel.families} fam · {rel.people} ppl</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* Top Geographies */}
       {(data.top_countries?.length > 0 || data.top_states?.length > 0 || data.top_cities?.length > 0) && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden" data-testid="top-geographies">

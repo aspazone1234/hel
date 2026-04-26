@@ -1,0 +1,88 @@
+{
+  "summary": "Iteration 3 testing complete. Backend: 7/7 regression tests passing (login, public reference-persons, reference-tree GET/PUT noop, public reference-tree, registrations/count, /api/admin/dashboard). Frontend: source review of all 9 modified files + live DOM probe via super admin login. ReferenceTreePicker overlay removed and container sized 360/460px (source confirms .rd3-tree-wrap @ 360px / @media >=640px 460px); autoZoom useMemo clamps to [0.42, 0.85]; recentre useEffect at 250ms+600ms after selection. ReferencePersonManager detail panel cleanly removed relation_categories chips/inputs (only Rank + Add child + Delete remain). RegisterPage Step 2, MyRegistrationPage, ExpectedGuestList, ArrivedGuestList, PendingApproval, AdminRoomManagement all confirmed free of relation/relation_category UI (grep + DOM probe). HOWEVER one item from the spec is NOT met: AdminDashboard's 'By Reference × Relation' nested block (RefRelationStatsBlock) is still rendered — the spec requires it to be removed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminDashboard.js",
+        "issue": "RefRelationStatsBlock (the 'Reference Person × Relation' nested-by-relation card) is still rendered at line 392 with [data-testid=ref-relation-stats]; iteration-3 spec explicitly requires the nested-by-relation block to be removed. Source still has lines 441-560 (RefRelationStatsBlock function) and ref.relations.map(rel => ...) at line 508. Live DOM probe confirms the block is visible on Command Centre after super-admin login. Note: the literal testid 'nested-ref-stats' is indeed absent (so the narrow testid check in the spec passes), but the FUNCTIONAL block the spec describes is still present.",
+        "selector": "[data-testid=ref-relation-stats]",
+        "priority": "HIGH"
+      },
+      {
+        "component": "ReferencePersonManager.js",
+        "issue": "Empty-state hint at line 542 still reads: 'Click any node on the left to edit its rank and relation categories.' — should drop '... and relation categories' since relation-categories editing has been removed.",
+        "selector": ".text-xs.text-[#0B1C3D]/45.italic (right detail panel placeholder)",
+        "priority": "LOW"
+      },
+      {
+        "component": "AdminDashboard.js (pre-existing, also flagged in iter-2)",
+        "issue": "Hydration warning: <button> nested inside <button> at AdminDashboard.js:484/492 inside RefRelationStatsBlock. Will go away if the block is removed per spec.",
+        "selector": "[data-testid^=ref-stat-]",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration_3_regression.py",
+    "/app/test_reports/pytest/iteration_3_results.xml"
+  ],
+  "action_items": [
+    "REMOVE the RefRelationStatsBlock from AdminDashboard.js: delete the JSX render at line 392 (<RefRelationStatsBlock ...>) AND the function definition (lines ~441-560). Also drop the now-unused /api/admin/ref-relation-stats axios call. This satisfies the iter-3 spec line: 'AdminDashboard's nested By Reference – nested by relation block removed' and incidentally cleans up the long-standing nested-<button> hydration warning.",
+    "Update ReferencePersonManager.js line 542 placeholder copy from 'Click any node on the left to edit its rank and relation categories.' to 'Click any node on the left to edit its rank.' (drop the dangling 'and relation categories' phrase)."
+  ],
+  "critical_code_review_comments": [
+    "ReferenceTreePicker.jsx: overlay JSX is fully gone — no `ref-tree-overlay` testid in source, no overlayDismissed state. Confirmed via grep. ✓",
+    "ReferenceTreePicker.jsx: autoZoom useMemo (lines 93-101) correctly clamps to [0.42, 0.85] using vCells = depth + 2 and base 0.85*380 / (vCells*100). ✓",
+    "ReferenceTreePicker.jsx: recentre useEffect (lines 113-138) uses .rd3-node.is-selected getBoundingClientRect with 250ms + 600ms passes — sound approach for react-d3-tree's two-pass render. ✓",
+    "ReferenceTreePicker.jsx: .rd3-tree-wrap height 360px default, 460px @ media >=640px (lines 404-410). ✓",
+    "ReferencePersonManager.js: relation-categories state/handlers/UI fully purged. Detail panel only renders Rank input + Add child + Delete buttons. detail-add-cat-input/btn testids do not exist in source. ✓",
+    "ExpectedGuestList.js / ArrivedGuestList.js / PendingApproval.js: grep -ni 'relation' returns only one stranded comment in ExpectedGuestList (`{/* Reference + Relation */}`); no functional relation UI remains. Comment is harmless but could be cleaned up.",
+    "AdminRoomManagement.js: grep confirms no `byRelation` or `ref-*-rel-*` testids. ✓",
+    "AdminDashboard.js: ✗ RefRelationStatsBlock still imported, defined, and rendered — clear miss against the iter-3 spec.",
+    "Backend unchanged this iteration: relation_categories model fields preserved for backwards-compat (per spec). All 7 regression endpoints respond 200."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration_3_regression.py"
+  ],
+  "success_rate": {
+    "backend": "100% (7/7 tests passed)",
+    "frontend": "85% — 8 of 9 modified files match spec; AdminDashboard.js fails the 'remove nested-by-relation block' requirement."
+  },
+  "test_credentials": {
+    "super_admin": "superashwini / supersebhiupper123",
+    "custom_admin": "test / test"
+  },
+  "seed_data_creation": "None — backend test only does a noop PUT (same payload back) so no seed data persists.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "ReferenceTreePicker is only mounted on /register Step 2 which requires a real WhatsApp OTP — cannot reach it without seeding otp_sessions. All checks for it are source-level + grep + structural. The auto-zoom/auto-centre behaviour can only be verified live by seeding an OTP record or adding a backend test mode flag to skip OTP. AdminDashboard nested-by-relation block (RefRelationStatsBlock) is the one outstanding gap vs the iter-3 spec — main agent should delete the JSX render at line 392 of AdminDashboard.js plus the entire RefRelationStatsBlock function (lines ~441-560). Backend regression suite at /app/backend/tests/test_iteration_3_regression.py covers all required smoke endpoints.",
+  "verified_features": {
+    "1_overlay_removed": "PASS (source) — no [data-testid=ref-tree-overlay] in ReferenceTreePicker.jsx; no overlayDismissed state.",
+    "2_auto_zoom_range": "PASS (source) — autoZoom clamps to [0.42, 0.85] via Math.max(0.42, Math.min(0.85, z)).",
+    "3_auto_centre_logic": "PASS (source) — recentre useEffect on .rd3-node.is-selected with 250ms+600ms passes.",
+    "4_container_sizing_360_460": "PASS (source CSS) — .rd3-tree-wrap height: 360px; @media (min-width: 640px) { height: 460px }.",
+    "5_register_step2_no_relation_field": "PASS (grep) — no relation/relation_category UI in RegisterPage.js.",
+    "6_register_validate_no_relation": "PASS (source) — emptyForm + validate() do not reference relation_category.",
+    "7_summary_no_relation_row": "PASS (grep) — no 'सम्बन्ध' / 'Relation with Reference' in RegisterPage.js summary.",
+    "8_my_registration_no_relation": "PASS (grep) — only Reference Person field in MyRegistrationPage.js.",
+    "9_admin_ref_mgmt_no_cat_inputs": "PASS (source + DOM) — detail-add-cat-input/btn absent; only Rank/Add child/Delete remain.",
+    "10_pending_approval_no_relation": "PASS (grep).",
+    "11_expected_guest_list_no_relation": "PASS (grep + DOM probe — no [data-testid=manual-relation], no 'Relation:' text).",
+    "12_arrived_guest_list_no_relation": "PASS (grep).",
+    "13_room_mgmt_flat_ref_view": "PASS (grep + DOM — no ref-*-rel-* testids).",
+    "14_admin_dashboard_nested_block_removed": "FAIL — RefRelationStatsBlock with [data-testid=ref-relation-stats] is still rendered. Spec violation.",
+    "backend_login": "PASS (200, role=superadmin).",
+    "backend_public_reference_persons": "PASS (>=50 entries).",
+    "backend_admin_reference_tree_GET": "PASS.",
+    "backend_admin_reference_tree_PUT_noop": "PASS.",
+    "backend_public_reference_tree": "PASS.",
+    "backend_registrations_count": "PASS.",
+    "backend_admin_dashboard": "PASS (note: actual route is /api/admin/dashboard, not /api/admin/dashboard/stats — spec had a typo)."
+  }
+}

@@ -22,7 +22,6 @@ function EditRegistrationDialog({ reg, user, onClose, onSaved, authHeaders, cust
     travel_details: reg.travel_details || "",
     family_special_request: reg.family_special_request || "",
     selected_days: reg.selected_days || [],
-    relation_category: reg.relation_category || "",
     reference_person_id: reg.reference_person_id || "",
     reference_person_name: reg.reference_person_name || "",
     num_people: reg.num_people || 1,
@@ -34,7 +33,6 @@ function EditRegistrationDialog({ reg, user, onClose, onSaved, authHeaders, cust
 
   const DAYS = ["27-May", "28-May", "29-May", "30-May", "31-May", "1-Jun", "2-Jun", "3-Jun", "4-Jun"];
   const TIME_OPTIONS = ["Early Morning (5-8 AM)", "Morning (8-11 AM)", "Afternoon (11 AM-2 PM)", "Afternoon (2-5 PM)", "Evening (5-8 PM)", "Night (8-11 PM)", "Late Night (11 PM+)"];
-  const RELATION_OPTIONS = ["Family Member", "Friend", "Neighbor", "Colleague", "Relative", "Other"];
 
   useEffect(() => {
     axios.get(`${process.env.REACT_APP_BACKEND_URL}/api/reference-persons/public`).then(r => setRefPersons(r.data || [])).catch(() => {});
@@ -177,7 +175,7 @@ function EditRegistrationDialog({ reg, user, onClose, onSaved, authHeaders, cust
               </div>
 
               {/* Reference + Relation */}
-              <div className="grid grid-cols-2 gap-3">
+              <div>
                 <div>
                   <label className="text-xs font-medium text-gray-600">Reference Person</label>
                   <select className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.reference_person_id}
@@ -187,13 +185,6 @@ function EditRegistrationDialog({ reg, user, onClose, onSaved, authHeaders, cust
                     }}>
                     <option value="">Select...</option>
                     {refPersons.map(rp => <option key={rp.id} value={rp.id}>{rp.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Relation</label>
-                  <select className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.relation_category} onChange={e => setForm({...form, relation_category: e.target.value})}>
-                    <option value="">Select...</option>
-                    {RELATION_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
               </div>
@@ -260,7 +251,6 @@ export default function ExpectedGuestList({ user }) {
   const [rooms, setRooms] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   const [filterRef, setFilterRef] = useState("");
-  const [filterRelation, setFilterRelation] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [refPersons, setRefPersons] = useState([]);
   const [customFields, setCustomFields] = useState([]);
@@ -400,7 +390,7 @@ export default function ExpectedGuestList({ user }) {
         </div>
         <button onClick={() => setShowFilters(!showFilters)} data-testid="toggle-expected-filters"
           className="bg-gray-100 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-200">
-          Filters {(filterRef || filterRelation) ? "●" : ""}
+          Filters {filterRef ? "●" : ""}
         </button>
       </div>
 
@@ -427,14 +417,7 @@ export default function ExpectedGuestList({ user }) {
               {refPersons.map(rp => <option key={rp.id} value={rp.name}>{rp.name}</option>)}
             </select>
           </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600">Relation</label>
-            <select className="block border rounded px-2 py-1 text-sm mt-1" value={filterRelation} onChange={(e) => setFilterRelation(e.target.value)}>
-              <option value="">All</option>
-              {["Friends", "In-laws Side", "Other Relatives", "Business Associates", "Other"].map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
-          <button onClick={() => { setFilterRef(""); setFilterRelation(""); }} className="text-xs text-blue-600 self-end pb-1">Clear</button>
+          <button onClick={() => { setFilterRef(""); }} className="text-xs text-blue-600 self-end pb-1">Clear</button>
         </div>
       )}
 
@@ -443,7 +426,6 @@ export default function ExpectedGuestList({ user }) {
           (() => {
             let filtered = regs;
             if (filterRef) filtered = filtered.filter(r => r.reference_person_name === filterRef);
-            if (filterRelation) filtered = filtered.filter(r => r.relation_category === filterRelation);
             return filtered.length === 0 ? <p className="text-center text-gray-400 py-8">No expected guests found</p> :
             filtered.map((r) => (
             <div key={r.id} className="bg-white rounded-xl p-4 border hover:shadow-sm transition">
@@ -643,15 +625,10 @@ function ManualAddDialog({ onClose, authHeaders, refPersons }) {
     num_people: 1, attendees: [{ id: "a1", name: "", age: "", special_needs: "" }],
     group_head_id: "a1", attendance_intent: "Yes",
     selected_days: [], expected_arrival_time: "", expected_departure_time: "",
-    reference_person_id: "", relation_category: "", message: "", admin_notes: "",
+    reference_person_id: "", message: "", admin_notes: "",
     target_bucket: "expected", travel_mode: "", travel_details: "",
   });
   const [saving, setSaving] = useState(false);
-  const [relationCats, setRelationCats] = useState([]);
-
-  useEffect(() => {
-    axios.get(`${API}/api/relation-categories/public`).then(r => setRelationCats(r.data)).catch(() => {});
-  }, []);
 
   const updatePeople = (n) => {
     const num = Math.max(1, Math.min(20, parseInt(n) || 1));
@@ -676,7 +653,6 @@ function ManualAddDialog({ onClose, authHeaders, refPersons }) {
     if (!form.expected_arrival_time) { toast.error("Arrival time required"); return; }
     if (!form.expected_departure_time) { toast.error("Departure time required"); return; }
     if (!form.reference_person_id) { toast.error("Reference person required"); return; }
-    if (!form.relation_category) { toast.error("Relation required"); return; }
     setSaving(true);
     try {
       await axios.post(`${API}/api/admin/registrations/manual`, form, { headers: authHeaders() });
@@ -691,7 +667,6 @@ function ManualAddDialog({ onClose, authHeaders, refPersons }) {
     "Early Morning (5-8 AM)", "Morning (8-11 AM)", "Afternoon (11 AM-2 PM)",
     "Afternoon (2-5 PM)", "Evening (5-8 PM)", "Night (8-11 PM)", "Late Night (11 PM+)"
   ];
-  const RELATION_OPTIONS = relationCats.length > 0 ? relationCats.map(c => c.name) : ["Friends", "In-laws Side", "Other Relatives", "Business Associates", "Other"];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -776,23 +751,13 @@ function ManualAddDialog({ onClose, authHeaders, refPersons }) {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-gray-600">Reference Person *</label>
-            <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.reference_person_id}
-              onChange={(e) => setForm({ ...form, reference_person_id: e.target.value })} data-testid="manual-ref-person">
-              <option value="">Select...</option>
-              {(refPersons || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600">Relation *</label>
-            <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.relation_category}
-              onChange={(e) => setForm({ ...form, relation_category: e.target.value })} data-testid="manual-relation">
-              <option value="">Select...</option>
-              {RELATION_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
-          </div>
+        <div>
+          <label className="text-xs font-medium text-gray-600">Reference Person *</label>
+          <select className="w-full border rounded px-3 py-2 text-sm mt-1" value={form.reference_person_id}
+            onChange={(e) => setForm({ ...form, reference_person_id: e.target.value })} data-testid="manual-ref-person">
+            <option value="">Select...</option>
+            {(refPersons || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
         </div>
 
         <div className="grid grid-cols-2 gap-3">

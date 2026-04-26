@@ -102,11 +102,11 @@ export default function AdminRoomManagement({ user }) {
 
   const [transferDialog, setTransferDialog] = useState(null); // { roomCode, occupant }
 
-  // Reference person lookup: id -> { name, relation_categories }
+  // Reference person lookup: id -> { name }
   const refById = {};
   const refByName = {};
   (refPersons || []).forEach(rp => {
-    const data = { name: rp.name, categories: rp.relation_categories || [] };
+    const data = { name: rp.name };
     if (rp.id) refById[rp.id] = data;
     if (rp.name) refByName[rp.name] = data;
   });
@@ -121,7 +121,6 @@ export default function AdminRoomManagement({ user }) {
       // Resolve reference person name (registration might only carry the UUID on legacy data)
       const refLookup = refById[r.reference_person_id] || refByName[r.reference_person_name] || null;
       const refName = r.reference_person_name || refLookup?.name || "";
-      const refCategories = refLookup?.categories || [];
       // For Room Management view ONLY: hide attendees marked absent (not_arrived / not_coming)
       // from families that have already checked in. Pre-arrival families keep showing everyone.
       const familyHasArrived = ["arrived", "partially_arrived", "departed"].includes(r.arrival_status);
@@ -135,8 +134,6 @@ export default function AdminRoomManagement({ user }) {
         familyName,
         num: visibleNum,
         ref: refName,
-        refCategories,
-        relation: r.relation_category || "",
         swamsevak: r.assigned_swamsevak || "",
         regId: r.id,
         departureDate: r.departure_date || r.expected_departure_time || "",
@@ -179,7 +176,7 @@ export default function AdminRoomManagement({ user }) {
     return {};
   };
 
-  // Reference view: nested structure {refName: {categories:[], flat:[], byRelation:{relName:[rooms]}}}
+  // Reference view: flat structure {refName: {flat:[rooms]}}
   const buildReferenceGroups = () => {
     const groups = {};
     const unassigned = [];
@@ -192,30 +189,19 @@ export default function AdminRoomManagement({ user }) {
       occupants.forEach(occ => {
         const refName = occ.ref?.trim();
         if (!refName) {
-          // Room without a reference person
-          if (!groups.__NO_REF__) groups.__NO_REF__ = { name: "No Reference Person", categories: [], flat: [], byRelation: {} };
+          if (!groups.__NO_REF__) groups.__NO_REF__ = { name: "No Reference Person", flat: [] };
           if (!groups.__NO_REF__.flat.find(rm => rm.room_code === r.room_code)) groups.__NO_REF__.flat.push(r);
           return;
         }
         if (!groups[refName]) {
-          groups[refName] = { name: refName, categories: occ.refCategories || [], flat: [], byRelation: {} };
+          groups[refName] = { name: refName, flat: [] };
         }
-        const categories = groups[refName].categories;
-        if (!categories || categories.length === 0) {
-          // No subcategories — flat bucket under this reference person
-          if (!groups[refName].flat.find(rm => rm.room_code === r.room_code)) groups[refName].flat.push(r);
-        } else {
-          // Bucket by relation_category (if it matches one of the configured categories; otherwise "Other")
-          const rel = (occ.relation || "").trim();
-          const bucketName = rel && categories.includes(rel) ? rel : (rel || "Other");
-          if (!groups[refName].byRelation[bucketName]) groups[refName].byRelation[bucketName] = [];
-          if (!groups[refName].byRelation[bucketName].find(rm => rm.room_code === r.room_code)) {
-            groups[refName].byRelation[bucketName].push(r);
-          }
+        if (!groups[refName].flat.find(rm => rm.room_code === r.room_code)) {
+          groups[refName].flat.push(r);
         }
       });
     });
-    if (unassigned.length) groups.__UNASSIGNED__ = { name: "Unassigned (vacant rooms)", categories: [], flat: unassigned, byRelation: {} };
+    if (unassigned.length) groups.__UNASSIGNED__ = { name: "Unassigned (vacant rooms)", flat: unassigned };
     return groups;
   };
 
@@ -377,8 +363,7 @@ export default function AdminRoomManagement({ user }) {
             })
             .map(([key, bucket]) => {
             const isSynthetic = key.startsWith("__");
-            const totalRoomsInBucket = bucket.flat.length + Object.values(bucket.byRelation).reduce((s, arr) => s + arr.length, 0);
-            const hasSubs = Object.keys(bucket.byRelation).length > 0;
+            const totalRoomsInBucket = bucket.flat.length;
             return (
               <div key={key} className={`rounded-2xl p-4 ${isSynthetic ? "bg-gray-50 border border-gray-200" : "bg-amber-50/60 border border-amber-200"}`}
                 data-testid={`ref-bucket-${key}`}>
@@ -388,32 +373,14 @@ export default function AdminRoomManagement({ user }) {
                   <span className="text-xs font-normal text-gray-400">({totalRoomsInBucket} rooms)</span>
                 </h3>
 
-                {/* Flat rooms (reference person without categories OR unassigned) */}
                 {bucket.flat.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                     {bucket.flat.map(rm => (
                       <RoomCard key={rm.room_code} rm={rm} roomOccupants={roomOccupants} isSuper={isSuper}
                         onTransfer={setTransferDialog} onDelete={deleteRoom} />
                     ))}
                   </div>
                 )}
-
-                {/* Relation subgroups (reference person with categories) */}
-                {hasSubs && Object.entries(bucket.byRelation).sort(([a], [b]) => a.localeCompare(b)).map(([relName, relRooms]) => (
-                  <div key={relName} className="mt-3 bg-white/60 rounded-xl p-3 border border-amber-100" data-testid={`ref-${key}-rel-${relName}`}>
-                    <h4 className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <span className="inline-block w-1 h-3 bg-amber-400 rounded-full"></span>
-                      {relName}
-                      <span className="text-[10px] font-normal text-gray-400 normal-case">({relRooms.length})</span>
-                    </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                      {relRooms.map(rm => (
-                        <RoomCard key={rm.room_code} rm={rm} roomOccupants={roomOccupants} isSuper={isSuper}
-                          onTransfer={setTransferDialog} onDelete={deleteRoom} />
-                      ))}
-                    </div>
-                  </div>
-                ))}
               </div>
             );
           })}

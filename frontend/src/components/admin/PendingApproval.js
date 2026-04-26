@@ -366,7 +366,6 @@ function FullRegistrationView({ reg, showAttendeeStatus = false }) {
       </Section>
       <Section title="Reference Details">
         <Field label="Reference Person" value={refName || "—"} />
-        <Field label="Relation with Reference Person" value={reg.relation_category} />
         <Field label="Message / Special Request" value={reg.message} />
       </Section>
       <Section title="Status">

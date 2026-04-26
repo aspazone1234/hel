@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Plus, Edit2, Trash2, Save, X, Users, GripVertical, ChevronRight, ChevronDown,
-  RotateCcw, AlertTriangle, Search, Tag, Hash,
+  RotateCcw, AlertTriangle, Search, Hash,
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -14,18 +14,15 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 /**
  * ReferencePersonManager (redesigned)
  *
- * This is the super-admin editor for the customer-facing Reference Tree.
+ * Super-admin editor for the customer-facing Reference Tree.
  *
  *   • Section 1 — FAMILY TREE EDITOR
- *       Indented hierarchical view of the entire family tree.
- *       Drag & drop any node onto another to re-parent it (its whole subtree moves).
- *       Inline rename (English + Hindi), add child, delete (subtree).
- *       All structural changes are local until "Save Tree" is clicked → PUT /api/admin/reference-tree.
+ *       Indented hierarchical view. Drag & drop to re-parent, inline rename
+ *       (English + Hindi), add child, delete subtree. Single batch save.
  *
- *   • Section 2 — REGISTRATION FORM SETTINGS (per node)
- *       Click any node in the tree to open its detail panel: rank + relation categories
- *       (these drive the customer-facing reference picker / relation dropdown).
- *       These are saved per-node via PUT /api/admin/reference-persons/{id}.
+ *   • Section 2 — DETAIL PANEL (per node)
+ *       Click any node → edit its display rank (lower = appears higher in the
+ *       registration form's reference search ordering).
  */
 export default function ReferencePersonManager({ user }) {
   const isSuper = user?.role === "superadmin";
@@ -41,10 +38,9 @@ export default function ReferencePersonManager({ user }) {
   const [savingTree, setSavingTree] = useState(false);
   const [collapsed, setCollapsed] = useState({}); // { id: true/false }
 
-  // ── Per-node settings (rank + relation_categories) ──
+  // ── Per-node settings (rank only) ──
   const [persons, setPersons] = useState([]); // from /admin/reference-persons
   const [selectedId, setSelectedId] = useState(null);
-  const [addCatDraft, setAddCatDraft] = useState("");
   const [savingPerson, setSavingPerson] = useState(false);
 
   // ── Search / filter ──
@@ -222,7 +218,7 @@ export default function ReferencePersonManager({ user }) {
     toast.success("Changes discarded");
   };
 
-  // ── Per-node (rank + relation_categories) ──
+  // ── Per-node (rank) ──
   const selectedPerson = selectedId ? personById[selectedId] : null;
   const selectedNode = selectedId ? byId[selectedId] : null;
   const isSelectedNew = selectedId ? !personById[selectedId] : false;
@@ -243,32 +239,6 @@ export default function ReferencePersonManager({ user }) {
     } finally {
       setSavingPerson(false);
     }
-  };
-
-  const onAddCategory = async () => {
-    if (!selectedPerson) return;
-    const raw = addCatDraft.trim();
-    if (!raw) return;
-    const existing = selectedPerson.relation_categories || [];
-    const toAdd = raw
-      .split(",")
-      .map((c) => c.trim())
-      .filter(Boolean)
-      .filter((c) => !existing.some((x) => x.toLowerCase() === c.toLowerCase()));
-    if (toAdd.length === 0) {
-      setAddCatDraft("");
-      return;
-    }
-    await updatePerson(selectedPerson.id, {
-      relation_categories: [...existing, ...toAdd],
-    });
-    setAddCatDraft("");
-  };
-
-  const onRemoveCategory = async (cat) => {
-    if (!selectedPerson) return;
-    const next = (selectedPerson.relation_categories || []).filter((c) => c !== cat);
-    await updatePerson(selectedPerson.id, { relation_categories: next });
   };
 
   const onChangeRank = async (val) => {
@@ -477,8 +447,7 @@ export default function ReferencePersonManager({ user }) {
       </div>
       <p className="text-xs text-[#0B1C3D]/55 mb-4 max-w-3xl">
         Single source-of-truth editor for the family reference tree shown to registrants.
-        Drag any node onto another to re-parent it. Click a node to edit its rank and
-        the relation categories that appear in the registration form.
+        Drag any node onto another to re-parent it. Click a node to edit its display rank.
       </p>
 
       {!isSuper && (
@@ -590,7 +559,7 @@ export default function ReferencePersonManager({ user }) {
                   <AlertTriangle size={12} className="shrink-0 mt-0.5" />
                   <span>
                     This node is new and not saved yet. Click <b>Save Tree</b> first to enable
-                    rank and relation categories.
+                    rank editing.
                   </span>
                 </div>
               )}
@@ -616,71 +585,6 @@ export default function ReferencePersonManager({ user }) {
                   className="mt-1 h-8 text-sm bg-white border-[#D4AF37]/30"
                   data-testid="detail-rank-input"
                 />
-              </div>
-
-              {/* Relation categories */}
-              <div>
-                <Label className="text-[#0B1C3D]/70 text-xs flex items-center gap-1">
-                  <Tag size={11} /> Relation categories
-                </Label>
-                <p className="text-[10px] text-[#0B1C3D]/45 mt-0.5 mb-2 leading-snug">
-                  Shown on the registration form when a guest selects this person as their reference.
-                  Leave empty to skip the relation dropdown for this person.
-                </p>
-
-                <div className="flex flex-wrap gap-1.5 mb-2 min-h-[24px]">
-                  {(selectedPerson?.relation_categories || []).map((c, i) => (
-                    <span
-                      key={i}
-                      data-testid={`detail-cat-${i}`}
-                      className="inline-flex items-center gap-1 text-[11px] bg-[#F8F1E5] border border-[#D4AF37]/30 text-[#0B1C3D] px-2 py-0.5 rounded-full"
-                    >
-                      {c}
-                      {isSuper && (
-                        <button
-                          onClick={() => onRemoveCategory(c)}
-                          className="text-red-500 hover:text-red-700"
-                          data-testid={`detail-remove-cat-${i}`}
-                          title="Remove"
-                        >
-                          <X size={11} />
-                        </button>
-                      )}
-                    </span>
-                  ))}
-                  {(!selectedPerson?.relation_categories ||
-                    selectedPerson.relation_categories.length === 0) && (
-                    <span className="text-[11px] text-[#0B1C3D]/35 italic">No categories</span>
-                  )}
-                </div>
-
-                {isSuper && !isSelectedNew && (
-                  <div className="flex gap-2">
-                    <Input
-                      value={addCatDraft}
-                      onChange={(e) => setAddCatDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          onAddCategory();
-                        }
-                      }}
-                      placeholder="Add category (or comma-separated list)"
-                      className="h-8 text-sm bg-white border-[#D4AF37]/20 flex-1"
-                      data-testid="detail-add-cat-input"
-                      disabled={savingPerson}
-                    />
-                    <Button
-                      size="sm"
-                      onClick={onAddCategory}
-                      disabled={!addCatDraft.trim() || savingPerson}
-                      className="h-8 bg-[#0B1C3D] text-white"
-                      data-testid="detail-add-cat-btn"
-                    >
-                      <Plus size={12} className="mr-1" /> Add
-                    </Button>
-                  </div>
-                )}
               </div>
 
               {/* Quick actions */}

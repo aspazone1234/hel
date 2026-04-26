@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import Fuse from "fuse.js";
 import { Tree } from "react-d3-tree";
-import { Search, Check, X, MousePointerClick, RefreshCw, ArrowDown, ZoomIn, Hand } from "lucide-react";
+import { Search, Check, X, MousePointerClick, RefreshCw, ArrowDown } from "lucide-react";
 import { Input } from "./ui/input";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -11,25 +11,19 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
  * ReferenceTreePicker — Search-first selector + animated mind-map family tree.
  *
  * UX flow:
- *   1. Mount: ONLY the search box is shown with an animated "↓ Tap a name below to select" hint.
- *   2. As the user types, fuzzy results appear as tappable cards (Fuse.js).
- *   3. On selection: green confirmation card slides in AND an animated SVG family-tree
- *      mind-map renders below, fully zoomed out with a tap-to-explore overlay.
- *   4. Tapping the prominent "Change selection" button clears the selection — both the
- *      green card and the family tree disappear together; the hint reappears.
+ *   1. Mount: ONLY the search box is shown with an animated hint.
+ *   2. Type → fuzzy results appear as tappable cards (Fuse.js).
+ *   3. On selection: green confirmation card slides in AND the mind-map renders below,
+ *      auto-zoomed and auto-centred on the selected node + a few generations of context.
+ *   4. "Change selection" clears everything.
  */
 export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
   const [tree, setTree] = useState(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [showResults, setShowResults] = useState(false);
-  const [translate, setTranslate] = useState({ x: 200, y: 60 });
-  const [overlayDismissed, setOverlayDismissed] = useState(false);
-  const [overlayFading, setOverlayFading] = useState(false);
+  const [translate, setTranslate] = useState({ x: 200, y: 80 });
   const treeContainerRef = useRef(null);
-
-  // Initial zoom level — fully zoomed out so the whole family fits in the frame
-  const INITIAL_ZOOM = 0.32;
 
   // ── Fetch ──
   useEffect(() => {
@@ -86,10 +80,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     while (cur) { out.unshift(cur); cur = cur.parent_id ? byId[cur.parent_id] : null; }
     return out;
   }, [byId]);
-  const parentOf = useCallback((id) => {
-    const n = byId[id];
-    return n?.parent_id ? byId[n.parent_id] : null;
-  }, [byId]);
 
   const selectedNode = value && byId[value] ? byId[value] : null;
   const selectedLineage = useMemo(
@@ -98,28 +88,54 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
   );
   const lineageIds = useMemo(() => new Set(selectedLineage.map(n => n.id)), [selectedLineage]);
 
-  // Center the d3 tree initially relative to the container size — keep it
-  // anchored near the top so the whole tree (zoomed-out) fits in the frame.
+  // ── Auto-zoom level: zoomed out enough to show lineage + a touch of context,
+  // but never so tight that cards overlap. depth = number of generations visible. ──
+  const autoZoom = useMemo(() => {
+    const depth = Math.max(2, selectedLineage.length); // selected + ancestors
+    // We want depth + ~2 generations to fit vertically inside ~85% of the frame.
+    // Frame height varies with viewport; use 380 px as a reasonable design centre
+    // since the box is 360 mobile / 460 desktop. nodeSize.y = 100.
+    const vCells = depth + 2;
+    const z = (0.85 * 380) / (vCells * 100);
+    return Math.max(0.42, Math.min(0.85, +z.toFixed(3)));
+  }, [selectedLineage.length]);
+
+  // Initial centring before the auto-fit kicks in.
   useEffect(() => {
     if (!treeContainerRef.current) return;
     const { clientWidth } = treeContainerRef.current;
-    setTranslate({ x: clientWidth / 2, y: 50 });
+    setTranslate({ x: clientWidth / 2, y: 60 });
   }, [tree]);
 
-  // Reset overlay when a new selection is made
+  // After a selection (or zoom change), re-centre so the selected node sits
+  // near the visual centre of the frame. Done via getBoundingClientRect after
+  // react-d3-tree has rendered with the new zoom.
   useEffect(() => {
-    if (selectedNode) {
-      setOverlayDismissed(false);
-      setOverlayFading(false);
-    }
-  }, [selectedNode]);
-
-  const dismissOverlay = useCallback(() => {
-    if (overlayDismissed || overlayFading) return;
-    setOverlayFading(true);
-    // Match CSS .ref-overlay-fadeout duration
-    setTimeout(() => setOverlayDismissed(true), 320);
-  }, [overlayDismissed, overlayFading]);
+    if (!value || !treeContainerRef.current) return;
+    const recentre = () => {
+      const container = treeContainerRef.current;
+      if (!container) return;
+      const svg = container.querySelector("svg");
+      if (!svg) return;
+      const sel = svg.querySelector(".rd3-node.is-selected");
+      if (!sel) return;
+      const cBox = container.getBoundingClientRect();
+      const sBox = sel.getBoundingClientRect();
+      // Target: selected node centred horizontally; vertically biased a bit
+      // higher so its ancestors are visible above + a row of children below.
+      const targetCx = cBox.left + cBox.width / 2;
+      const targetCy = cBox.top + cBox.height * 0.62;
+      const dx = targetCx - (sBox.left + sBox.width / 2);
+      const dy = targetCy - (sBox.top + sBox.height / 2);
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      setTranslate(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+    };
+    // Two passes: first after zoom takes effect, second to settle once the
+    // re-centred translate has propagated.
+    const t1 = setTimeout(recentre, 250);
+    const t2 = setTimeout(recentre, 600);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [value, tree, autoZoom]);
 
   // ── Search ──
   const results = useMemo(() => {
@@ -156,9 +172,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     change: "चयन बदलें",
     treeTitle: "परिवार वृक्ष",
     treeSub: "आपका चयनित संदर्भ और उसकी पीढ़ी सुनहरी रेखा से दर्शाई गई है।",
-    overlayTitle: "ज़ूम करके देखें",
-    overlaySub: "टैप करें और परिवार वृक्ष में पीढ़ी देखें",
-    overlayCta: "टैप करें",
   } : {
     title: "Who is your reference?",
     sub: "Type the name of the family member you are connected through. We'll help find the closest match.",
@@ -173,9 +186,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     change: "Change selection",
     treeTitle: "Family tree",
     treeSub: "Your selected reference and its lineage are highlighted with the golden line.",
-    overlayTitle: "Tap to zoom in",
-    overlaySub: "Pinch / scroll inside to explore the family tree",
-    overlayCta: "Tap to explore",
   };
 
   if (loading) return <div className="text-sm text-[#0B1C3D]/50 py-8 text-center">Loading…</div>;
@@ -197,7 +207,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     else if (onLineage) cls += " is-lineage";
     else cls += " is-muted";
 
-    // Card sized for readable text. Wider on lineage/selected so longer names fit.
     const w = 200;
     const h = 60;
     return (
@@ -269,7 +278,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
             </div>
           ) : (
             <div>
-              {/* Animated tap-hint banner */}
               <div className="flex items-center justify-center gap-2 px-4 pt-3 pb-1 ref-tap-hint">
                 <ArrowDown size={14} className="text-[#D4AF37] animate-bounce" />
                 <p className="text-[11px] uppercase tracking-wider font-semibold text-[#D4AF37]">{copy.tapHint}</p>
@@ -301,7 +309,7 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
         </div>
       )}
 
-      {/* Idle hint when nothing typed and nothing selected */}
+      {/* Idle hint */}
       {!query.trim() && !selectedNode && (
         <div className="flex items-center justify-center gap-2 py-3 text-[#0B1C3D]/45 italic ref-idle-hint">
           <Search size={14} className="animate-pulse" />
@@ -309,7 +317,7 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
         </div>
       )}
 
-      {/* Selected confirmation + tree (appear together) */}
+      {/* Selected confirmation + tree */}
       {selectedNode && !query.trim() && (
         <>
           <div
@@ -333,7 +341,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
                 )}
               </div>
             </div>
-            {/* Prominent Change selection button */}
             <button
               type="button"
               onClick={clearSelection}
@@ -344,11 +351,13 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
             </button>
           </div>
 
-          {/* Family tree mind-map */}
+          {/* Family tree mind-map — auto-zoomed and auto-centred on the selected node */}
           <div className="ref-card-enter">
-            <div className="mb-2">
-              <h4 className="text-sm font-bold text-[#0B1C3D]">{copy.treeTitle}</h4>
-              <p className="text-[11px] text-[#0B1C3D]/55 leading-snug">{copy.treeSub}</p>
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold text-[#0B1C3D]">{copy.treeTitle}</h4>
+                <p className="text-[11px] text-[#0B1C3D]/55 leading-snug">{copy.treeSub}</p>
+              </div>
             </div>
             <div
               ref={treeContainerRef}
@@ -366,34 +375,9 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
                   collapsible={false}
                   separation={{ siblings: 1.35, nonSiblings: 1.7 }}
                   nodeSize={{ x: 220, y: 100 }}
-                  scaleExtent={{ min: 0.2, max: 1.8 }}
-                  zoom={INITIAL_ZOOM}
+                  scaleExtent={{ min: 0.25, max: 1.8 }}
+                  zoom={autoZoom}
                 />
-              )}
-
-              {/* Tap-to-explore overlay (very mild blur, single click anywhere dismisses) */}
-              {!overlayDismissed && (
-                <button
-                  type="button"
-                  onClick={dismissOverlay}
-                  onTouchStart={dismissOverlay}
-                  data-testid="ref-tree-overlay"
-                  className={`ref-tree-overlay ${overlayFading ? "ref-overlay-fadeout" : ""}`}
-                  aria-label={copy.overlayCta}
-                >
-                  <div className="ref-tree-overlay-inner">
-                    <div className="ref-tree-overlay-icon-stack">
-                      <ZoomIn size={32} strokeWidth={2.2} />
-                      <span className="ref-tree-overlay-icon-pulse" />
-                    </div>
-                    <p className="ref-tree-overlay-title">{copy.overlayTitle}</p>
-                    <p className="ref-tree-overlay-sub">
-                      <Hand size={12} className="inline-block -mt-0.5 mr-1" />
-                      {copy.overlaySub}
-                    </p>
-                    <span className="ref-tree-overlay-cta">{copy.overlayCta}</span>
-                  </div>
-                </button>
               )}
             </div>
           </div>
@@ -415,13 +399,15 @@ function ScopedTreeStyles() {
       .ref-result-first { box-shadow: inset 3px 0 0 #D4AF37; }
       .ref-idle-hint { letter-spacing: .03em; }
 
+      /* Family-tree playground — sized to feel proportional to the surrounding form
+         card on every viewport. Not too cramped, not too airy. */
       .rd3-tree-wrap {
         overflow: hidden;
         touch-action: none;
-        height: 320px;
+        height: 360px;
         position: relative;
       }
-      @media (min-width: 640px) { .rd3-tree-wrap { height: 420px; } }
+      @media (min-width: 640px) { .rd3-tree-wrap { height: 460px; } }
       .rd3-tree-wrap svg { background: transparent; }
 
       /* Default link */
@@ -458,9 +444,7 @@ function ScopedTreeStyles() {
         paint-order: fill;
         stroke: none;
       }
-      /* Unified node-name styling — same look across root / lineage / selected / muted.
-         No bold weight differences, no text strokes. The card chrome (fill / border)
-         carries the highlight, never the text itself. */
+      /* Unified node-name styling — same look across root / lineage / selected / muted. */
       .rd3-node-name {
         font-family: system-ui, "Noto Sans Devanagari", sans-serif;
         font-size: 15px;
@@ -473,13 +457,13 @@ function ScopedTreeStyles() {
         stroke: none;
       }
 
-      /* Root (decorative) */
+      /* Root */
       .rd3-node.is-root .rd3-node-card { fill: #0B1C3D; stroke: #D4AF37; stroke-width: 1.5; }
       .rd3-node.is-root .rd3-node-avatar { fill: #D4AF37; }
       .rd3-node.is-root .rd3-node-initials { fill: #0B1C3D; }
       .rd3-node.is-root .rd3-node-name { fill: #F8F1E5; }
 
-      /* Lineage (gold card, plain text — same weight/style as muted) */
+      /* Lineage */
       .rd3-node.is-lineage .rd3-node-card {
         fill: #FFF8E6;
         stroke: #D4AF37;
@@ -490,13 +474,13 @@ function ScopedTreeStyles() {
       .rd3-node.is-lineage .rd3-node-initials { fill: #0B1C3D; }
       .rd3-node.is-lineage .rd3-node-name { fill: rgba(11,28,61,0.92); }
 
-      /* Muted (default leaf style — the look used as the baseline for ALL nodes) */
+      /* Muted */
       .rd3-node.is-muted .rd3-node-card { fill: #ffffff; stroke: rgba(11,28,61,0.18); }
       .rd3-node.is-muted .rd3-node-avatar { fill: rgba(11,28,61,0.7); }
       .rd3-node.is-muted .rd3-node-initials { fill: #ffffff; }
       .rd3-node.is-muted .rd3-node-name { fill: rgba(11,28,61,0.92); }
 
-      /* Selected (green card) */
+      /* Selected */
       .rd3-node.is-selected .rd3-node-card {
         fill: #ECFDF5;
         stroke: #10B981;
@@ -512,7 +496,7 @@ function ScopedTreeStyles() {
         50%      { filter: drop-shadow(0 0 12px rgba(16,185,129,0.85)); }
       }
 
-      /* Pulse rings around selected node */
+      /* Pulse rings around the selected node */
       .rd3-pulse-1, .rd3-pulse-2 {
         fill: none; stroke: #10B981; stroke-width: 1.5;
         transform-origin: 0px 0px;
@@ -524,91 +508,6 @@ function ScopedTreeStyles() {
         0%   { transform: scale(0.55); opacity: 0.65; }
         70%  { opacity: 0; }
         100% { transform: scale(1.6); opacity: 0; }
-      }
-
-      /* ── Tap-to-explore overlay ── */
-      .ref-tree-overlay {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        background: rgba(248, 241, 229, 0.18);
-        -webkit-backdrop-filter: blur(2.5px) saturate(105%);
-        backdrop-filter: blur(2.5px) saturate(105%);
-        border: 0;
-        padding: 0;
-        z-index: 5;
-        animation: refOverlayIn .45s cubic-bezier(.2,.8,.2,1) both;
-        transition: opacity .32s ease, backdrop-filter .32s ease;
-      }
-      .ref-tree-overlay:hover { background: rgba(248, 241, 229, 0.28); }
-      .ref-tree-overlay:active { transform: scale(0.998); }
-      .ref-overlay-fadeout {
-        opacity: 0;
-        pointer-events: none;
-        -webkit-backdrop-filter: blur(0) saturate(100%);
-        backdrop-filter: blur(0) saturate(100%);
-      }
-      @keyframes refOverlayIn {
-        from { opacity: 0; }
-        to   { opacity: 1; }
-      }
-      .ref-tree-overlay-inner {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 6px;
-        padding: 16px 24px;
-        background: rgba(255,255,255,0.85);
-        border: 1px solid rgba(212,175,55,0.45);
-        border-radius: 18px;
-        box-shadow: 0 8px 28px rgba(11,28,61,0.10);
-        color: #0B1C3D;
-        animation: refOverlayInnerIn .55s cubic-bezier(.2,.8,.2,1) .05s both;
-      }
-      @keyframes refOverlayInnerIn {
-        from { opacity: 0; transform: translateY(6px) scale(.96); }
-        to   { opacity: 1; transform: translateY(0) scale(1); }
-      }
-      .ref-tree-overlay-icon-stack {
-        position: relative;
-        width: 56px; height: 56px;
-        border-radius: 50%;
-        display: flex; align-items: center; justify-content: center;
-        background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%);
-        color: #0B1C3D;
-        box-shadow: 0 4px 14px rgba(212,175,55,0.35);
-      }
-      .ref-tree-overlay-icon-pulse {
-        position: absolute; inset: -6px;
-        border-radius: 50%;
-        border: 2px solid rgba(212,175,55,0.55);
-        animation: refOverlayPulse 1.6s ease-out infinite;
-      }
-      @keyframes refOverlayPulse {
-        0%   { transform: scale(0.85); opacity: 0.7; }
-        70%  { transform: scale(1.25); opacity: 0; }
-        100% { opacity: 0; }
-      }
-      .ref-tree-overlay-title {
-        font-size: 14px; font-weight: 700; letter-spacing: 0.2px;
-        margin-top: 4px;
-      }
-      .ref-tree-overlay-sub {
-        font-size: 11px; color: rgba(11,28,61,0.65);
-        max-width: 240px; text-align: center; line-height: 1.4;
-      }
-      .ref-tree-overlay-cta {
-        margin-top: 4px;
-        font-size: 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.12em;
-        font-weight: 700;
-        color: #B8860B;
       }
     `}</style>
   );

@@ -391,7 +391,6 @@ export default function MyRegistrationPage() {
               onEdit={canEdit ? () => setEditModal("reference") : null}
             >
               <Field label={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F" : "Reference Person"} value={reg.reference_person_name || reg.reference_person_id || "\u2014"} />
-              <Field label={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927" : "Relation"} value={reg.relation_category} />
               {reg.message && <Field label={lang === "hi" ? "\u0938\u0902\u0926\u0947\u0936" : "Message"} value={reg.message} />}
             </CollapsibleSection>
 
@@ -702,7 +701,7 @@ function EditReferenceModal({ reg, lang, onSave, onClose }) {
   const save = async () => {
     if (!refId) { toast.error(lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Reference person required"); return; }
     setSaving(true);
-    await onSave({ reference_person_id: refId, relation_category: "" });
+    await onSave({ reference_person_id: refId });
     setSaving(false);
   };
 

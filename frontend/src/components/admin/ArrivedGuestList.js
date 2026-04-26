@@ -20,7 +20,6 @@ function EditArrivedDialog({ reg, user, onClose, onSaved, authHeaders, customFie
     travel_details: reg.travel_details || "",
     family_special_request: reg.family_special_request || "",
     selected_days: reg.selected_days || [],
-    relation_category: reg.relation_category || "",
     reference_person_id: reg.reference_person_id || "",
     reference_person_name: reg.reference_person_name || "",
     expected_arrival_time: reg.expected_arrival_time || "",
@@ -33,7 +32,6 @@ function EditArrivedDialog({ reg, user, onClose, onSaved, authHeaders, customFie
 
   const DAYS = ["27-May", "28-May", "29-May", "30-May", "31-May", "1-Jun", "2-Jun", "3-Jun", "4-Jun"];
   const TIME_OPTIONS = ["Early Morning (5-8 AM)", "Morning (8-11 AM)", "Afternoon (11 AM-2 PM)", "Afternoon (2-5 PM)", "Evening (5-8 PM)", "Night (8-11 PM)", "Late Night (11 PM+)"];
-  const RELATION_OPTIONS = ["Family Member", "Friend", "Neighbor", "Colleague", "Relative", "Other"];
 
   useEffect(() => {
     axios.get(`${API}/api/reference-persons/public`).then(r => setRefPersons(r.data || [])).catch(() => {});
@@ -127,7 +125,7 @@ function EditArrivedDialog({ reg, user, onClose, onSaved, authHeaders, customFie
                 <div><label className="text-xs font-medium text-gray-600">Travel Mode</label>
                   <input className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.travel_mode} onChange={e => setForm({...form, travel_mode: e.target.value})} /></div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div>
                 <div><label className="text-xs font-medium text-gray-600">Reference Person</label>
                   <select className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.reference_person_id}
                     onChange={e => {
@@ -136,11 +134,6 @@ function EditArrivedDialog({ reg, user, onClose, onSaved, authHeaders, customFie
                     }}>
                     <option value="">Select...</option>
                     {refPersons.map(rp => <option key={rp.id} value={rp.id}>{rp.name}</option>)}
-                  </select></div>
-                <div><label className="text-xs font-medium text-gray-600">Relation</label>
-                  <select className="w-full border rounded-lg px-3 py-2 text-sm mt-1" value={form.relation_category} onChange={e => setForm({...form, relation_category: e.target.value})}>
-                    <option value="">Select...</option>
-                    {RELATION_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select></div>
               </div>
               <div><label className="text-xs font-medium text-gray-600">Family Special Request</label>
