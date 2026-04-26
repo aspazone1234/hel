@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import AddressSelector from "../components/AddressSelector";
+import ReferenceTreePicker from "../components/ReferenceTreePicker";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, ChevronLeft, Globe, Phone, Check, Users, Calendar, Clock, MapPin, User } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronLeft, Globe, Phone, Check, Users, Calendar, Clock, MapPin, User, MessageSquare } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -78,6 +79,7 @@ export default function RegisterPage() {
 
   // Reference data
   const [refPersons, setRefPersons] = useState([]);
+  const [referenceLabel, setReferenceLabel] = useState(""); // resolved name for picker selection (used in summary)
   // Geo data
   const [countries, setCountries] = useState([]);
   const [geoStates, setGeoStates] = useState([]);
@@ -602,6 +604,25 @@ export default function RegisterPage() {
                   errors={{ country: errors.country ? "Required" : "", state: errors.state ? "Required" : "", city: errors.city ? "Required" : "", full_address: errors.full_address ? "Required" : "" }}
                 />
               </div>
+
+              {/* Message / Special Request — moved here from Reference Details */}
+              <div className="border-t border-[#D4AF37]/10 pt-5 space-y-3">
+                <h3 className="text-base font-semibold text-[#0B1C3D] flex items-center gap-1.5">
+                  <MessageSquare size={14} className="text-[#D4AF37]" />
+                  {t.register.message}
+                  <span className="text-[#0B1C3D]/40 text-xs font-normal">
+                    ({lang === "hi" ? "वैकल्पिक" : "optional"})
+                  </span>
+                </h3>
+                <Textarea
+                  data-testid="message-input"
+                  value={form.message}
+                  onChange={e => set("message", e.target.value)}
+                  className="bg-white border-[#D4AF37]/20 text-sm"
+                  rows={3}
+                  placeholder={lang === "hi" ? "कोई संदेश या विशेष अनुरोध (वैकल्पिक)" : "Any message or special request (optional)"}
+                />
+              </div>
             </div>
           )}
 
@@ -746,48 +767,16 @@ export default function RegisterPage() {
                 {lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u093F\u0935\u0930\u0923" : "Reference Details"}
               </h2>
 
-              {/* Reference Person */}
-              <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F *" : "Reference Person *"}</Label>
-                <Select
-                  value={form.reference_person_id}
-                  onValueChange={v => { set("reference_person_id", v); set("relation_category", ""); }}
-                >
-                  <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="reference-person-select">
-                    <SelectValue placeholder={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Select reference person"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {refPersons.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Relation Category — only if the selected reference person defined one */}
-              {(() => {
-                const rp = refPersons.find(p => p.id === form.reference_person_id);
-                const cats = rp?.relation_categories || [];
-                if (!form.reference_person_id || cats.length === 0) return null;
-                return (
-                  <div>
-                    <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0938\u0947 \u0938\u092E\u094D\u092C\u0928\u094D\u0927 *" : "Relation with Reference Person *"}</Label>
-                    <Select value={form.relation_category} onValueChange={v => set("relation_category", v)}>
-                      <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="relation-category-select">
-                        <SelectValue placeholder={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {cats.map((c, i) => <SelectItem key={`${c}-${i}`} value={c}>{c}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                );
-              })()}
-
-              {/* Message */}
-              <div>
-                <Label className="text-[#0B1C3D]/70 text-sm">{t.register.message}</Label>
-                <Textarea data-testid="message-input" value={form.message} onChange={e => set("message", e.target.value)}
-                  className="mt-1.5 bg-white border-[#D4AF37]/20 text-sm" rows={3} />
-              </div>
+              <ReferenceTreePicker
+                value={form.reference_person_id}
+                onChange={(id, meta) => {
+                  set("reference_person_id", id);
+                  set("relation_category", "");
+                  setReferenceLabel(meta?.name || "");
+                }}
+                lang={lang}
+                error={!!errors.reference_person}
+              />
             </div>
           )}
 
@@ -829,7 +818,7 @@ export default function RegisterPage() {
                     value={[form.address.full_address, form.address.city, form.address.state, form.address.country].filter(Boolean).join(", ")} />
                   {form.reference_person_id && (
                     <SummaryRow label={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D" : "Reference"}
-                      value={refPersons.find(p => p.id === form.reference_person_id)?.name || form.reference_person_id} />
+                      value={referenceLabel || refPersons.find(p => p.id === form.reference_person_id)?.name || form.reference_person_id} />
                   )}
                   {form.relation_category && <SummaryRow label={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927" : "Relation with Reference Person"} value={form.relation_category} />}
                 </div>

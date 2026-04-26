@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "root_id": "ft-panchariya-root",
+  "fallback": {
+    "id": "ft-not-sure",
+    "name_en": "I don't know / Not sure",
+    "name_hi": "मुझे पता नहीं / निश्चित नहीं"
+  },
+  "nodes": [
+    {"id": "ft-panchariya-root", "name": "Bhawarlal ji Panchariya + Devaki bai ji", "parent_id": null},
+
+    {"id": "ft-ratnibai", "name": "Ratni bai ji family (Gajanand ji)", "parent_id": "ft-panchariya-root"},
+    {"id": "ft-ratnibai-parmanand", "name": "Parmanand ji", "parent_id": "ft-ratnibai"},
+    {"id": "ft-ratnibai-mahesh", "name": "Mahesh ji", "parent_id": "ft-ratnibai-parmanand"},
+    {"id": "ft-ratnibai-sanjay", "name": "Sanjay ji", "parent_id": "ft-ratnibai-mahesh"},
+    {"id": "ft-ratnibai-manorma", "name": "Manorma ji", "parent_id": "ft-ratnibai-sanjay"},
+    {"id": "ft-ratnibai-santosh", "name": "Santosh ji", "parent_id": "ft-ratnibai-manorma"},
+    {"id": "ft-ratnibai-vijaya", "name": "Vijaya ji", "parent_id": "ft-ratnibai-santosh"},
+
+    {"id": "ft-babulal", "name": "Babu lal ji Panchariya ji family (Raji devi ji)", "parent_id": "ft-panchariya-root"},
+
+    {"id": "ft-babulal-sharada", "name": "Sharada ji family (Amarchand ji)", "parent_id": "ft-babulal"},
+    {"id": "ft-babulal-sharada-pooja", "name": "Pooja ji", "parent_id": "ft-babulal-sharada"},
+    {"id": "ft-babulal-sharada-lalit", "name": "Lalit ji", "parent_id": "ft-babulal-sharada-pooja"},
+    {"id": "ft-babulal-sharada-anmol", "name": "Anmol ji", "parent_id": "ft-babulal-sharada-lalit"},
+
+    {"id": "ft-babulal-sangeeta", "name": "Sangeeta ji family (Satish ji)", "parent_id": "ft-babulal"},
+    {"id": "ft-babulal-sangeeta-kalyani", "name": "Kalyani ji", "parent_id": "ft-babulal-sangeeta"},
+    {"id": "ft-babulal-sangeeta-deveshi", "name": "Deveshi ji", "parent_id": "ft-babulal-sangeeta-kalyani"},
+    {"id": "ft-babulal-sangeeta-piyush", "name": "Piyush ji", "parent_id": "ft-babulal-sangeeta-deveshi"},
+
+    {"id": "ft-babulal-rajesh", "name": "Rajesh ji family (Jaya ji)", "parent_id": "ft-babulal"},
+    {"id": "ft-babulal-rajesh-sweet", "name": "Sweet ji", "parent_id": "ft-babulal-rajesh"},
+    {"id": "ft-babulal-rajesh-madhuri", "name": "Madhuri ji", "parent_id": "ft-babulal-rajesh-sweet"},
+    {"id": "ft-babulal-rajesh-kirti", "name": "Kirti ji", "parent_id": "ft-babulal-rajesh-madhuri"},
+    {"id": "ft-babulal-rajesh-venkatesh", "name": "Venkatesh ji", "parent_id": "ft-babulal-rajesh-kirti"},
+
+    {"id": "ft-ramswaroop", "name": "Ramswaroop ji Panchariya ji family (Shanta devi ji)", "parent_id": "ft-panchariya-root"},
+
+    {"id": "ft-rs-satish", "name": "Satish ji family (Radha ji)", "parent_id": "ft-ramswaroop"},
+    {"id": "ft-rs-satish-nikita", "name": "Nikita ji family (Aditya ji)", "parent_id": "ft-rs-satish"},
+    {"id": "ft-rs-satish-nikita-vrishank", "name": "Vrishank ji", "parent_id": "ft-rs-satish-nikita"},
+    {"id": "ft-rs-satish-nikita-himaksh", "name": "Himaksh ji", "parent_id": "ft-rs-satish-nikita"},
+    {"id": "ft-rs-satish-jayesh", "name": "Jayesh ji family (Mansi ji)", "parent_id": "ft-rs-satish"},
+    {"id": "ft-rs-satish-jayesh-navya", "name": "Navya ji", "parent_id": "ft-rs-satish-jayesh"},
+
+    {"id": "ft-rs-alka1", "name": "Alka ji family (Pitra dev ji)", "parent_id": "ft-ramswaroop"},
+    {"id": "ft-rs-alka2", "name": "Alka ji family (Rakesh ji)", "parent_id": "ft-rs-alka1"},
+    {"id": "ft-rs-alka2-aditya", "name": "Aditya ji family (Ruchika ji)", "parent_id": "ft-rs-alka2"},
+    {"id": "ft-rs-alka2-aditya-nitvik", "name": "Nitvik ji", "parent_id": "ft-rs-alka2-aditya"},
+    {"id": "ft-rs-alka2-tanvi", "name": "Tanvi ji family (Arpit ji)", "parent_id": "ft-rs-alka2"},
+    {"id": "ft-rs-alka2-tanvi-meeral", "name": "Meeral ji", "parent_id": "ft-rs-alka2-tanvi"},
+    {"id": "ft-rs-alka2-tanvi-girisha", "name": "Girisha ji", "parent_id": "ft-rs-alka2-tanvi"},
+
+    {"id": "ft-rs-arun", "name": "Arun ji family (Sarita ji)", "parent_id": "ft-ramswaroop"},
+    {"id": "ft-rs-arun-shailya", "name": "Shailya ji", "parent_id": "ft-rs-arun"},
+    {"id": "ft-rs-arun-dev", "name": "Dev ji", "parent_id": "ft-rs-arun"},
+
+    {"id": "ft-rs-ashok", "name": "Ashok ji family (Madhu ji)", "parent_id": "ft-ramswaroop"},
+    {"id": "ft-rs-ashok-krisha", "name": "Krisha ji", "parent_id": "ft-rs-ashok"},
+    {"id": "ft-rs-ashok-shreya", "name": "Shreya ji", "parent_id": "ft-rs-ashok"},
+    {"id": "ft-rs-ashok-dhairya", "name": "Dhairya ji", "parent_id": "ft-rs-ashok"},
+
+    {"id": "ft-sugandh", "name": "Sugandhchand ji Panchariya ji family (Sita ji)", "parent_id": "ft-panchariya-root"},
+
+    {"id": "ft-sugandh-dinesh", "name": "Dinesh ji family (Saroj ji, Sapna ji)", "parent_id": "ft-sugandh"},
+    {"id": "ft-sugandh-dinesh-monam", "name": "Monam ji family (Ankit ji)", "parent_id": "ft-sugandh-dinesh"},
+    {"id": "ft-sugandh-dinesh-monam-sanvi", "name": "Sanvi ji", "parent_id": "ft-sugandh-dinesh-monam"},
+    {"id": "ft-sugandh-dinesh-monam-mridha", "name": "Mridha ji", "parent_id": "ft-sugandh-dinesh-monam"},
+    {"id": "ft-sugandh-dinesh-akshay", "name": "Akshay ji", "parent_id": "ft-sugandh-dinesh"},
+    {"id": "ft-sugandh-dinesh-akash", "name": "Akash ji family (Isha ji)", "parent_id": "ft-sugandh-dinesh"},
+
+    {"id": "ft-sugandh-naresh", "name": "Naresh ji family (Nitu ji)", "parent_id": "ft-sugandh"},
+    {"id": "ft-sugandh-naresh-tushar", "name": "Tushar ji family (Kajal ji)", "parent_id": "ft-sugandh-naresh"},
+    {"id": "ft-sugandh-naresh-tushar-vidit", "name": "Vidit ji", "parent_id": "ft-sugandh-naresh-tushar"},
+    {"id": "ft-sugandh-naresh-jitesh", "name": "Jitesh ji family (Vaibhavi ji)", "parent_id": "ft-sugandh-naresh"},
+
+    {"id": "ft-sugnibai", "name": "Sugni bai ji family (Omkar ji)", "parent_id": "ft-panchariya-root"},
+    {"id": "ft-sugnibai-poonamchand", "name": "Poonamchand ji", "parent_id": "ft-sugnibai"},
+    {"id": "ft-sugnibai-raju", "name": "Raju ji", "parent_id": "ft-sugnibai-poonamchand"},
+    {"id": "ft-sugnibai-santosh", "name": "Santosh ji", "parent_id": "ft-sugnibai-raju"},
+    {"id": "ft-sugnibai-manoj", "name": "Manoj ji", "parent_id": "ft-sugnibai-santosh"},
+
+    {"id": "ft-nandkishore", "name": "Nandkishore ji Panchariya ji family (Padmadevi ji)", "parent_id": "ft-panchariya-root"},
+    {"id": "ft-nk-rekha", "name": "Rekha ji family (Govind ji)", "parent_id": "ft-nandkishore"},
+    {"id": "ft-nk-rekha-atharva", "name": "Atharva ji", "parent_id": "ft-nk-rekha"},
+    {"id": "ft-nk-manish", "name": "Manish ji family (Sangeeta ji)", "parent_id": "ft-nandkishore"},
+    {"id": "ft-nk-manish-rishabh", "name": "Rishabh ji", "parent_id": "ft-nk-manish"},
+    {"id": "ft-nk-manish-mohit", "name": "Mohit ji", "parent_id": "ft-nk-manish-rishabh"},
+
+    {"id": "ft-anandi", "name": "Anandi bai ji family (Ugalkishore ji)", "parent_id": "ft-panchariya-root"},
+    {"id": "ft-anandi-sushil", "name": "Sushil ji", "parent_id": "ft-anandi"},
+    {"id": "ft-anandi-asha", "name": "Asha ji", "parent_id": "ft-anandi-sushil"},
+    {"id": "ft-anandi-mita", "name": "Mita ji", "parent_id": "ft-anandi-asha"},
+
+    {"id": "ft-shyam", "name": "Shyam ji Panchariya ji family (Usha ji)", "parent_id": "ft-panchariya-root"},
+    {"id": "ft-shyam-asha", "name": "Asha ji family (Mahendra ji)", "parent_id": "ft-shyam"},
+    {"id": "ft-shyam-asha-ruchita", "name": "Ruchita ji", "parent_id": "ft-shyam-asha"},
+    {"id": "ft-shyam-asha-rohit", "name": "Rohit ji", "parent_id": "ft-shyam-asha-ruchita"},
+    {"id": "ft-shyam-sonu", "name": "Sonu ji family (Bhushan ji)", "parent_id": "ft-shyam"},
+    {"id": "ft-shyam-sonu-shaurya", "name": "Shaurya ji", "parent_id": "ft-shyam-sonu"}
+  ]
+}

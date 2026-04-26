@@ -420,6 +420,19 @@ async def verify_otp(body: OTPVerifyRequest):
     }
 
 # ─── Public: Reference Persons & Relation Categories ───
+@api_router.get("/reference-tree/public")
+async def get_reference_tree_public():
+    """Returns the Panchariya family reference tree (flat node list + fallback)
+    used by the public registration form's hierarchical picker."""
+    try:
+        ft_path = ROOT_DIR / "data" / "family_tree.json"
+        with open(ft_path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as e:
+        logger.warning(f"[ReferenceTree] failed to load: {e}")
+        raise HTTPException(status_code=500, detail="Reference tree unavailable")
+
+
 @api_router.get("/reference-persons/public")
 async def get_reference_persons_public():
     # Rank ASC (custom order set by super admin), then alphabetical as tiebreaker
@@ -5781,6 +5794,63 @@ async def startup():
     await db.wa_webhook_events.create_index("wa_message_id")
     await db.wa_conversations.create_index("phone", unique=True, sparse=True)
     await db.wa_conversations.create_index("last_message_at")
+
+    # Seed Panchariya family reference tree (idempotent, marker: is_family_tree=True)
+    try:
+        ft_path = ROOT_DIR / "data" / "family_tree.json"
+        if ft_path.exists():
+            with open(ft_path, "r", encoding="utf-8") as fh:
+                ft_data = json.load(fh)
+            ft_nodes = ft_data.get("nodes", [])
+            # Build path map for breadcrumbs
+            ft_by_id = {n["id"]: n for n in ft_nodes}
+            def _path(nid):
+                out = []
+                cur = ft_by_id.get(nid)
+                while cur:
+                    out.insert(0, cur["name"])
+                    cur = ft_by_id.get(cur.get("parent_id")) if cur.get("parent_id") else None
+                return out
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for n in ft_nodes:
+                await db.reference_persons.update_one(
+                    {"id": n["id"]},
+                    {"$set": {
+                        "id": n["id"],
+                        "name": n["name"],
+                        "parent_id": n.get("parent_id"),
+                        "path": _path(n["id"]),
+                        "is_family_tree": True,
+                        "rank": 0,
+                        "description": "",
+                        "relation_categories": [],
+                        "updated_at": now_iso,
+                    }, "$setOnInsert": {"created_at": now_iso}},
+                    upsert=True,
+                )
+            # Also seed the fallback ("I don't know") so backend lookups resolve its name
+            fb = ft_data.get("fallback")
+            if fb and fb.get("id"):
+                await db.reference_persons.update_one(
+                    {"id": fb["id"]},
+                    {"$set": {
+                        "id": fb["id"],
+                        "name": fb.get("name_en", "I don't know / Not sure"),
+                        "name_hi": fb.get("name_hi", ""),
+                        "parent_id": None,
+                        "path": [],
+                        "is_family_tree": True,
+                        "is_fallback": True,
+                        "rank": 999,
+                        "description": "",
+                        "relation_categories": [],
+                        "updated_at": now_iso,
+                    }, "$setOnInsert": {"created_at": now_iso}},
+                    upsert=True,
+                )
+            logger.info(f"[Seed] Family reference tree: {len(ft_nodes)} nodes upserted")
+    except Exception as ft_err:
+        logger.warning(f"[Seed] Family tree seed skipped: {ft_err}")
 
     # Seed default relation categories if empty
     cat_count = await db.relation_categories.count_documents({})
