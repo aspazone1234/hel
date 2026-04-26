@@ -1,32 +1,34 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
-import { Search, ChevronLeft, ChevronRight, Plus, Minus, Check } from "lucide-react";
+import Fuse from "fuse.js";
+import { Search, Check, HelpCircle, X, Crosshair, ChevronDown, ChevronRight } from "lucide-react";
 import { Input } from "./ui/input";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 /**
- * ReferenceTreePicker — Stacked-carousel family selector.
+ * ReferenceTreePicker — Search-first reference selector.
  *
  * UX:
- *   • Each active generation = one horizontal carousel: ‹ ghost-prev | CENTER | ghost-next ›
- *   • The center block is the committed selection at that level (green).
- *   • Generations the user has drilled into stack vertically above the current.
- *   • Every selection is valid — going deeper is optional.
- *   • A "+ more specific" pill expands the next generation; "− less specific" collapses it.
- *   • Search jumps to any matching node and rebuilds the lineage automatically.
+ *   • Primary input is a single fuzzy search box (Fuse.js).
+ *   • Suggestions render as large tappable cards with name + relation + path.
+ *   • Selecting a result fills a calm green confirmation card (with "Change selection").
+ *   • Below the card, a read-only family tree visualises the lineage:
+ *       – Path from root to the selected node is highlighted in saffron/gold.
+ *       – Selected node gets a green raised card.
+ *       – Other branches stay muted and collapsed (expandable for context).
+ *   • A muted "I don't know / Not sure" fallback is always available.
  */
 export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
   const [tree, setTree] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  // centers[i] = which sibling index is centered at generation i (0-indexed)
-  const [centers, setCenters] = useState([0]);
-  const lastEmittedRef = useRef(null);
-  const initialValueRef = useRef(value); // captured once at mount; ignore later prop changes
-  const initialisedRef = useRef(false);
+  const [query, setQuery] = useState("");
+  const [showResults, setShowResults] = useState(false);
+  const [expanded, setExpanded] = useState(() => new Set()); // node ids the user has manually expanded
+  const treeRootRef = useRef(null);
+  const selectedRef = useRef(null);
 
-  // ── Fetch ──
+  // ── Fetch tree once ──
   useEffect(() => {
     let cancel = false;
     axios.get(`${API}/reference-tree/public`)
@@ -35,9 +37,9 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     return () => { cancel = true; };
   }, []);
 
-  // ── Helpers ──
-  const { byId, childrenOf, rootNode, rootChildren } = useMemo(() => {
-    if (!tree) return { byId: {}, childrenOf: {}, rootNode: null, rootChildren: [] };
+  // ── Index ──
+  const { byId, childrenOf, rootNode, fallback, allNodes, fuse } = useMemo(() => {
+    if (!tree) return { byId: {}, childrenOf: {}, rootNode: null, fallback: null, allNodes: [], fuse: null };
     const byId = {};
     const childrenOf = {};
     for (const n of tree.nodes || []) {
@@ -45,412 +47,422 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
       const p = n.parent_id || "__root__";
       (childrenOf[p] = childrenOf[p] || []).push(n);
     }
-    return {
-      byId,
-      childrenOf,
-      rootNode: byId[tree.root_id] || null,
-      rootChildren: childrenOf[tree.root_id] || [],
-    };
+    const rootNode = byId[tree.root_id] || null;
+    // selectable list excludes root (it's a contextual label, not a person to choose)
+    const selectable = (tree.nodes || []).filter(n => n.id !== tree.root_id);
+    const fuse = new Fuse(selectable, {
+      keys: ["name"],
+      threshold: 0.4,           // forgiving but not chaotic
+      ignoreLocation: true,
+      minMatchCharLength: 2,
+      includeScore: true,
+    });
+    return { byId, childrenOf, rootNode, fallback: tree.fallback, allNodes: selectable, fuse };
   }, [tree]);
 
-  // Compute lineage of a given node id (root excluded — only selectable nodes)
-  const lineageOf = (id) => {
+  // ── Helpers ──
+  const lineageOf = useCallback((id) => {
     const out = [];
     let cur = byId[id];
-    while (cur && cur.id !== tree?.root_id) {
+    while (cur) {
       out.unshift(cur);
       cur = cur.parent_id ? byId[cur.parent_id] : null;
     }
     return out;
+  }, [byId]);
+
+  const parentOf = useCallback((id) => {
+    const n = byId[id];
+    return n?.parent_id ? byId[n.parent_id] : null;
+  }, [byId]);
+
+  // Auto-expand the selected lineage so the tree always reveals it
+  useEffect(() => {
+    if (!value || !byId[value]) return;
+    const lineage = lineageOf(value);
+    setExpanded(prev => {
+      const next = new Set(prev);
+      lineage.forEach(n => next.add(n.id));
+      return next;
+    });
+  }, [value, byId, lineageOf]);
+
+  // Auto-scroll selected leaf into view
+  useEffect(() => {
+    if (!value || !selectedRef.current) return;
+    const t = setTimeout(() => {
+      try { selectedRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+    }, 120);
+    return () => clearTimeout(t);
+  }, [value]);
+
+  const isFallback = value === fallback?.id;
+  const selectedNode = !isFallback && value ? byId[value] : null;
+  const selectedLineage = selectedNode ? lineageOf(selectedNode.id) : [];
+  const highlightedSet = useMemo(() => new Set(selectedLineage.map(n => n.id)), [selectedLineage]);
+  const selectedParent = selectedNode ? parentOf(selectedNode.id) : null;
+
+  // ── Search ──
+  const results = useMemo(() => {
+    const q = query.trim();
+    if (!q || !fuse) return [];
+    return fuse.search(q, { limit: 8 });
+  }, [query, fuse]);
+  const hasFuzzyMatches = results.length > 0 && results.some(r => (r.score ?? 1) > 0.05);
+
+  const select = (nodeId, name) => {
+    onChange?.(nodeId, { name, path: lineageOf(nodeId).map(n => n.name) });
+    setQuery("");
+    setShowResults(false);
+  };
+  const selectFallback = () => {
+    if (!fallback) return;
+    const fname = fallback[lang === "hi" ? "name_hi" : "name_en"];
+    onChange?.(fallback.id, { name: fname, path: [] });
+    setQuery("");
+    setShowResults(false);
+  };
+  const clearSelection = () => {
+    onChange?.("", { name: "", path: [] });
   };
 
-  // Sync external `value` → `centers` ONCE on first tree load (edit-mode prefill).
-  // After that the picker is uncontrolled internally so we don't loop with the parent.
-  useEffect(() => {
-    if (!tree || initialisedRef.current) return;
-    initialisedRef.current = true;
-    const v = initialValueRef.current;
-    if (!v || !byId[v]) return;
-    const lineage = lineageOf(v);
-    if (lineage.length === 0) return;
-    const idxs = [];
-    let siblings = rootChildren;
-    for (const node of lineage) {
-      const i = siblings.findIndex(s => s.id === node.id);
-      if (i < 0) break;
-      idxs.push(i);
-      siblings = childrenOf[node.id] || [];
-    }
-    if (idxs.length > 0) {
-      setCenters(idxs);
-      lastEmittedRef.current = v; // suppress redundant onChange immediately after init
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tree]);
-
-  // ── Build active generations from `centers` ──
-  const generations = useMemo(() => {
-    if (!tree) return [];
-    const gens = [];
-    let nodes = rootChildren;
-    let parentName = rootNode ? rootNode.name : "";
-    for (let i = 0; i < centers.length; i++) {
-      if (nodes.length === 0) break;
-      const idx = Math.min(Math.max(centers[i], 0), nodes.length - 1);
-      gens.push({ depth: i, nodes, currentIdx: idx, parentName });
-      const centerNode = nodes[idx];
-      nodes = childrenOf[centerNode.id] || [];
-      parentName = centerNode.name;
-    }
-    return gens;
-  }, [tree, centers, rootChildren, childrenOf, rootNode]);
-
-  const deepestGen = generations[generations.length - 1] || null;
-  const selectedNode = deepestGen ? deepestGen.nodes[deepestGen.currentIdx] : null;
-  const canGoDeeper = selectedNode && (childrenOf[selectedNode.id] || []).length > 0;
-
-  // Emit selection upward whenever it changes
-  useEffect(() => {
-    if (!selectedNode) return;
-    if (lastEmittedRef.current === selectedNode.id) return;
-    lastEmittedRef.current = selectedNode.id;
-    onChange?.(selectedNode.id, {
-      name: selectedNode.name,
-      path: lineageOf(selectedNode.id).map(n => n.name),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNode]);
-
-  // ── Mutations ──
-  const setCenterAt = (depth, newIdx) => {
-    setCenters(prev => {
-      const next = prev.slice(0, depth + 1);
-      next[depth] = newIdx;
+  // ── Tree visualisation helpers ──
+  const toggleExpand = (id) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
   };
-  const stepCenter = (depth, dir) => {
-    const gen = generations[depth];
-    if (!gen) return;
-    const total = gen.nodes.length;
-    if (total <= 1) return;
-    const next = (gen.currentIdx + dir + total) % total;
-    setCenterAt(depth, next);
+  const expandAll = () => {
+    if (!tree) return;
+    setExpanded(new Set((tree.nodes || []).map(n => n.id)));
   };
-  const goDeeper = () => {
-    if (!canGoDeeper) return;
-    setCenters(c => [...c, 0]);
+  const collapseAll = () => {
+    // keep selected lineage expanded
+    setExpanded(new Set(selectedLineage.map(n => n.id)));
   };
-  const goShallower = () => {
-    setCenters(c => (c.length > 1 ? c.slice(0, -1) : c));
+  const centerSelected = () => {
+    if (!selectedRef.current) return;
+    selectedRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
-  // Search — pick a node directly and rebuild centers from its lineage
-  const searchResults = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q || !tree) return null;
-    return (tree.nodes || []).filter(n => n.name.toLowerCase().includes(q)).slice(0, 25);
-  }, [search, tree]);
-
-  const jumpTo = (id) => {
-    const lineage = lineageOf(id);
-    if (lineage.length === 0) return;
-    const idxs = [];
-    let siblings = rootChildren;
-    for (const node of lineage) {
-      const i = siblings.findIndex(s => s.id === node.id);
-      if (i < 0) break;
-      idxs.push(i);
-      siblings = childrenOf[node.id] || [];
-    }
-    if (idxs.length > 0) setCenters(idxs);
-    setSearch("");
-  };
+  // Build a flat list of visible tree rows (iterative DFS, respects expanded state)
+  const flatTree = useMemo(() => {
+    if (!tree) return [];
+    const out = [];
+    const walk = (parentId, depth) => {
+      const kids = childrenOf[parentId] || [];
+      for (const node of kids) {
+        const hasKids = (childrenOf[node.id] || []).length > 0;
+        const isOpen = expanded.has(node.id);
+        out.push({ node, depth, hasKids, isOpen });
+        if (hasKids && isOpen) walk(node.id, depth + 1);
+      }
+    };
+    walk(tree.root_id, 0);
+    return out;
+  }, [tree, childrenOf, expanded]);
 
   // ── Copy ──
   const copy = lang === "hi" ? {
     title: "आपका संदर्भ कौन है?",
-    sub: "जिस परिवार या व्यक्ति के माध्यम से आप जुड़े हैं उन्हें चुनें। पीढ़ी के तीर ‹ › से दूसरा नाम चुन सकते हैं।",
-    placeholder: "नाम खोजें",
-    helper: "खोजें या नीचे पीढ़ियों में से चुनें।",
-    moreSpecific: "और विशिष्ट",
-    less: "वापस",
-    relPrefix: "",
-    relSuffix: " से",
-    searchResults: "खोज परिणाम",
-    noResults: "कोई परिणाम नहीं",
-    continueWith: "जारी रखें: ",
+    sub: "जिस परिवार के सदस्य के माध्यम से आप जुड़े हैं उनका नाम लिखें। सही व्यक्ति ढूँढने में हम आपकी सहायता करेंगे।",
+    placeholder: "संदर्भ नाम खोजें",
+    helper: "आप अधूरा नाम लिख सकते हैं, हम मेल खाते सुझाव दिखाएँगे।",
+    closest: "मेल खाते सुझाव",
+    noResults: "यह नाम नहीं मिला।",
+    noResultsHelp: "कृपया वर्तनी जाँचें या किसी स्वयंसेवक से सहायता लें।",
+    selected: "चयनित संदर्भ",
+    change: "बदलें",
+    notSure: fallback?.name_hi || "मुझे पता नहीं / निश्चित नहीं",
+    notSureHelp: "हमारी टीम बाद में पुष्टि करने में मदद कर सकती है।",
+    sonOf: "के यहाँ से",
+    treeTitle: "परिवार वृक्ष",
+    treeSub: "आपकी चयनित शाखा सुनहरी रेखा से दर्शाई गई है।",
+    centerBtn: "चयनित दिखाएँ",
+    expandAll: "सभी खोलें",
+    collapseAll: "सभी बंद करें",
+    rootLabel: "मूल परिवार",
   } : {
     title: "Who is your reference?",
-    sub: "Pick the family or person you are connected through. Use the ‹ › arrows to switch within a generation.",
-    placeholder: "Search name",
-    helper: "Search or pick from the generations below.",
-    moreSpecific: "More specific",
-    less: "Step back",
-    relPrefix: "From ",
-    relSuffix: "",
-    searchResults: "Search results",
-    noResults: "No matches",
-    continueWith: "Continue with: ",
+    sub: "Type the name of the family member you are connected through. We'll help find the closest match.",
+    placeholder: "Search reference name",
+    helper: "You can type a partial name; spelling may be approximate.",
+    closest: "Showing closest matches",
+    noResults: "We couldn't find this name.",
+    noResultsHelp: "Please check the spelling or ask a volunteer for help.",
+    selected: "Selected reference",
+    change: "Change selection",
+    notSure: fallback?.name_en || "I don't know / Not sure",
+    notSureHelp: "Our team can help confirm this later if needed.",
+    sonOf: "From",
+    treeTitle: "Family tree",
+    treeSub: "Your selected branch is shown with a golden line.",
+    centerBtn: "Center selected",
+    expandAll: "Expand all",
+    collapseAll: "Collapse all",
+    rootLabel: "Root family",
   };
 
-  // ── Render ──
   if (loading) {
-    return <div className="text-sm text-[#0B1C3D]/50 py-6 text-center">Loading…</div>;
+    return <div className="text-sm text-[#0B1C3D]/50 py-8 text-center">Loading…</div>;
   }
   if (!tree) {
-    return <div className="text-sm text-red-500 py-6 text-center">Could not load reference list.</div>;
+    return <div className="text-sm text-red-500 py-8 text-center">Could not load reference list.</div>;
   }
 
+  // ── Render ──
   return (
-    <div className="space-y-4" data-testid="reference-tree-picker">
-      {/* Header */}
+    <div className="space-y-5" data-testid="reference-tree-picker">
+      {/* Title + subtitle */}
       <div>
-        <h3 className="text-base font-bold text-[#0B1C3D]" data-testid="ref-title">{copy.title}</h3>
-        <p className="text-xs text-[#0B1C3D]/60 mt-1 leading-relaxed">{copy.sub}</p>
+        <h3 className="text-base sm:text-lg font-bold text-[#0B1C3D]" data-testid="ref-title">{copy.title}</h3>
+        <p className="text-xs sm:text-sm text-[#0B1C3D]/60 mt-1.5 leading-relaxed">{copy.sub}</p>
       </div>
 
-      {/* Search */}
+      {/* Search input */}
       <div>
         <div className="relative">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#D4AF37]" />
+          <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#D4AF37]" />
           <Input
             data-testid="ref-search"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
+            value={query}
+            onChange={e => { setQuery(e.target.value); setShowResults(true); }}
+            onFocus={() => setShowResults(true)}
             placeholder={copy.placeholder}
-            className="pl-9 bg-white border-[#D4AF37]/20 h-10 text-sm"
+            className="pl-11 pr-10 h-12 text-base bg-white border-[#D4AF37]/30 focus-visible:ring-[#D4AF37]/40 focus-visible:border-[#D4AF37]"
           />
+          {query && (
+            <button
+              type="button"
+              onClick={() => { setQuery(""); setShowResults(false); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/40 hover:text-[#0B1C3D]"
+              aria-label="clear"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
-        <p className="text-[11px] text-[#0B1C3D]/45 mt-1 leading-snug">{copy.helper}</p>
+        <p className="text-[11px] sm:text-xs text-[#0B1C3D]/50 mt-1.5 leading-snug">{copy.helper}</p>
       </div>
 
-      {/* Search results overlay */}
-      {searchResults && (
-        <div className="space-y-1.5 bg-[#F8F1E5]/60 border border-[#D4AF37]/15 rounded-xl p-2">
-          <p className="text-[10px] uppercase tracking-wide text-[#0B1C3D]/50 px-1">
-            {copy.searchResults}
-          </p>
-          {searchResults.length === 0 ? (
-            <div className="text-xs text-[#0B1C3D]/50 py-3 text-center">{copy.noResults}</div>
+      {/* Search results panel */}
+      {showResults && query.trim() && (
+        <div className="rounded-2xl border border-[#D4AF37]/20 bg-white shadow-sm overflow-hidden">
+          {results.length === 0 ? (
+            <div className="p-5 text-center">
+              <p className="text-sm font-medium text-[#0B1C3D]/70">{copy.noResults}</p>
+              <p className="text-xs text-[#0B1C3D]/45 mt-1">{copy.noResultsHelp}</p>
+              <button
+                type="button"
+                onClick={selectFallback}
+                data-testid="ref-not-sure-fallback"
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#0B1C3D]/5 hover:bg-[#0B1C3D]/10 text-sm font-medium text-[#0B1C3D]"
+              >
+                <HelpCircle size={14} /> {copy.notSure}
+              </button>
+            </div>
           ) : (
-            <div className="space-y-1 max-h-[260px] overflow-y-auto pr-1">
-              {searchResults.map(n => {
-                const path = lineageOf(n.id).map(x => x.name);
-                return (
-                  <button
-                    key={n.id}
-                    type="button"
-                    onClick={() => jumpTo(n.id)}
-                    data-testid={`ref-search-${n.id}`}
-                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-white border border-transparent hover:border-[#D4AF37]/30 transition-all flex items-center gap-2"
-                  >
-                    <Avatar name={n.name} size={28} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[#0B1C3D] truncate">{n.name}</p>
-                      {path.length > 1 && (
-                        <p className="text-[10px] text-[#0B1C3D]/45 truncate">{path.slice(0, -1).join(" → ")}</p>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
+            <div>
+              {hasFuzzyMatches && results.some(r => (r.score ?? 0) > 0.2) && (
+                <p className="text-[11px] uppercase tracking-wide text-[#0B1C3D]/50 px-4 pt-3">{copy.closest}</p>
+              )}
+              <ul className="divide-y divide-[#D4AF37]/10">
+                {results.map(({ item, score }) => {
+                  const parent = parentOf(item.id);
+                  const path = lineageOf(item.id).map(n => n.name);
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => select(item.id, item.name)}
+                        data-testid={`ref-result-${item.id}`}
+                        className="w-full text-left px-4 py-3 hover:bg-[#F8F1E5]/60 active:bg-[#F8F1E5] transition-colors"
+                      >
+                        <p className="text-sm sm:text-base font-semibold text-[#0B1C3D] leading-tight">{item.name}</p>
+                        {parent && parent.id !== tree.root_id && (
+                          <p className="text-xs text-[#0B1C3D]/60 mt-0.5">{copy.sonOf} {parent.name}</p>
+                        )}
+                        {path.length > 1 && (
+                          <p className="text-[11px] text-[#0B1C3D]/40 mt-1 truncate">{path.slice(0, -1).join(" → ")}</p>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
           )}
         </div>
       )}
 
-      {/* Stacked generation carousels */}
-      {!searchResults && (
-        <div className="space-y-3">
-          {generations.map((gen, i) => {
-            const isDeepest = i === generations.length - 1;
-            return (
-              <GenerationCarousel
-                key={`gen-${i}`}
-                gen={gen}
-                isDeepest={isDeepest}
-                lang={lang}
-                relPrefix={copy.relPrefix}
-                relSuffix={copy.relSuffix}
-                onPrev={() => stepCenter(i, -1)}
-                onNext={() => stepCenter(i, +1)}
-              />
-            );
-          })}
-
-          {/* Action row — drill or step back */}
-          {(canGoDeeper || generations.length > 1) && (
-            <div className="flex items-center justify-center gap-2 pt-1">
-              {generations.length > 1 && (
-                <button
-                  type="button"
-                  onClick={goShallower}
-                  data-testid="ref-go-shallower"
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium text-[#0B1C3D]/60 hover:text-[#0B1C3D] bg-[#0B1C3D]/5 hover:bg-[#0B1C3D]/10 transition-colors"
-                >
-                  <Minus size={12} /> {copy.less}
-                </button>
-              )}
-              {canGoDeeper && (
-                <button
-                  type="button"
-                  onClick={goDeeper}
-                  data-testid="ref-go-deeper"
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold text-[#0B1C3D] bg-[#D4AF37]/15 hover:bg-[#D4AF37]/30 border border-[#D4AF37]/40 transition-colors"
-                >
-                  <Plus size={12} /> {copy.moreSpecific}
-                </button>
-              )}
+      {/* Selected confirmation card */}
+      {(selectedNode || isFallback) && !query.trim() && (
+        <div
+          data-testid="ref-confirmation"
+          className="rounded-2xl border border-emerald-500/60 bg-emerald-50 p-4 sm:p-5 relative overflow-hidden"
+        >
+          <div className="absolute inset-y-0 left-0 w-1.5 bg-emerald-500" />
+          <p className="text-[11px] uppercase tracking-wide text-emerald-700/80 font-semibold mb-2">{copy.selected}</p>
+          <div className="flex items-start gap-3">
+            <div className="shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white flex items-center justify-center shadow-sm">
+              <Check size={18} strokeWidth={3} />
             </div>
-          )}
-
-          {/* Continue confirmation */}
-          {selectedNode && (
-            <div className="text-center pt-1">
-              <p className="text-xs text-[#0B1C3D]/55">
-                {copy.continueWith}
-                <span className="text-emerald-700 font-semibold">{selectedNode.name}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-base sm:text-lg font-bold text-emerald-900 leading-tight" data-testid="ref-selected-name">
+                {isFallback ? copy.notSure : selectedNode.name}
               </p>
+              {!isFallback && selectedParent && selectedParent.id !== tree.root_id && (
+                <p className="text-xs sm:text-sm text-emerald-800/80 mt-1">{copy.sonOf} {selectedParent.name}</p>
+              )}
+              {!isFallback && selectedLineage.length > 1 && (
+                <p className="text-[11px] sm:text-xs text-emerald-700/65 mt-1.5 leading-relaxed break-words">
+                  {selectedLineage.slice(0, -1).map(n => n.name).join(" → ")}
+                </p>
+              )}
+              {isFallback && (
+                <p className="text-xs sm:text-sm text-emerald-800/75 mt-1">{copy.notSureHelp}</p>
+              )}
+            </div>
+          </div>
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={clearSelection}
+              data-testid="ref-change"
+              className="text-xs sm:text-sm font-semibold text-emerald-700 hover:text-emerald-800 underline-offset-4 hover:underline"
+            >
+              {copy.change}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Read-only family tree */}
+      <div className="pt-2">
+        <div className="flex items-end justify-between gap-3 mb-3">
+          <div className="min-w-0">
+            <h4 className="text-sm font-bold text-[#0B1C3D]">{copy.treeTitle}</h4>
+            <p className="text-[11px] text-[#0B1C3D]/55 leading-snug">{copy.treeSub}</p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {selectedNode && (
+              <button type="button" onClick={centerSelected} data-testid="ref-center"
+                className="text-[11px] sm:text-xs font-medium text-[#0B1C3D]/70 hover:text-[#0B1C3D] inline-flex items-center gap-1 px-2 py-1 rounded-md hover:bg-[#0B1C3D]/5">
+                <Crosshair size={12} /> {copy.centerBtn}
+              </button>
+            )}
+            <button type="button" onClick={expandAll} className="text-[11px] sm:text-xs text-[#0B1C3D]/55 hover:text-[#0B1C3D] px-2 py-1 rounded-md hover:bg-[#0B1C3D]/5">
+              {copy.expandAll}
+            </button>
+            <button type="button" onClick={collapseAll} className="text-[11px] sm:text-xs text-[#0B1C3D]/55 hover:text-[#0B1C3D] px-2 py-1 rounded-md hover:bg-[#0B1C3D]/5">
+              {copy.collapseAll}
+            </button>
+          </div>
+        </div>
+
+        <div
+          ref={treeRootRef}
+          className="rounded-2xl border border-[#D4AF37]/20 bg-gradient-to-b from-[#F8F1E5]/40 to-white p-3 sm:p-4 max-h-[420px] overflow-y-auto"
+        >
+          {/* Root label (non-selectable, contextual) */}
+          {rootNode && (
+            <div className="flex items-center gap-2 pb-2 mb-2 border-b border-[#D4AF37]/15">
+              <div className="w-6 h-6 rounded-full bg-[#D4AF37]/20 flex items-center justify-center">
+                <span className="text-[10px] font-bold text-[#0B1C3D]/70">*</span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] uppercase tracking-wide text-[#0B1C3D]/50 leading-none">{copy.rootLabel}</p>
+                <p className="text-xs sm:text-sm font-semibold text-[#0B1C3D] truncate">{rootNode.name}</p>
+              </div>
             </div>
           )}
+
+          <ul className="space-y-1">
+            {flatTree.map(item => (
+              <TreeRow
+                key={item.node.id}
+                node={item.node}
+                depth={item.depth}
+                hasKids={item.hasKids}
+                isOpen={item.isOpen}
+                isSelected={item.node.id === (isFallback ? null : value)}
+                isAncestor={highlightedSet.has(item.node.id) && item.node.id !== value}
+                onPath={highlightedSet.has(item.node.id)}
+                onToggle={() => toggleExpand(item.node.id)}
+                refSetter={item.node.id === value ? selectedRef : null}
+              />
+            ))}
+          </ul>
         </div>
+      </div>
+
+      {/* I don't know fallback */}
+      {!isFallback && !selectedNode && (
+        <button
+          type="button"
+          onClick={selectFallback}
+          data-testid="ref-not-sure"
+          className="w-full text-left rounded-2xl border border-dashed border-[#0B1C3D]/20 hover:border-[#0B1C3D]/40 p-4 flex items-start gap-3 bg-white hover:bg-[#F8F1E5]/60 transition-colors"
+        >
+          <div className="w-9 h-9 rounded-full bg-[#0B1C3D]/5 text-[#0B1C3D]/60 flex items-center justify-center shrink-0">
+            <HelpCircle size={16} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[#0B1C3D]">{copy.notSure}</p>
+            <p className="text-xs text-[#0B1C3D]/55 mt-0.5">{copy.notSureHelp}</p>
+          </div>
+        </button>
       )}
     </div>
   );
 }
 
-/* ─────────────────────────  Generation carousel  ───────────────────────── */
-function GenerationCarousel({ gen, isDeepest, lang, relPrefix, relSuffix, onPrev, onNext }) {
-  const { nodes, currentIdx, parentName, depth } = gen;
-  const total = nodes.length;
-  const center = nodes[currentIdx];
-  const prev = total > 1 ? nodes[(currentIdx - 1 + total) % total] : null;
-  const next = total > 1 ? nodes[(currentIdx + 1) % total] : null;
-  const canPaginate = total > 1;
+/* ───────────── Tree row (flat, iterative) ───────────── */
+function TreeRow({ node, depth, hasKids, isOpen, isSelected, isAncestor, onPath, onToggle, refSetter }) {
+  let containerCls = "group flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors relative ";
+  if (isSelected) containerCls += "bg-emerald-50 border border-emerald-500";
+  else if (isAncestor) containerCls += "bg-[#D4AF37]/10 border border-[#D4AF37]/40";
+  else containerCls += "hover:bg-white";
 
-  const relText = `${relPrefix}${shortName(parentName)}${relSuffix}`;
+  let nameCls = "min-w-0 flex-1 truncate text-xs sm:text-sm leading-snug ";
+  if (isSelected) nameCls += "font-bold text-emerald-900";
+  else if (isAncestor) nameCls += "font-semibold text-[#0B1C3D]";
+  else nameCls += "text-[#0B1C3D]/55";
+
+  let dotCls = "shrink-0 w-2 h-2 rounded-full ";
+  if (isSelected) dotCls += "bg-emerald-600";
+  else if (isAncestor) dotCls += "bg-[#D4AF37]";
+  else dotCls += "bg-[#0B1C3D]/15";
 
   return (
-    <div data-testid={`ref-gen-${depth}`}>
-      {/* Tiny gen counter */}
-      <p className="text-[10px] uppercase tracking-wider text-[#0B1C3D]/35 mb-1 px-1">
-        {lang === "hi" ? `पीढ़ी ${depth + 1}` : `Generation ${depth + 1}`}
-        {canPaginate && (
-          <span className="ml-2 text-[#0B1C3D]/40">{currentIdx + 1} / {total}</span>
+    <li>
+      <div ref={refSetter} className={containerCls} style={{ marginLeft: depth * 14 }}>
+        {depth > 0 && (
+          <span aria-hidden className={`absolute left-[-8px] top-0 bottom-0 w-px ${onPath ? "bg-[#D4AF37]" : "bg-[#0B1C3D]/10"}`} />
         )}
-      </p>
-      <div className="flex items-stretch gap-1.5">
-        {/* Prev arrow + ghost label */}
-        <button
-          type="button"
-          onClick={onPrev}
-          disabled={!canPaginate}
-          data-testid={`ref-prev-${depth}`}
-          className={`shrink-0 w-7 self-stretch flex items-center justify-center rounded-lg transition-colors ${
-            canPaginate
-              ? "text-[#0B1C3D]/50 hover:text-[#0B1C3D] hover:bg-[#0B1C3D]/5"
-              : "text-[#0B1C3D]/15 cursor-not-allowed"
-          }`}
-          aria-label="previous"
-        >
-          <ChevronLeft size={18} />
-        </button>
-        <GhostLabel name={prev?.name} side="left" />
-
-        {/* Center block — selected */}
-        <CenterBlock node={center} relText={relText} isDeepest={isDeepest} />
-
-        <GhostLabel name={next?.name} side="right" />
-        {/* Next arrow */}
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={!canPaginate}
-          data-testid={`ref-next-${depth}`}
-          className={`shrink-0 w-7 self-stretch flex items-center justify-center rounded-lg transition-colors ${
-            canPaginate
-              ? "text-[#0B1C3D]/50 hover:text-[#0B1C3D] hover:bg-[#0B1C3D]/5"
-              : "text-[#0B1C3D]/15 cursor-not-allowed"
-          }`}
-          aria-label="next"
-        >
-          <ChevronRight size={18} />
-        </button>
+        {hasKids ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            data-testid={`ref-toggle-${node.id}`}
+            className="shrink-0 w-5 h-5 rounded-md flex items-center justify-center text-[#0B1C3D]/50 hover:text-[#0B1C3D]"
+            aria-label={isOpen ? "collapse" : "expand"}
+          >
+            {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </button>
+        ) : (
+          <span className="shrink-0 w-5" />
+        )}
+        <span className={dotCls} />
+        <p className={nameCls}>{node.name}</p>
+        {isSelected && (
+          <span className="shrink-0 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+            <Check size={11} strokeWidth={3} /> Selected
+          </span>
+        )}
       </div>
-    </div>
+    </li>
   );
-}
-
-function CenterBlock({ node, relText, isDeepest }) {
-  return (
-    <div
-      data-testid={`ref-center-${node.id}`}
-      className={`flex-1 min-w-0 flex items-center gap-2.5 px-3 py-2 rounded-xl border-2 transition-all ${
-        isDeepest
-          ? "bg-emerald-50 border-emerald-500 shadow-[0_2px_8px_-2px_rgba(16,185,129,0.35)]"
-          : "bg-emerald-50/70 border-emerald-400/70"
-      }`}
-    >
-      <Avatar name={node.name} size={36} selected />
-      <div className="min-w-0 flex-1">
-        <p className="text-[13px] sm:text-sm font-semibold text-emerald-900 leading-tight truncate">
-          {node.name}
-        </p>
-        <p className="text-[10px] sm:text-[11px] text-emerald-800/70 leading-tight truncate mt-0.5">
-          {relText}
-        </p>
-      </div>
-      <Check size={15} className="shrink-0 text-emerald-600" />
-    </div>
-  );
-}
-
-function GhostLabel({ name, side }) {
-  if (!name) return <span className="hidden sm:block w-12" />;
-  return (
-    <span
-      className={`hidden sm:flex items-center max-w-[80px] text-[11px] leading-tight text-[#0B1C3D]/35 italic select-none truncate px-1 ${
-        side === "left" ? "justify-end text-right" : "justify-start text-left"
-      }`}
-      style={{ filter: "blur(0.4px)" }}
-      title={name}
-    >
-      {shortName(name, 18)}
-    </span>
-  );
-}
-
-/* ─────────────────────────  Avatar with initials  ───────────────────────── */
-function Avatar({ name, size = 36, selected = false }) {
-  const init = useMemo(() => initials(name), [name]);
-  return (
-    <div
-      className={`shrink-0 rounded-full flex items-center justify-center font-bold ${
-        selected
-          ? "bg-gradient-to-br from-emerald-500 to-emerald-700 text-white ring-2 ring-emerald-200"
-          : "bg-gradient-to-br from-[#D4AF37] to-[#B8860B] text-[#0B1C3D]"
-      }`}
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }}
-      aria-hidden
-    >
-      {init}
-    </div>
-  );
-}
-
-/* ─────────────────────────  Utilities  ───────────────────────── */
-const STOP_WORDS = new Set([
-  "ji", "family", "bai", "devi", "panchariya", "and", "&", "the",
-]);
-function initials(name = "") {
-  const cleaned = name.replace(/\([^)]*\)/g, "").trim();
-  const words = cleaned.split(/[\s+/]+/).map(w => w.replace(/[^\p{L}\p{N}]/gu, "")).filter(w => w && !STOP_WORDS.has(w.toLowerCase()));
-  if (words.length === 0) return (name.trim()[0] || "?").toUpperCase();
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-}
-function shortName(name = "", max = 28) {
-  const noParens = name.replace(/\([^)]*\)/g, "").trim();
-  return noParens.length > max ? noParens.slice(0, max - 1).trimEnd() + "…" : noParens;
 }
