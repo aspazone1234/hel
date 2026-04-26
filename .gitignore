@@ -136,3 +136,12 @@ credentials.json
 backend/static/handoffs/katha2026_handoff_20260426_111332.zip
 frontend/node_modules/.cache/default-development/1.pack
 frontend/node_modules/.cache/default-development/8.pack
+-e 
+# Environment and credential files
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials

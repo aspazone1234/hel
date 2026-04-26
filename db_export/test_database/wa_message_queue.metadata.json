@@ -1,1 +1,1 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"id":{"$numberInt":"1"}},"name":"id_1","unique":true,"sparse":true}],"uuid":"5bb13266d58042f9909d83ebaf7f7f53","collectionName":"wa_message_queue","type":"collection"}
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"id":{"$numberInt":"1"}},"name":"id_1","unique":true,"sparse":true}],"uuid":"2fe43ebb040947eba92128c729902e93","collectionName":"wa_message_queue","type":"collection"}
