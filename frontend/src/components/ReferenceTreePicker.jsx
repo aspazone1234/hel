@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import Fuse from "fuse.js";
 import { Tree } from "react-d3-tree";
-import { Search, Check, X, MousePointerClick, RefreshCw, ArrowDown } from "lucide-react";
+import { Search, Check, X, MousePointerClick, RefreshCw, ArrowDown, ZoomIn, Hand } from "lucide-react";
 import { Input } from "./ui/input";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -14,11 +14,9 @@ const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
  *   1. Mount: ONLY the search box is shown with an animated "↓ Tap a name below to select" hint.
  *   2. As the user types, fuzzy results appear as tappable cards (Fuse.js).
  *   3. On selection: green confirmation card slides in AND an animated SVG family-tree
- *      mind-map renders below — selected node + its lineage edges pulse in saffron/green.
+ *      mind-map renders below, fully zoomed out with a tap-to-explore overlay.
  *   4. Tapping the prominent "Change selection" button clears the selection — both the
  *      green card and the family tree disappear together; the hint reappears.
- *
- * No "I don't know / Not sure" fallback — selection is required.
  */
 export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
   const [tree, setTree] = useState(null);
@@ -26,8 +24,12 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
   const [query, setQuery] = useState("");
   const [showResults, setShowResults] = useState(false);
   const [translate, setTranslate] = useState({ x: 200, y: 60 });
+  const [overlayDismissed, setOverlayDismissed] = useState(false);
+  const [overlayFading, setOverlayFading] = useState(false);
   const treeContainerRef = useRef(null);
-  const treeApiRef = useRef(null);
+
+  // Initial zoom level — fully zoomed out so the whole family fits in the frame
+  const INITIAL_ZOOM = 0.32;
 
   // ── Fetch ──
   useEffect(() => {
@@ -90,35 +92,34 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
   }, [byId]);
 
   const selectedNode = value && byId[value] ? byId[value] : null;
-  const selectedLineage = selectedNode ? lineageOf(selectedNode.id) : [];
+  const selectedLineage = useMemo(
+    () => (selectedNode ? lineageOf(selectedNode.id) : []),
+    [selectedNode, lineageOf]
+  );
   const lineageIds = useMemo(() => new Set(selectedLineage.map(n => n.id)), [selectedLineage]);
-  const selectedParent = selectedNode ? parentOf(selectedNode.id) : null;
 
-  // Center the d3 tree initially relative to the container size
+  // Center the d3 tree initially relative to the container size — keep it
+  // anchored near the top so the whole tree (zoomed-out) fits in the frame.
   useEffect(() => {
     if (!treeContainerRef.current) return;
     const { clientWidth } = treeContainerRef.current;
-    setTranslate({ x: clientWidth / 2, y: 56 });
+    setTranslate({ x: clientWidth / 2, y: 50 });
   }, [tree]);
 
-  // After the tree renders, recenter on the selected node so users always see it.
+  // Reset overlay when a new selection is made
   useEffect(() => {
-    if (!value || !treeContainerRef.current) return;
-    const t = setTimeout(() => {
-      const container = treeContainerRef.current;
-      if (!container) return;
-      const svg = container.querySelector("svg");
-      if (!svg) return;
-      const sel = svg.querySelector(".rd3-node.is-selected");
-      if (!sel) return;
-      const cBox = container.getBoundingClientRect();
-      const sBox = sel.getBoundingClientRect();
-      const dx = cBox.left + cBox.width / 2 - (sBox.left + sBox.width / 2);
-      const dy = cBox.top + cBox.height / 2 - (sBox.top + sBox.height / 2);
-      setTranslate(prev => ({ x: prev.x + dx, y: prev.y + dy }));
-    }, 400);
-    return () => clearTimeout(t);
-  }, [value, tree]);
+    if (selectedNode) {
+      setOverlayDismissed(false);
+      setOverlayFading(false);
+    }
+  }, [selectedNode]);
+
+  const dismissOverlay = useCallback(() => {
+    if (overlayDismissed || overlayFading) return;
+    setOverlayFading(true);
+    // Match CSS .ref-overlay-fadeout duration
+    setTimeout(() => setOverlayDismissed(true), 320);
+  }, [overlayDismissed, overlayFading]);
 
   // ── Search ──
   const results = useMemo(() => {
@@ -153,10 +154,11 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     noResultsHelp: "कृपया वर्तनी जाँचें या किसी स्वयंसेवक से सहायता लें।",
     selected: "चयनित संदर्भ",
     change: "चयन बदलें",
-    sonOf: "के यहाँ से",
     treeTitle: "परिवार वृक्ष",
     treeSub: "आपका चयनित संदर्भ और उसकी पीढ़ी सुनहरी रेखा से दर्शाई गई है।",
-    centerBtn: "केंद्र में लाएँ",
+    overlayTitle: "ज़ूम करके देखें",
+    overlaySub: "टैप करें और परिवार वृक्ष में पीढ़ी देखें",
+    overlayCta: "टैप करें",
   } : {
     title: "Who is your reference?",
     sub: "Type the name of the family member you are connected through. We'll help find the closest match.",
@@ -169,10 +171,11 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
     noResultsHelp: "Please check the spelling or ask a volunteer for help.",
     selected: "Selected reference",
     change: "Change selection",
-    sonOf: "From",
     treeTitle: "Family tree",
     treeSub: "Your selected reference and its lineage are highlighted with the golden line.",
-    centerBtn: "Center selected",
+    overlayTitle: "Tap to zoom in",
+    overlaySub: "Pinch / scroll inside to explore the family tree",
+    overlayCta: "Tap to explore",
   };
 
   if (loading) return <div className="text-sm text-[#0B1C3D]/50 py-8 text-center">Loading…</div>;
@@ -275,7 +278,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
               <p className="text-[10px] text-center text-[#0B1C3D]/45 px-4 pb-2">{copy.closest}</p>
               <ul className="divide-y divide-[#D4AF37]/10">
                 {results.map(({ item }, idx) => {
-                  const parent = parentOf(item.id);
                   const path = lineageOf(item.id).map(n => nameOf(n));
                   return (
                     <li key={item.id}>
@@ -286,9 +288,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
                         className={`w-full text-left px-4 py-3 hover:bg-[#F8F1E5]/60 active:bg-[#F8F1E5] transition-colors ${idx === 0 ? "ref-result-first" : ""}`}
                       >
                         <p className="text-sm sm:text-base font-semibold text-[#0B1C3D] leading-tight">{nameOf(item)}</p>
-                        {parent && parent.id !== tree.root_id && (
-                          <p className="text-xs text-[#0B1C3D]/60 mt-0.5">{copy.sonOf} {nameOf(parent)}</p>
-                        )}
                         {path.length > 1 && (
                           <p className="text-[11px] text-[#0B1C3D]/40 mt-1 truncate">{path.slice(0, -1).join(" → ")}</p>
                         )}
@@ -327,9 +326,6 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
                 <p className="text-base sm:text-lg font-bold text-emerald-900 leading-tight" data-testid="ref-selected-name">
                   {nameOf(selectedNode)}
                 </p>
-                {selectedParent && selectedParent.id !== tree.root_id && (
-                  <p className="text-xs sm:text-sm text-emerald-800/80 mt-1">{copy.sonOf} {nameOf(selectedParent)}</p>
-                )}
                 {selectedLineage.length > 1 && (
                   <p className="text-[11px] sm:text-xs text-emerald-700/65 mt-1.5 leading-relaxed break-words">
                     {selectedLineage.slice(0, -1).map(n => nameOf(n)).join(" → ")}
@@ -370,9 +366,34 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi" }) {
                   collapsible={false}
                   separation={{ siblings: 1.35, nonSiblings: 1.7 }}
                   nodeSize={{ x: 220, y: 100 }}
-                  scaleExtent={{ min: 0.4, max: 1.8 }}
-                  zoom={0.8}
+                  scaleExtent={{ min: 0.2, max: 1.8 }}
+                  zoom={INITIAL_ZOOM}
                 />
+              )}
+
+              {/* Tap-to-explore overlay (very mild blur, single click anywhere dismisses) */}
+              {!overlayDismissed && (
+                <button
+                  type="button"
+                  onClick={dismissOverlay}
+                  onTouchStart={dismissOverlay}
+                  data-testid="ref-tree-overlay"
+                  className={`ref-tree-overlay ${overlayFading ? "ref-overlay-fadeout" : ""}`}
+                  aria-label={copy.overlayCta}
+                >
+                  <div className="ref-tree-overlay-inner">
+                    <div className="ref-tree-overlay-icon-stack">
+                      <ZoomIn size={32} strokeWidth={2.2} />
+                      <span className="ref-tree-overlay-icon-pulse" />
+                    </div>
+                    <p className="ref-tree-overlay-title">{copy.overlayTitle}</p>
+                    <p className="ref-tree-overlay-sub">
+                      <Hand size={12} className="inline-block -mt-0.5 mr-1" />
+                      {copy.overlaySub}
+                    </p>
+                    <span className="ref-tree-overlay-cta">{copy.overlayCta}</span>
+                  </div>
+                </button>
               )}
             </div>
           </div>
@@ -394,8 +415,13 @@ function ScopedTreeStyles() {
       .ref-result-first { box-shadow: inset 3px 0 0 #D4AF37; }
       .ref-idle-hint { letter-spacing: .03em; }
 
-      .rd3-tree-wrap { overflow: hidden; touch-action: none; height: 280px; }
-      @media (min-width: 640px) { .rd3-tree-wrap { height: 360px; } }
+      .rd3-tree-wrap {
+        overflow: hidden;
+        touch-action: none;
+        height: 320px;
+        position: relative;
+      }
+      @media (min-width: 640px) { .rd3-tree-wrap { height: 420px; } }
       .rd3-tree-wrap svg { background: transparent; }
 
       /* Default link */
@@ -425,27 +451,35 @@ function ScopedTreeStyles() {
       }
       .rd3-node-initials {
         font-family: system-ui, sans-serif;
-        font-size: 13px; font-weight: 800;
+        font-size: 13px; font-weight: 700;
         fill: #ffffff;
         pointer-events: none;
         dominant-baseline: middle;
+        paint-order: fill;
+        stroke: none;
       }
+      /* Unified node-name styling — same look across root / lineage / selected / muted.
+         No bold weight differences, no text strokes. The card chrome (fill / border)
+         carries the highlight, never the text itself. */
       .rd3-node-name {
         font-family: system-ui, "Noto Sans Devanagari", sans-serif;
-        font-size: 15px; font-weight: 600;
-        fill: rgba(11,28,61,0.9);
+        font-size: 15px;
+        font-weight: 500;
+        fill: rgba(11,28,61,0.92);
         dominant-baseline: middle;
         pointer-events: none;
         letter-spacing: 0.1px;
+        paint-order: fill;
+        stroke: none;
       }
 
-      /* Root (decorative, non-interactive feel) */
+      /* Root (decorative) */
       .rd3-node.is-root .rd3-node-card { fill: #0B1C3D; stroke: #D4AF37; stroke-width: 1.5; }
       .rd3-node.is-root .rd3-node-avatar { fill: #D4AF37; }
       .rd3-node.is-root .rd3-node-initials { fill: #0B1C3D; }
-      .rd3-node.is-root .rd3-node-name { fill: #F8F1E5; font-weight: 700; }
+      .rd3-node.is-root .rd3-node-name { fill: #F8F1E5; }
 
-      /* Lineage (gold) */
+      /* Lineage (gold card, plain text — same weight/style as muted) */
       .rd3-node.is-lineage .rd3-node-card {
         fill: #FFF8E6;
         stroke: #D4AF37;
@@ -454,15 +488,15 @@ function ScopedTreeStyles() {
       }
       .rd3-node.is-lineage .rd3-node-avatar { fill: #D4AF37; }
       .rd3-node.is-lineage .rd3-node-initials { fill: #0B1C3D; }
-      .rd3-node.is-lineage .rd3-node-name { fill: #0B1C3D; font-weight: 800; }
+      .rd3-node.is-lineage .rd3-node-name { fill: rgba(11,28,61,0.92); }
 
-      /* Muted */
+      /* Muted (default leaf style — the look used as the baseline for ALL nodes) */
       .rd3-node.is-muted .rd3-node-card { fill: #ffffff; stroke: rgba(11,28,61,0.18); }
       .rd3-node.is-muted .rd3-node-avatar { fill: rgba(11,28,61,0.7); }
       .rd3-node.is-muted .rd3-node-initials { fill: #ffffff; }
-      .rd3-node.is-muted .rd3-node-name { fill: rgba(11,28,61,0.85); }
+      .rd3-node.is-muted .rd3-node-name { fill: rgba(11,28,61,0.92); }
 
-      /* Selected (green + animated pulse) */
+      /* Selected (green card) */
       .rd3-node.is-selected .rd3-node-card {
         fill: #ECFDF5;
         stroke: #10B981;
@@ -472,7 +506,7 @@ function ScopedTreeStyles() {
       }
       .rd3-node.is-selected .rd3-node-avatar { fill: #10B981; }
       .rd3-node.is-selected .rd3-node-initials { fill: #ffffff; }
-      .rd3-node.is-selected .rd3-node-name { fill: #064E3B; font-weight: 800; }
+      .rd3-node.is-selected .rd3-node-name { fill: #064E3B; }
       @keyframes selectedBreathe {
         0%, 100% { filter: drop-shadow(0 0 4px rgba(16,185,129,0.45)); }
         50%      { filter: drop-shadow(0 0 12px rgba(16,185,129,0.85)); }
@@ -490,6 +524,91 @@ function ScopedTreeStyles() {
         0%   { transform: scale(0.55); opacity: 0.65; }
         70%  { opacity: 0; }
         100% { transform: scale(1.6); opacity: 0; }
+      }
+
+      /* ── Tap-to-explore overlay ── */
+      .ref-tree-overlay {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        background: rgba(248, 241, 229, 0.18);
+        -webkit-backdrop-filter: blur(2.5px) saturate(105%);
+        backdrop-filter: blur(2.5px) saturate(105%);
+        border: 0;
+        padding: 0;
+        z-index: 5;
+        animation: refOverlayIn .45s cubic-bezier(.2,.8,.2,1) both;
+        transition: opacity .32s ease, backdrop-filter .32s ease;
+      }
+      .ref-tree-overlay:hover { background: rgba(248, 241, 229, 0.28); }
+      .ref-tree-overlay:active { transform: scale(0.998); }
+      .ref-overlay-fadeout {
+        opacity: 0;
+        pointer-events: none;
+        -webkit-backdrop-filter: blur(0) saturate(100%);
+        backdrop-filter: blur(0) saturate(100%);
+      }
+      @keyframes refOverlayIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+      }
+      .ref-tree-overlay-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 16px 24px;
+        background: rgba(255,255,255,0.85);
+        border: 1px solid rgba(212,175,55,0.45);
+        border-radius: 18px;
+        box-shadow: 0 8px 28px rgba(11,28,61,0.10);
+        color: #0B1C3D;
+        animation: refOverlayInnerIn .55s cubic-bezier(.2,.8,.2,1) .05s both;
+      }
+      @keyframes refOverlayInnerIn {
+        from { opacity: 0; transform: translateY(6px) scale(.96); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      .ref-tree-overlay-icon-stack {
+        position: relative;
+        width: 56px; height: 56px;
+        border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        background: linear-gradient(135deg, #D4AF37 0%, #B8860B 100%);
+        color: #0B1C3D;
+        box-shadow: 0 4px 14px rgba(212,175,55,0.35);
+      }
+      .ref-tree-overlay-icon-pulse {
+        position: absolute; inset: -6px;
+        border-radius: 50%;
+        border: 2px solid rgba(212,175,55,0.55);
+        animation: refOverlayPulse 1.6s ease-out infinite;
+      }
+      @keyframes refOverlayPulse {
+        0%   { transform: scale(0.85); opacity: 0.7; }
+        70%  { transform: scale(1.25); opacity: 0; }
+        100% { opacity: 0; }
+      }
+      .ref-tree-overlay-title {
+        font-size: 14px; font-weight: 700; letter-spacing: 0.2px;
+        margin-top: 4px;
+      }
+      .ref-tree-overlay-sub {
+        font-size: 11px; color: rgba(11,28,61,0.65);
+        max-width: 240px; text-align: center; line-height: 1.4;
+      }
+      .ref-tree-overlay-cta {
+        margin-top: 4px;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-weight: 700;
+        color: #B8860B;
       }
     `}</style>
   );

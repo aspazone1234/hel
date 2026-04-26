@@ -361,18 +361,6 @@ export default function RegisterPage() {
             <ChevronLeft size={16} /> {t.register.backHome}
           </Link>
 
-          {/* OTP guidance GIF — mobile only */}
-          <div className="md:hidden mb-4 flex justify-center">
-            <img
-              src="https://customer-assets.emergentagent.com/job_crazy-wilbur-1/artifacts/z6lgn4zg_Copy%20of%20Your%20paragraph%20text.gif"
-              alt={lang === "hi" ? "OTP को WhatsApp नोटिफिकेशन से कॉपी करें" : "Copy OTP from WhatsApp notification"}
-              className="w-full max-w-[320px] h-auto rounded-2xl block"
-              style={{ aspectRatio: "1 / 1" }}
-              loading="eager"
-              data-testid="otp-help-gif"
-            />
-          </div>
-
           <div className="bg-white rounded-2xl p-6 sm:p-8 border border-[#D4AF37]/20 shadow-lg">
             <div className="flex items-center justify-between mb-6">
               <h1 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: lang === "hi" ? fontHi : "'Cormorant Garamond', serif" }}>
@@ -435,6 +423,18 @@ export default function RegisterPage() {
 
             {otpPhase === "otp_sent" && (
               <div data-testid="otp-verify-phase">
+                {/* OTP guidance GIF — mobile only, OTP entry stage only.
+                    width is fluid; height is auto so the GIF preserves its natural aspect ratio. */}
+                <div className="md:hidden mb-4 flex justify-center">
+                  <img
+                    src="https://customer-assets.emergentagent.com/job_crazy-wilbur-1/artifacts/z6lgn4zg_Copy%20of%20Your%20paragraph%20text.gif"
+                    alt={lang === "hi" ? "OTP को WhatsApp नोटिफिकेशन से कॉपी करें" : "Copy OTP from WhatsApp notification"}
+                    className="w-full max-w-[320px] h-auto rounded-2xl block object-contain"
+                    loading="eager"
+                    data-testid="otp-help-gif"
+                  />
+                </div>
+
                 <p className="text-[#0B1C3D]/60 text-sm mb-2">
                   {lang === "hi" ? `${mobile} पर WhatsApp OTP भेजा गया` : `OTP sent to ${mobile} via WhatsApp`}
                 </p>
@@ -864,7 +864,14 @@ export default function RegisterPage() {
 
           {/* Navigation Buttons */}
           {step < 3 && (
-            <div className="flex justify-between mt-6 pt-5 border-t border-[#D4AF37]/10">
+            <div
+              className={
+                step === 2
+                  ? "sticky bottom-0 -mx-5 sm:-mx-7 -mb-5 sm:-mb-7 mt-6 px-5 sm:px-7 py-4 bg-white/95 backdrop-blur-sm border-t border-[#D4AF37]/20 shadow-[0_-6px_18px_-12px_rgba(11,28,61,0.25)] flex justify-between rounded-b-2xl z-20"
+                  : "flex justify-between mt-6 pt-5 border-t border-[#D4AF37]/10"
+              }
+              data-testid={step === 2 ? "form-nav-sticky" : "form-nav"}
+            >
               {step > 0 ? (
                 <Button onClick={handlePrev} variant="outline" className="border-[#D4AF37]/30 text-[#0B1C3D] hover:bg-[#D4AF37]/10" data-testid="form-prev-btn">
                   <ArrowLeft size={16} className="mr-2" /> {t.register.previous}

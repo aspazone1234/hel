@@ -698,6 +698,137 @@ async def delete_reference_person(ref_id: str, request: Request):
     await log_audit("delete", "reference_person", ref_id, "", "Reference person deleted", user["name"])
     return {"message": "Deleted"}
 
+# ─── Admin: Family Reference Tree (full editor) ───
+class FamilyTreeNode(BaseModel):
+    id: str
+    name: str
+    name_hi: str = ""
+    parent_id: Optional[str] = None
+
+class FamilyTreePayload(BaseModel):
+    version: int = 2
+    root_id: str
+    nodes: List[FamilyTreeNode]
+
+
+@api_router.get("/admin/reference-tree")
+async def get_admin_reference_tree(request: Request):
+    """Return the current family reference tree (same shape as the public endpoint)."""
+    await get_current_user(request)
+    ft_path = ROOT_DIR / "data" / "family_tree.json"
+    try:
+        with open(ft_path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as e:
+        logger.warning(f"[AdminReferenceTree] failed to load: {e}")
+        raise HTTPException(status_code=500, detail="Reference tree unavailable")
+
+
+def _validate_family_tree(payload: FamilyTreePayload) -> Dict[str, Any]:
+    """Validate that the tree is well formed: unique ids, valid parents, single root, no cycles."""
+    nodes = [n.model_dump() for n in payload.nodes]
+    if not nodes:
+        raise HTTPException(status_code=400, detail="Tree must have at least one node (root)")
+    ids = [n["id"] for n in nodes]
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=400, detail="Duplicate node ids found")
+    by_id = {n["id"]: n for n in nodes}
+    if payload.root_id not in by_id:
+        raise HTTPException(status_code=400, detail="root_id does not match any node")
+    # Exactly one node should have parent_id == None and it must be root
+    roots = [n for n in nodes if not n.get("parent_id")]
+    if len(roots) != 1 or roots[0]["id"] != payload.root_id:
+        raise HTTPException(status_code=400, detail="Tree must have exactly one root, matching root_id")
+    # Validate parent references
+    for n in nodes:
+        pid = n.get("parent_id")
+        if pid is not None and pid not in by_id:
+            raise HTTPException(status_code=400, detail=f"Node {n['id']} references unknown parent {pid}")
+        if not (n.get("name") or "").strip():
+            raise HTTPException(status_code=400, detail=f"Node {n['id']} has empty name")
+    # Detect cycles via walk-to-root
+    for n in nodes:
+        seen = set()
+        cur = n
+        while cur and cur.get("parent_id"):
+            if cur["id"] in seen:
+                raise HTTPException(status_code=400, detail=f"Cycle detected involving node {n['id']}")
+            seen.add(cur["id"])
+            cur = by_id.get(cur["parent_id"])
+    return {"nodes": nodes, "by_id": by_id, "root_id": payload.root_id, "version": payload.version}
+
+
+@api_router.put("/admin/reference-tree")
+async def update_admin_reference_tree(body: FamilyTreePayload, request: Request):
+    """Replace the family reference tree (super admin only).
+    Persists to family_tree.json AND re-syncs the reference_persons collection so
+    public endpoints + downstream lookups stay consistent."""
+    user = await require_superadmin(request)
+    validated = _validate_family_tree(body)
+
+    ft_path = ROOT_DIR / "data" / "family_tree.json"
+    new_doc = {
+        "version": validated["version"],
+        "root_id": validated["root_id"],
+        "nodes": validated["nodes"],
+    }
+    # Write file
+    try:
+        with open(ft_path, "w", encoding="utf-8") as fh:
+            json.dump(new_doc, fh, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f"[AdminReferenceTree] failed to write file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save tree")
+
+    # Re-sync DB: upsert all current nodes, then delete any family-tree docs not in payload
+    by_id = validated["by_id"]
+    nodes = validated["nodes"]
+    def _path(nid: str):
+        out = []
+        cur = by_id.get(nid)
+        while cur:
+            out.insert(0, cur["name"])
+            cur = by_id.get(cur.get("parent_id")) if cur.get("parent_id") else None
+        return out
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    keep_ids = set()
+    for n in nodes:
+        keep_ids.add(n["id"])
+        await db.reference_persons.update_one(
+            {"id": n["id"]},
+            {"$set": {
+                "id": n["id"],
+                "name": n["name"],
+                "name_hi": n.get("name_hi", ""),
+                "parent_id": n.get("parent_id"),
+                "path": _path(n["id"]),
+                "is_family_tree": True,
+                "updated_at": now_iso,
+            }, "$setOnInsert": {
+                "rank": 0,
+                "description": "",
+                "relation_categories": [],
+                "created_at": now_iso,
+            }},
+            upsert=True,
+        )
+    # Delete family-tree-marked docs that are no longer present
+    cur = db.reference_persons.find({"is_family_tree": True}, {"_id": 0, "id": 1})
+    existing_ids = [d["id"] async for d in cur]
+    to_delete = [_id for _id in existing_ids if _id not in keep_ids and _id != "ft-fallback-unknown"]
+    if to_delete:
+        await db.reference_persons.delete_many({"id": {"$in": to_delete}, "is_family_tree": True})
+
+    await log_audit(
+        "update", "reference_tree", "family_tree",
+        f"{len(nodes)} nodes",
+        f"Family tree replaced ({len(nodes)} nodes, {len(to_delete)} removed)",
+        user["name"],
+    )
+    return {"message": "Tree saved", "node_count": len(nodes), "removed": len(to_delete)}
+
+
 # ─── Admin: Relation Categories CRUD ───
 @api_router.get("/admin/relation-categories")
 async def list_relation_categories(request: Request):
