@@ -4,6 +4,7 @@ import { ArrowLeft, Edit, Lock, Calendar, Users, MapPin, Phone, Mail, Clock, Che
 import axios from "axios";
 import { toast } from "sonner";
 import AddressSelector from "../components/AddressSelector";
+import ReferenceTreePicker from "../components/ReferenceTreePicker";
 import { useLang } from "../context/LanguageContext";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Input } from "../components/ui/input";
@@ -553,12 +554,13 @@ function EditAttendeesModal({ reg, lang, onSave, onClose }) {
 function EditContactModal({ reg, lang, onSave, onClose }) {
   const [phone, setPhone] = useState(reg.additional_phone || "");
   const [email, setEmail] = useState(reg.email || "");
+  const [message, setMessage] = useState(reg.message || "");
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
     if (!phone.trim()) { toast.error(lang === "hi" ? "\u092B\u094B\u0928 \u0928\u0902\u092C\u0930 \u0906\u0935\u0936\u094D\u092F\u0915" : "Phone number required"); return; }
     setSaving(true);
-    await onSave({ additional_phone: phone, email });
+    await onSave({ additional_phone: phone, email, message });
     setSaving(false);
   };
 
@@ -578,6 +580,13 @@ function EditContactModal({ reg, lang, onSave, onClose }) {
           <div>
             <Label className="text-sm">Email</Label>
             <Input value={email} onChange={e => setEmail(e.target.value)} className="mt-1" type="email" data-testid="edit-email" />
+          </div>
+          <div>
+            <Label className="text-sm">
+              {lang === "hi" ? "\u0915\u094B\u0908 \u0938\u0902\u0926\u0947\u0936 \u092F\u093E \u0935\u093F\u0936\u0947\u0937 \u0905\u0928\u0941\u0930\u094B\u0927" : "Any Message or Special Request"}
+              <span className="text-gray-400 text-xs ml-1">({lang === "hi" ? "\u0935\u0948\u0915\u0932\u094D\u092A\u093F\u0915" : "optional"})</span>
+            </Label>
+            <Textarea value={message} onChange={e => setMessage(e.target.value)} className="mt-1 text-sm" rows={3} data-testid="edit-message" />
           </div>
           <Button onClick={save} disabled={saving} className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90" data-testid="save-contact-btn">
             {saving ? "..." : (lang === "hi" ? "\u0938\u0939\u0947\u091C\u0947\u0902" : "Save")}
@@ -685,45 +694,34 @@ function EditStayModal({ reg, lang, onSave, onClose }) {
   );
 }
 
-function EditReferenceModal({ reg, lang, refPersons, onSave, onClose }) {
+function EditReferenceModal({ reg, lang, onSave, onClose }) {
   const [refId, setRefId] = useState(reg.reference_person_id || "");
-  const [relation, setRelation] = useState(reg.relation_category || "");
-  const [message, setMessage] = useState(reg.message || "");
+  const [refName, setRefName] = useState(reg.reference_person_name || "");
   const [saving, setSaving] = useState(false);
-
-  const selectedRef = refPersons.find(p => p.id === refId);
-  const availableCats = selectedRef?.relation_categories || [];
 
   const save = async () => {
     if (!refId) { toast.error(lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Reference person required"); return; }
-    if (availableCats.length > 0 && !relation) { toast.error(lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 \u091A\u0941\u0928\u0947\u0902" : "Relation required"); return; }
     setSaving(true);
-    await onSave({ reference_person_id: refId, relation_category: availableCats.length > 0 ? relation : "", message });
+    await onSave({ reference_person_id: refId, relation_category: "" });
     setSaving(false);
   };
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader><DialogTitle>{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0938\u0902\u092A\u093E\u0926\u093F\u0924 \u0915\u0930\u0947\u0902" : "Edit Reference"}</DialogTitle></DialogHeader>
         <div className="space-y-4">
-          <div>
-            <Label className="text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F *" : "Reference Person *"}</Label>
-            <Select value={refId} onValueChange={(v) => { setRefId(v); setRelation(""); }}><SelectTrigger className="mt-1" data-testid="edit-ref-person"><SelectValue placeholder="Select" /></SelectTrigger>
-              <SelectContent>{refPersons.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>
-          </div>
-          {availableCats.length > 0 && (
-            <div>
-              <Label className="text-sm">{lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 *" : "Relation *"}</Label>
-              <Select value={relation} onValueChange={setRelation}><SelectTrigger className="mt-1" data-testid="edit-relation"><SelectValue placeholder="Select" /></SelectTrigger>
-                <SelectContent>{availableCats.map((c, i) => <SelectItem key={`${c}-${i}`} value={c}>{c}</SelectItem>)}</SelectContent></Select>
-            </div>
+          <ReferenceTreePicker
+            value={refId}
+            onChange={(id, meta) => { setRefId(id); setRefName(meta?.name || ""); }}
+            lang={lang}
+          />
+          {refName && (
+            <p className="text-xs text-emerald-700 text-center">
+              {lang === "hi" ? "\u091A\u092F\u0928\u093F\u0924: " : "Selected: "}<span className="font-semibold">{refName}</span>
+            </p>
           )}
-          <div>
-            <Label className="text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0947\u0936" : "Message"}</Label>
-            <Textarea value={message} onChange={e => setMessage(e.target.value)} className="mt-1" rows={2} data-testid="edit-message" />
-          </div>
-          <Button onClick={save} disabled={saving} className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90" data-testid="save-reference-btn">
+          <Button onClick={save} disabled={saving || !refId} className="w-full bg-[#D4AF37] text-[#0B1C3D] hover:bg-[#D4AF37]/90" data-testid="save-reference-btn">
             {saving ? "..." : (lang === "hi" ? "\u0938\u0939\u0947\u091C\u0947\u0902" : "Save")}
           </Button>
         </div>
