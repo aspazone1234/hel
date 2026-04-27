@@ -364,8 +364,8 @@ function FullRegistrationView({ reg, showAttendeeStatus = false }) {
         <Field label="Travel Mode" value={reg.travel_mode} />
         <Field label="Travel Details" value={reg.travel_details} />
       </Section>
-      <Section title="Reference Details">
-        <Field label="Reference Person" value={refName || "—"} />
+      <Section title="Relation Details">
+        <Field label="Related Through" value={refName || "—"} />
         <Field label="Message / Special Request" value={reg.message} />
       </Section>
       <Section title="Status">

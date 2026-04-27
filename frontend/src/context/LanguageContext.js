@@ -135,7 +135,7 @@ const en = {
   },
   register: {
     pageTitle: "Register / Update Your Attendance",
-    steps: ["Contact & Group", "Attendance & Travel", "Reference Details", "Summary"],
+    steps: ["Contact & Group", "Attendance & Travel", "Relation Details", "Summary"],
     step1Title: "Contact Information",
     fullName: "Full Name",
     mobile: "Mobile / WhatsApp",
@@ -307,7 +307,7 @@ const hi = {
   },
   register: {
     pageTitle: "\u0909\u092a\u0938\u094d\u0925\u093f\u0924\u093f \u0926\u0930\u094d\u091c / \u0905\u092a\u0921\u0947\u091f \u0915\u0930\u0947\u0902",
-    steps: ["\u0938\u0902\u092a\u0930\u094d\u0915 \u0935 \u0938\u092e\u0942\u0939", "\u0909\u092a\u0938\u094d\u0925\u093f\u0924\u093f \u0935 \u092f\u093e\u0924\u094d\u0930\u093e", "\u0938\u0902\u0926\u0930\u094d\u092d \u0935\u093f\u0935\u0930\u0923", "\u0938\u093e\u0930\u093e\u0902\u0936"],
+    steps: ["\u0938\u0902\u092a\u0930\u094d\u0915 \u0935 \u0938\u092e\u0942\u0939", "\u0909\u092a\u0938\u094d\u0925\u093f\u0924\u093f \u0935 \u092f\u093e\u0924\u094d\u0930\u093e", "\u0938\u0902\u092C\u0902\u0927 \u0935\u093f\u0935\u0930\u0923", "\u0938\u093e\u0930\u093e\u0902\u0936"],
     step1Title: "\u0938\u0902\u092a\u0930\u094d\u0915 \u091c\u093e\u0928\u0915\u093e\u0930\u0940",
     fullName: "\u092a\u0942\u0930\u093e \u0928\u093e\u092e",
     mobile: "\u092e\u094b\u092c\u093e\u0907\u0932 / \u0935\u094d\u0939\u093e\u091f\u094d\u0938\u090f\u092a",

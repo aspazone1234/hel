@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   Plus, Edit2, Trash2, Save, X, Users, GripVertical, ChevronRight, ChevronDown,
-  RotateCcw, AlertTriangle, Search, Hash,
+  RotateCcw, AlertTriangle, Search, Hash, ArrowUpFromLine,
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -137,6 +137,46 @@ export default function ReferencePersonManager({ user }) {
       return nodes;
     });
     setCollapsed((c) => ({ ...c, [parentId]: false }));
+    setSelectedId(newId);
+  };
+
+  /**
+   * Insert a new person ABOVE the given node.
+   *  - If the given node is the ROOT, the new node becomes the new root
+   *    (tree.root_id is updated) and the old root becomes its child.
+   *  - Otherwise the new node is inserted between `nodeId` and its current
+   *    parent, i.e. it takes the old parent and `nodeId` becomes its child.
+   * Works only for super admin; structural change, saved with "Save Tree".
+   */
+  const addParentAbove = (nodeId) => {
+    if (!tree || !byId[nodeId]) return;
+    const newId = `ft-new-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const target = byId[nodeId];
+    const isRootTarget = nodeId === tree.root_id;
+
+    setTree((prev) => {
+      if (!prev) return prev;
+      const oldParentId = target.parent_id || null;
+      const nodes = prev.nodes.map((n) => ({ ...n }));
+      // Create new node: takes over the target's old parent (null if target was root)
+      nodes.push({
+        id: newId,
+        name: "New Parent",
+        name_hi: "",
+        parent_id: isRootTarget ? null : oldParentId,
+      });
+      // Re-parent the target to point at the new node
+      const next = nodes.map((n) =>
+        n.id === nodeId ? { ...n, parent_id: newId } : n
+      );
+      return {
+        ...prev,
+        // If the target was root, the new node becomes the new root.
+        root_id: isRootTarget ? newId : prev.root_id,
+        nodes: next,
+      };
+    });
+    setCollapsed((c) => ({ ...c, [newId]: false }));
     setSelectedId(newId);
   };
 
@@ -397,6 +437,19 @@ export default function ReferencePersonManager({ user }) {
                 className="h-7 w-7 p-0"
                 onClick={(e) => {
                   e.stopPropagation();
+                  addParentAbove(node.id);
+                }}
+                title={isRoot ? "Add parent above (becomes new root)" : "Insert parent above"}
+                data-testid={`tree-add-parent-${node.id}`}
+              >
+                <ArrowUpFromLine size={12} />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0"
+                onClick={(e) => {
+                  e.stopPropagation();
                   addChild(node.id);
                 }}
                 title="Add child"
@@ -527,6 +580,8 @@ export default function ReferencePersonManager({ user }) {
             <span className="mx-2">•</span>
             Click <Plus size={11} className="inline -mt-0.5" /> to add a child.
             <span className="mx-2">•</span>
+            Click <ArrowUpFromLine size={11} className="inline -mt-0.5" /> to insert a parent above (on root → becomes new root).
+            <span className="mx-2">•</span>
             Click <Trash2 size={11} className="inline -mt-0.5" /> to remove a subtree.
           </div>
         </div>
@@ -588,8 +643,21 @@ export default function ReferencePersonManager({ user }) {
               </div>
 
               {/* Quick actions */}
-              {isSuper && selectedNode.id !== tree?.root_id && (
+              {isSuper && (
                 <div className="border-t border-[#D4AF37]/15 pt-3 flex flex-col gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-[#D4AF37]/30 justify-start"
+                    onClick={() => addParentAbove(selectedNode.id)}
+                    data-testid="detail-add-parent-btn"
+                    title={selectedNode.id === tree?.root_id ? "Add parent above — becomes new root" : "Insert parent above this node"}
+                  >
+                    <ArrowUpFromLine size={13} className="mr-1.5" />
+                    {selectedNode.id === tree?.root_id
+                      ? "Add parent above (becomes new root)"
+                      : "Insert parent above this node"}
+                  </Button>
                   <Button
                     size="sm"
                     variant="outline"
@@ -599,15 +667,17 @@ export default function ReferencePersonManager({ user }) {
                   >
                     <Plus size={13} className="mr-1.5" /> Add child under this node
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-red-300 text-red-600 hover:bg-red-50 justify-start"
-                    onClick={() => deleteSubtree(selectedNode.id)}
-                    data-testid="detail-delete-btn"
-                  >
-                    <Trash2 size={13} className="mr-1.5" /> Delete this subtree
-                  </Button>
+                  {selectedNode.id !== tree?.root_id && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-red-300 text-red-600 hover:bg-red-50 justify-start"
+                      onClick={() => deleteSubtree(selectedNode.id)}
+                      data-testid="detail-delete-btn"
+                    >
+                      <Trash2 size={13} className="mr-1.5" /> Delete this subtree
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

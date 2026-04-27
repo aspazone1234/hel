@@ -383,14 +383,14 @@ export default function MyRegistrationPage() {
               {reg.travel_details && <Field label={lang === "hi" ? "\u092F\u093E\u0924\u094D\u0930\u093E \u0935\u093F\u0935\u0930\u0923" : "Travel Details"} value={reg.travel_details} />}
             </CollapsibleSection>
 
-            {/* Reference Section */}
+            {/* Relation Section */}
             <CollapsibleSection
-              title={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D" : "Reference"}
+              title={lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927" : "Relation"}
               icon={User} expanded={expandedSections.reference}
               onToggle={() => toggleSection("reference")}
               onEdit={canEdit ? () => setEditModal("reference") : null}
             >
-              <Field label={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F" : "Reference Person"} value={reg.reference_person_name || reg.reference_person_id || "\u2014"} />
+              <Field label={lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927\u093F\u0924 \u0935\u094D\u092F\u0915\u094D\u0924\u093F" : "Related Through"} value={reg.reference_person_name || reg.reference_person_id || "\u2014"} />
               {reg.message && <Field label={lang === "hi" ? "\u0938\u0902\u0926\u0947\u0936" : "Message"} value={reg.message} />}
             </CollapsibleSection>
 
@@ -708,12 +708,13 @@ function EditReferenceModal({ reg, lang, onSave, onClose }) {
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0938\u0902\u092A\u093E\u0926\u093F\u0924 \u0915\u0930\u0947\u0902" : "Edit Reference"}</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 \u0938\u0902\u092A\u093E\u0926\u093F\u0924 \u0915\u0930\u0947\u0902" : "Edit Relation"}</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <ReferenceTreePicker
             value={refId}
             onChange={(id, meta) => { setRefId(id); setRefName(meta?.name || ""); }}
             lang={lang}
+            hideTree={true}
           />
           {refName && (
             <p className="text-xs text-emerald-700 text-center">

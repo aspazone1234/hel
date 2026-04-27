@@ -767,11 +767,11 @@ export default function RegisterPage() {
             </div>
           )}
 
-          {/* ─── STEP 2: Reference Details ─── */}
+          {/* ─── STEP 2: Relation Details ─── */}
           {step === 2 && (
-            <div className="space-y-6" data-testid="form-step-reference">
+            <div className="space-y-6" data-testid="form-step-relation-details">
               <h2 className="text-lg font-bold text-[#0B1C3D]" style={{ fontFamily: lang === "hi" ? fontHi : "'Cormorant Garamond', serif" }}>
-                {lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u093F\u0935\u0930\u0923" : "Reference Details"}
+                {lang === "hi" ? "\u0938\u0902\u092C\u0902\u0927 \u0935\u093F\u0935\u0930\u0923" : "Relation Details"}
               </h2>
 
               <ReferenceTreePicker
