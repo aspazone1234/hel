@@ -426,6 +426,20 @@ async def get_reference_persons_public():
     persons = await db.reference_persons.find({}, {"_id": 0}).sort([("rank", 1), ("name", 1)]).to_list(100)
     return persons
 
+
+@api_router.get("/reference-tree/public")
+async def get_reference_tree_public():
+    """Returns the Panchariya family reference tree (flat node list + fallback)
+    used by the public registration form's hierarchical picker — and by the
+    standalone /demo1 and /demo2 preview pages."""
+    try:
+        ft_path = ROOT_DIR / "data" / "family_tree.json"
+        with open(ft_path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception as e:
+        logger.warning(f"[ReferenceTree] failed to load: {e}")
+        raise HTTPException(status_code=500, detail="Reference tree unavailable")
+
 @api_router.get("/relation-categories/public")
 async def get_relation_categories_public():
     cats = await db.relation_categories.find({}, {"_id": 0}).sort("name", 1).to_list(100)
