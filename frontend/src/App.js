@@ -11,6 +11,7 @@ import AdminPage from "@/pages/AdminPage";
 import ThankYouPage from "@/pages/ThankYouPage";
 import MyRegistrationPage from "@/pages/MyRegistrationPage";
 import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
+import Demo1Page from "@/pages/Demo1Page";
 
 axios.defaults.withCredentials = false;
 installRoleInterceptor();
@@ -27,6 +28,7 @@ function App() {
             <Route path="/my-registration" element={<MyRegistrationPage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+            <Route path="/demo1" element={<Demo1Page />} />
           </Routes>
         </BrowserRouter>
         <Toaster position="top-right" richColors />

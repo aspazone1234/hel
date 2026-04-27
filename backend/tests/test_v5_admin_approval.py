@@ -14,7 +14,7 @@ import requests
 import os
 import uuid
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hel-dev.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://hel-stage.preview.emergentagent.com').rstrip('/')
 
 # Hardcoded admin credentials from server.py
 ADMIN_ACCOUNTS = [

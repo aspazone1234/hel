@@ -2,32 +2,44 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import Fuse from "fuse.js";
 import { Tree } from "react-d3-tree";
-import { Search, Check, X, RefreshCw, Hand } from "lucide-react";
+import { Search, Check, X, RefreshCw, Hand, Move, ZoomIn, Sparkles } from "lucide-react";
 import { Input } from "./ui/input";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 /**
+ * Sentinel id used when the user selects the secondary "Others" option and
+ * types a free-form category (e.g. "समाज / community").
+ */
+export const OTHER_RELATION_ID = "__other__";
+
+/**
  * ReferenceTreePicker — Search-first relation selector with an embedded
  * family-tree playground.
  *
- * States:
- *   A. No selection / changing selection
- *      → search input + attached autocomplete results + helper subtext.
- *      → green confirmation / tree are HIDDEN.
- *   B. Person selected
- *      → green confirmation block is shown. The family-tree playground is
- *        embedded *inside* the green block, above the "Change selection"
- *        button. Search UI is HIDDEN.
+ * STATE A (no selection / searching):
+ *   - Primary block: subtitle + attached search + results
+ *   - Secondary small block: "Others" option → free-text input (default "समाज")
+ * STATE B (a tree node selected):
+ *   - Green confirmation block
+ *   - Embedded family-tree playground (auto-centred) + 3s overlay on load
+ *   - "Change selection" button (red border / red text)
+ * STATE C (the "Others" free-form text confirmed):
+ *   - Green confirmation block showing the custom label — NO tree playground
+ *   - "Change selection" button (red border / red text)
  *
  * Props:
- *   value, onChange        — controlled selection state
- *   lang                   — "hi" | "en"
- *   hideTree               — when true, the family-tree playground is
- *                            suppressed even after selection (used by the
- *                            post-submission Edit modal).
+ *   value, onChange(id, meta)
+ *     - id = a tree node id, or OTHER_RELATION_ID, or ""
+ *     - meta.name carries the display label; for OTHER, it's the user's text
+ *   lang        — "hi" | "en"
+ *   hideTree    — when true, suppresses the playground even after selection
+ *                 (used by the post-submission Edit modal)
+ *   otherLabel  — when value === OTHER_RELATION_ID, the display text to show
+ *                 in the green block (useful when the parent persists it).
+ *                 If omitted, the picker falls back to its last local label.
  */
-export default function ReferenceTreePicker({ value, onChange, lang = "hi", hideTree = false }) {
+export default function ReferenceTreePicker({ value, onChange, lang = "hi", hideTree = false, otherLabel = "" }) {
   const [tree, setTree] = useState(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -35,6 +47,14 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
   const treeContainerRef = useRef(null);
   const searchWrapRef = useRef(null);
   const searchInputRef = useRef(null);
+
+  // "Others" mode
+  const [otherMode, setOtherMode] = useState(false);
+  const [otherInput, setOtherInput] = useState("");
+  const [localOtherLabel, setLocalOtherLabel] = useState("");
+
+  // 3s overlay on tree load
+  const [showTreeHint, setShowTreeHint] = useState(false);
 
   // ── Fetch ──
   useEffect(() => {
@@ -91,7 +111,11 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
     return out;
   }, [byId]);
 
-  const selectedNode = value && byId[value] ? byId[value] : null;
+  const isOtherSelected = value === OTHER_RELATION_ID;
+  const selectedNode = value && !isOtherSelected && byId[value] ? byId[value] : null;
+  const displayOtherLabel = otherLabel || localOtherLabel;
+  const hasSelection = !!selectedNode || (isOtherSelected && !!displayOtherLabel);
+
   const selectedLineage = useMemo(
     () => (selectedNode ? lineageOf(selectedNode.id) : []),
     [selectedNode, lineageOf]
@@ -115,7 +139,7 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
 
   // Re-centre on selection
   useEffect(() => {
-    if (!value || !treeContainerRef.current || hideTree) return;
+    if (!selectedNode || !treeContainerRef.current || hideTree) return;
     const recentre = () => {
       const container = treeContainerRef.current;
       if (!container) return;
@@ -135,7 +159,17 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
     const t1 = setTimeout(recentre, 250);
     const t2 = setTimeout(recentre, 600);
     return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [value, tree, autoZoom, hideTree]);
+  }, [selectedNode, tree, autoZoom, hideTree]);
+
+  // 3-second auto-disappearing tree overlay — fires each time the tree
+  // becomes visible for the current selection.
+  useEffect(() => {
+    if (hideTree) return;
+    if (!selectedNode) return;
+    setShowTreeHint(true);
+    const t = setTimeout(() => setShowTreeHint(false), 3000);
+    return () => clearTimeout(t);
+  }, [selectedNode, hideTree]);
 
   // ── Search ──
   const results = useMemo(() => {
@@ -149,21 +183,33 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
     const finalName = node ? nameOf(node) : name;
     onChange?.(nodeId, { name: finalName, path: lineageOf(nodeId).map(n => nameOf(n)) });
     setQuery("");
-    // Blur to dismiss mobile keyboard
+    setOtherMode(false);
+    setOtherInput("");
     try { searchInputRef.current?.blur(); } catch (_) { /* noop */ }
   };
+
+  const confirmOther = () => {
+    const label = (otherInput || "").trim();
+    if (!label) return;
+    setLocalOtherLabel(label);
+    onChange?.(OTHER_RELATION_ID, { name: label, path: [] });
+    setQuery("");
+    setOtherMode(false);
+  };
+
   const clearSelection = () => {
     onChange?.("", { name: "", path: [] });
     setQuery("");
+    setOtherMode(false);
+    setOtherInput("");
+    setLocalOtherLabel("");
   };
 
-  // ── Mobile: when user taps the search box, scroll the search box to the
-  // top of the visible viewport so it sits above the virtual keyboard.
+  // ── Mobile focus → scroll search to top ──
   const handleSearchFocus = () => {
     const isMobile = typeof window !== "undefined"
       && window.matchMedia && window.matchMedia("(max-width: 768px)").matches;
     if (!isMobile) return;
-    // Delay so keyboard has time to appear and the visualViewport settles
     setTimeout(() => {
       try {
         searchWrapRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -173,14 +219,19 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
 
   // ── Copy ──
   const copy = lang === "hi" ? {
-    title: "आपका संबंध किसके माध्यम से है?",
-    sub: "जिस परिवार के सदस्य के माध्यम से आप जुड़े हैं उनका नाम लिखें।",
-    placeholder: "संबंध के लिए नाम खोजें",
-    noResults: "यह नाम नहीं मिला।",
-    noResultsHelp: "कृपया वर्तनी जाँचें या किसी स्वयंसेवक से सहायता लें।",
-    selected: "चयनित संबंध",
-    change: "चयन बदलें",
-    gestureHint: "खींचें / पिंच करें",
+    title: "\u0938\u0902\u092C\u0902\u0927 \u0935\u093F\u0935\u0930\u0923",  // संबंध विवरण
+    sub: "\u091C\u093F\u0938 \u092A\u0930\u093F\u0935\u093E\u0930 \u0915\u0947 \u0938\u0926\u0938\u094D\u092F \u0915\u0947 \u092E\u093E\u0927\u094D\u092F\u092E \u0938\u0947 \u0906\u092A \u091C\u0941\u095C\u0947 \u0939\u0948\u0902 \u0909\u0928\u0915\u093E \u0928\u093E\u092E \u0932\u093F\u0916\u0947\u0902\u0964",
+    placeholder: "\u0938\u0902\u092C\u0902\u0927 \u0915\u0947 \u0932\u093F\u090F \u0928\u093E\u092E \u0916\u094B\u091C\u0947\u0902",  // संबंध के लिए नाम खोजें
+    noResults: "\u092F\u0939 \u0928\u093E\u092E \u0928\u0939\u0940\u0902 \u092E\u093F\u0932\u093E\u0964",
+    noResultsHelp: "\u0915\u0943\u092A\u092F\u093E \u0935\u0930\u094D\u0924\u0928\u0940 \u091C\u093E\u0901\u091A\u0947\u0902 \u092F\u093E \u0915\u093F\u0938\u0940 \u0938\u094D\u0935\u092F\u0902\u0938\u0947\u0935\u0915 \u0938\u0947 \u0938\u0939\u093E\u092F\u0924\u093E \u0932\u0947\u0902\u0964",
+    selected: "\u091A\u092F\u0928\u093F\u0924 \u0938\u0902\u092C\u0902\u0927",
+    change: "\u091A\u092F\u0928 \u092C\u0926\u0932\u0947\u0902",
+    othersTitle: "\u0915\u094D\u092F\u093E \u0906\u092A\u0915\u093E \u0938\u0902\u092C\u0902\u0927 \u0915\u093F\u0938\u0940 \u0905\u0928\u094D\u092F \u0936\u094D\u0930\u0947\u0923\u0940 \u092E\u0947\u0902 \u0939\u0948?",  // क्या आपका संबंध किसी अन्य श्रेणी में है?
+    othersBtn: "\u0905\u0928\u094D\u092F",  // अन्य
+    othersPlaceholder: "\u0938\u092E\u093E\u091C",  // समाज
+    othersConfirm: "\u091C\u094B\u095C\u0947\u0902",  // जोड़ें
+    othersCancel: "\u0930\u0926\u094D\u0926 \u0915\u0930\u0947\u0902",
+    gestureHint: "move / zoom",
   } : {
     title: "Relation Details",
     sub: "Type the name of the family member you are connected through.",
@@ -189,7 +240,12 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
     noResultsHelp: "Please check the spelling or ask a volunteer for help.",
     selected: "Selected relation",
     change: "Change selection",
-    gestureHint: "drag / pinch",
+    othersTitle: "Is your relation in some other category?",
+    othersBtn: "Others",
+    othersPlaceholder: "samaaj",
+    othersConfirm: "Add",
+    othersCancel: "Cancel",
+    gestureHint: "move / zoom",
   };
 
   if (loading) return <div className="text-sm text-[#0B1C3D]/50 py-8 text-center">Loading…</div>;
@@ -243,88 +299,149 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
       {/* Title */}
       <div>
         <h3 className="text-base sm:text-lg font-bold text-[#0B1C3D]" data-testid="ref-title">{copy.title}</h3>
-        {!selectedNode && (
+        {!hasSelection && !otherMode && (
           <p className="text-xs sm:text-sm text-[#0B1C3D]/60 mt-1.5 leading-relaxed" data-testid="ref-subtext">
             {copy.sub}
           </p>
         )}
       </div>
 
-      {/* STATE A: no selection → show attached search+results */}
-      {!selectedNode && (
-        <div
-          ref={searchWrapRef}
-          className="rounded-2xl border border-[#D4AF37]/30 bg-white shadow-sm overflow-hidden"
-          data-testid="ref-search-block"
-        >
-          <div className="relative">
-            <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#D4AF37] pointer-events-none" />
-            <Input
-              ref={searchInputRef}
-              data-testid="ref-search"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onFocus={handleSearchFocus}
-              placeholder={copy.placeholder}
-              className="pl-11 pr-10 h-12 text-base bg-white border-0 rounded-none focus-visible:ring-0 focus-visible:border-0"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/40 hover:text-[#0B1C3D]"
-                aria-label="clear"
-                data-testid="ref-search-clear"
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
+      {/* STATE A: primary search block + secondary Others node */}
+      {!hasSelection && (
+        <>
+          {!otherMode && (
+            <div
+              ref={searchWrapRef}
+              className="rounded-2xl border border-[#D4AF37]/30 bg-white shadow-sm overflow-hidden"
+              data-testid="ref-search-block"
+            >
+              <div className="relative">
+                <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#D4AF37] pointer-events-none" />
+                <Input
+                  ref={searchInputRef}
+                  data-testid="ref-search"
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  onFocus={handleSearchFocus}
+                  placeholder={copy.placeholder}
+                  className="pl-11 pr-10 h-12 text-base bg-white border-0 rounded-none focus-visible:ring-0 focus-visible:border-0"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#0B1C3D]/40 hover:text-[#0B1C3D]"
+                    aria-label="clear"
+                    data-testid="ref-search-clear"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
 
-          {/* Attached results */}
-          {query.trim() && (
-            <div className="border-t border-[#D4AF37]/15" data-testid="ref-results">
-              {results.length === 0 ? (
-                <div className="p-5 text-center">
-                  <p className="text-sm font-medium text-[#0B1C3D]/70">{copy.noResults}</p>
-                  <p className="text-xs text-[#0B1C3D]/45 mt-1">{copy.noResultsHelp}</p>
+              {query.trim() && (
+                <div className="border-t border-[#D4AF37]/15" data-testid="ref-results">
+                  {results.length === 0 ? (
+                    <div className="p-5 text-center">
+                      <p className="text-sm font-medium text-[#0B1C3D]/70">{copy.noResults}</p>
+                      <p className="text-xs text-[#0B1C3D]/45 mt-1">{copy.noResultsHelp}</p>
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-[#D4AF37]/10 max-h-[50vh] overflow-auto">
+                      {results.map(({ item }, idx) => {
+                        const path = lineageOf(item.id).map(n => nameOf(n));
+                        return (
+                          <li key={item.id}>
+                            <button
+                              type="button"
+                              onClick={() => select(item.id, nameOf(item))}
+                              data-testid={`ref-result-${item.id}`}
+                              className={`w-full text-left px-4 py-2.5 hover:bg-[#F8F1E5]/60 active:bg-[#F8F1E5] transition-colors ${idx === 0 ? "ref-result-first" : ""}`}
+                            >
+                              <p className="text-sm sm:text-base font-semibold text-[#0B1C3D] leading-tight">{nameOf(item)}</p>
+                              {path.length > 1 && (
+                                <p className="text-[11px] text-[#0B1C3D]/40 mt-0.5 truncate">{path.slice(0, -1).join(" → ")}</p>
+                              )}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </div>
-              ) : (
-                <ul className="divide-y divide-[#D4AF37]/10 max-h-[50vh] overflow-auto">
-                  {results.map(({ item }, idx) => {
-                    const path = lineageOf(item.id).map(n => nameOf(n));
-                    return (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          onClick={() => select(item.id, nameOf(item))}
-                          data-testid={`ref-result-${item.id}`}
-                          className={`w-full text-left px-4 py-2.5 hover:bg-[#F8F1E5]/60 active:bg-[#F8F1E5] transition-colors ${idx === 0 ? "ref-result-first" : ""}`}
-                        >
-                          <p className="text-sm sm:text-base font-semibold text-[#0B1C3D] leading-tight">{nameOf(item)}</p>
-                          {path.length > 1 && (
-                            <p className="text-[11px] text-[#0B1C3D]/40 mt-0.5 truncate">{path.slice(0, -1).join(" → ")}</p>
-                          )}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
               )}
             </div>
           )}
-        </div>
+
+          {/* Secondary small node: Others */}
+          {!otherMode && (
+            <div
+              className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-dashed border-[#0B1C3D]/15 bg-[#F8F1E5]/30 text-[11px] sm:text-xs text-[#0B1C3D]/70"
+              data-testid="ref-others-cta"
+            >
+              <span className="leading-snug">{copy.othersTitle}</span>
+              <button
+                type="button"
+                onClick={() => { setOtherMode(true); setOtherInput(""); }}
+                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-[#0B1C3D]/15 text-[11px] font-semibold text-[#0B1C3D] hover:bg-[#0B1C3D] hover:text-[#F8F1E5] transition-colors"
+                data-testid="ref-others-open"
+              >
+                <Sparkles size={11} /> {copy.othersBtn}
+              </button>
+            </div>
+          )}
+
+          {/* Others input mode */}
+          {otherMode && (
+            <div
+              className="rounded-2xl border-2 border-[#0B1C3D]/20 bg-white p-3 sm:p-4 shadow-sm"
+              data-testid="ref-others-input-block"
+            >
+              <p className="text-[11px] uppercase tracking-wide text-[#0B1C3D]/60 font-semibold mb-2">
+                {copy.othersBtn}
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  autoFocus
+                  value={otherInput}
+                  onChange={(e) => setOtherInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); confirmOther(); } }}
+                  placeholder={copy.othersPlaceholder}
+                  className="flex-1 h-11 text-base bg-white border-[#0B1C3D]/20"
+                  data-testid="ref-others-input"
+                />
+                <button
+                  type="button"
+                  onClick={confirmOther}
+                  disabled={!otherInput.trim()}
+                  className="shrink-0 px-3 h-11 rounded-md bg-[#0B1C3D] text-white text-sm font-semibold disabled:opacity-40 hover:bg-[#163161] transition-colors"
+                  data-testid="ref-others-confirm"
+                >
+                  {copy.othersConfirm}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setOtherMode(false); setOtherInput(""); }}
+                  className="shrink-0 px-2 h-11 rounded-md border border-[#0B1C3D]/15 text-[#0B1C3D]/60 text-sm hover:bg-[#F8F1E5]/60"
+                  data-testid="ref-others-cancel"
+                  aria-label={copy.othersCancel}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      {/* STATE B: selected → green block with embedded tree + change button */}
-      {selectedNode && (
+      {/* STATE B / C: green confirmation block */}
+      {hasSelection && (
         <div
           data-testid="ref-confirmation"
           className="rounded-2xl border-2 border-emerald-500/70 bg-emerald-50 p-4 sm:p-5 relative overflow-hidden ref-card-enter"
         >
           <div className="absolute inset-y-0 left-0 w-1.5 bg-emerald-500" />
 
-          {/* Confirmation header */}
           <p className="text-[11px] uppercase tracking-wide text-emerald-700/80 font-semibold mb-2">{copy.selected}</p>
           <div className="flex items-start gap-3">
             <div className="shrink-0 w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-white flex items-center justify-center shadow-sm">
@@ -332,18 +449,23 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-base sm:text-lg font-bold text-emerald-900 leading-tight" data-testid="ref-selected-name">
-                {nameOf(selectedNode)}
+                {selectedNode ? nameOf(selectedNode) : displayOtherLabel}
               </p>
-              {selectedLineage.length > 1 && (
+              {selectedNode && selectedLineage.length > 1 && (
                 <p className="text-[11px] sm:text-xs text-emerald-700/65 mt-1.5 leading-relaxed break-words">
                   {selectedLineage.slice(0, -1).map(n => nameOf(n)).join(" → ")}
+                </p>
+              )}
+              {isOtherSelected && (
+                <p className="text-[11px] sm:text-xs text-emerald-700/65 mt-1.5 leading-relaxed">
+                  {copy.othersBtn}
                 </p>
               )}
             </div>
           </div>
 
-          {/* Embedded family-tree playground (hidden in edit-modal) */}
-          {!hideTree && hierarchy && (
+          {/* Embedded family-tree playground — hidden for Others / hideTree */}
+          {!hideTree && selectedNode && hierarchy && (
             <div
               ref={treeContainerRef}
               className="rd3-tree-wrap mt-4 rounded-xl border border-emerald-500/25 bg-gradient-to-b from-white to-[#F8F1E5]/40 relative"
@@ -363,24 +485,45 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
                 scaleExtent={{ min: 0.25, max: 1.8 }}
                 zoom={autoZoom}
               />
-              {/* Gesture indicator (bottom-right) */}
+
+              {/* Bottom-right persistent gesture indicator */}
               <div
-                className="absolute bottom-2 right-2 pointer-events-none flex items-center gap-1 px-2 py-1 rounded-full bg-white/85 border border-emerald-500/20 shadow-sm"
+                className="absolute bottom-2 right-2 pointer-events-none flex flex-col items-center gap-0.5 px-2 py-1 rounded-lg bg-white/85 border border-emerald-500/20 shadow-sm"
                 data-testid="ref-tree-gesture-hint"
-                title={copy.gestureHint}
                 aria-label={copy.gestureHint}
               >
                 <Hand size={12} className="text-emerald-700/80" />
+                <span className="text-[9px] font-semibold text-emerald-800/75 tracking-wide leading-none">
+                  {copy.gestureHint}
+                </span>
               </div>
+
+              {/* 3-second auto-disappearing overlay */}
+              {showTreeHint && (
+                <div
+                  className="absolute inset-0 pointer-events-none flex items-center justify-center bg-white/60 backdrop-blur-[2px] ref-tree-hint-overlay"
+                  data-testid="ref-tree-hint-overlay"
+                >
+                  <div className="flex flex-col items-center gap-1 px-4 py-3 rounded-2xl bg-white/90 border border-emerald-500/30 shadow-md">
+                    <div className="flex items-center gap-2 text-emerald-700">
+                      <ZoomIn size={22} />
+                      <Move size={20} />
+                    </div>
+                    <span className="text-xs font-semibold tracking-wide text-emerald-800">
+                      {copy.gestureHint}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Change selection */}
+          {/* Change selection — RED border / RED text */}
           <button
             type="button"
             onClick={clearSelection}
             data-testid="ref-change"
-            className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white border-2 border-emerald-500 text-emerald-700 font-bold text-sm hover:bg-emerald-500 hover:text-white active:scale-[0.98] transition-all shadow-sm"
+            className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white border-2 border-red-500 text-red-600 font-bold text-sm hover:bg-red-50 active:scale-[0.98] transition-all shadow-sm"
           >
             <RefreshCw size={15} /> {copy.change}
           </button>
@@ -390,7 +533,7 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
   );
 }
 
-/* ───────────── Scoped CSS for the tree ───────────── */
+/* ───────────── Scoped CSS ───────────── */
 function ScopedTreeStyles() {
   return (
     <style>{`
@@ -400,6 +543,16 @@ function ScopedTreeStyles() {
         to   { opacity: 1; transform: translateY(0); }
       }
       .ref-result-first { box-shadow: inset 3px 0 0 #D4AF37; }
+
+      .ref-tree-hint-overlay {
+        animation: refHintFade 3s ease-out both;
+      }
+      @keyframes refHintFade {
+        0%   { opacity: 0; }
+        10%  { opacity: 1; }
+        80%  { opacity: 1; }
+        100% { opacity: 0; }
+      }
 
       .rd3-tree-wrap {
         overflow: hidden;
