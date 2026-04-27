@@ -1,0 +1,456 @@
+{
+  "version": 2,
+  "root_id": "ft-panchariya-root",
+  "nodes": [
+    {
+      "id": "ft-panchariya-root",
+      "name": "Bhawarlal ji Panchariya + Devaki bai ji",
+      "name_hi": "भंवरलाल जी पंचारिया + देवकी बाई जी",
+      "parent_id": null
+    },
+    {
+      "id": "ft-ratnibai",
+      "name": "Ratni bai ji family (Gajanand ji)",
+      "name_hi": "रतनी बाई जी परिवार (गजानंद जी)",
+      "parent_id": "ft-panchariya-root"
+    },
+    {
+      "id": "ft-ratnibai-parmanand",
+      "name": "Parmanand ji",
+      "name_hi": "परमानंद जी",
+      "parent_id": "ft-ratnibai"
+    },
+    {
+      "id": "ft-ratnibai-mahesh",
+      "name": "Mahesh ji",
+      "name_hi": "महेश जी",
+      "parent_id": "ft-ratnibai-parmanand"
+    },
+    {
+      "id": "ft-ratnibai-sanjay",
+      "name": "Sanjay ji",
+      "name_hi": "संजय जी",
+      "parent_id": "ft-ratnibai-mahesh"
+    },
+    {
+      "id": "ft-ratnibai-manorma",
+      "name": "Manorma ji",
+      "name_hi": "मनोरमा जी",
+      "parent_id": "ft-ratnibai-sanjay"
+    },
+    {
+      "id": "ft-ratnibai-santosh",
+      "name": "Santosh ji",
+      "name_hi": "संतोष जी",
+      "parent_id": "ft-ratnibai-manorma"
+    },
+    {
+      "id": "ft-ratnibai-vijaya",
+      "name": "Vijaya ji",
+      "name_hi": "विजया जी",
+      "parent_id": "ft-ratnibai-santosh"
+    },
+    {
+      "id": "ft-babulal",
+      "name": "Babu lal ji Panchariya ji family (Raji devi ji)",
+      "name_hi": "बाबू लाल जी पंचारिया जी परिवार (राजी देवी जी)",
+      "parent_id": "ft-panchariya-root"
+    },
+    {
+      "id": "ft-babulal-sharada",
+      "name": "Sharada ji family (Amarchand ji)",
+      "name_hi": "शारदा जी परिवार (अमरचंद जी)",
+      "parent_id": "ft-babulal"
+    },
+    {
+      "id": "ft-babulal-sharada-pooja",
+      "name": "Pooja ji",
+      "name_hi": "पूजा जी",
+      "parent_id": "ft-babulal-sharada"
+    },
+    {
+      "id": "ft-babulal-sharada-lalit",
+      "name": "Lalit ji",
+      "name_hi": "ललित जी",
+      "parent_id": "ft-babulal-sharada-pooja"
+    },
+    {
+      "id": "ft-babulal-sharada-anmol",
+      "name": "Anmol ji",
+      "name_hi": "अनमोल जी",
+      "parent_id": "ft-babulal-sharada-lalit"
+    },
+    {
+      "id": "ft-babulal-sangeeta",
+      "name": "Sangeeta ji family (Satish ji)",
+      "name_hi": "संगीता जी परिवार (सतीश जी)",
+      "parent_id": "ft-babulal"
+    },
+    {
+      "id": "ft-babulal-sangeeta-kalyani",
+      "name": "Kalyani ji",
+      "name_hi": "कल्याणी जी",
+      "parent_id": "ft-babulal-sangeeta"
+    },
+    {
+      "id": "ft-babulal-sangeeta-deveshi",
+      "name": "Deveshi ji",
+      "name_hi": "देवेशी जी",
+      "parent_id": "ft-babulal-sangeeta-kalyani"
+    },
+    {
+      "id": "ft-babulal-sangeeta-piyush",
+      "name": "Piyush ji",
+      "name_hi": "पीयूष जी",
+      "parent_id": "ft-babulal-sangeeta-deveshi"
+    },
+    {
+      "id": "ft-babulal-rajesh",
+      "name": "Rajesh ji family (Jaya ji)",
+      "name_hi": "राजेश जी परिवार (जया जी)",
+      "parent_id": "ft-babulal"
+    },
+    {
+      "id": "ft-babulal-rajesh-sweet",
+      "name": "Sweet ji",
+      "name_hi": "स्वीट जी",
+      "parent_id": "ft-babulal-rajesh"
+    },
+    {
+      "id": "ft-babulal-rajesh-madhuri",
+      "name": "Madhuri ji",
+      "name_hi": "माधुरी जी",
+      "parent_id": "ft-babulal-rajesh-sweet"
+    },
+    {
+      "id": "ft-babulal-rajesh-kirti",
+      "name": "Kirti ji",
+      "name_hi": "कीर्ति जी",
+      "parent_id": "ft-babulal-rajesh-madhuri"
+    },
+    {
+      "id": "ft-babulal-rajesh-venkatesh",
+      "name": "Venkatesh ji",
+      "name_hi": "वेंकटेश जी",
+      "parent_id": "ft-babulal-rajesh-kirti"
+    },
+    {
+      "id": "ft-ramswaroop",
+      "name": "Ramswaroop ji Panchariya ji family (Shanta devi ji)",
+      "name_hi": "रामस्वरूप जी पंचारिया जी परिवार (शांता देवी जी)",
+      "parent_id": "ft-panchariya-root"
+    },
+    {
+      "id": "ft-rs-satish",
+      "name": "Satish ji family (Radha ji)",
+      "name_hi": "सतीश जी परिवार (राधा जी)",
+      "parent_id": "ft-ramswaroop"
+    },
+    {
+      "id": "ft-rs-satish-nikita",
+      "name": "Nikita ji family (Aditya ji)",
+      "name_hi": "निकिता जी परिवार (आदित्य जी)",
+      "parent_id": "ft-rs-satish"
+    },
+    {
+      "id": "ft-rs-satish-nikita-vrishank",
+      "name": "Vrishank ji",
+      "name_hi": "वृषंक जी",
+      "parent_id": "ft-rs-satish-nikita"
+    },
+    {
+      "id": "ft-rs-satish-nikita-himaksh",
+      "name": "Himaksh ji",
+      "name_hi": "हिमाक्ष जी",
+      "parent_id": "ft-rs-satish-nikita"
+    },
+    {
+      "id": "ft-rs-satish-jayesh",
+      "name": "Jayesh ji family (Mansi ji)",
+      "name_hi": "जयेश जी परिवार (मानसी जी)",
+      "parent_id": "ft-rs-satish"
+    },
+    {
+      "id": "ft-rs-satish-jayesh-navya",
+      "name": "Navya ji",
+      "name_hi": "नव्या जी",
+      "parent_id": "ft-rs-satish-jayesh"
+    },
+    {
+      "id": "ft-rs-alka1",
+      "name": "Alka ji family (Pitra dev ji)",
+      "name_hi": "अलका जी परिवार (पितृ देव जी)",
+      "parent_id": "ft-ramswaroop"
+    },
+    {
+      "id": "ft-rs-alka2",
+      "name": "Alka ji family (Rakesh ji)",
+      "name_hi": "अलका जी परिवार (राकेश जी)",
+      "parent_id": "ft-rs-alka1"
+    },
+    {
+      "id": "ft-rs-alka2-aditya",
+      "name": "Aditya ji family (Ruchika ji)",
+      "name_hi": "आदित्य जी परिवार (रुचिका जी)",
+      "parent_id": "ft-rs-alka2"
+    },
+    {
+      "id": "ft-rs-alka2-aditya-nitvik",
+      "name": "Nitvik ji",
+      "name_hi": "नित्विक जी",
+      "parent_id": "ft-rs-alka2-aditya"
+    },
+    {
+      "id": "ft-rs-alka2-tanvi",
+      "name": "Tanvi ji family (Arpit ji)",
+      "name_hi": "तन्वी जी परिवार (अर्पित जी)",
+      "parent_id": "ft-rs-alka2"
+    },
+    {
+      "id": "ft-rs-alka2-tanvi-meeral",
+      "name": "Meeral ji",
+      "name_hi": "मीरल जी",
+      "parent_id": "ft-rs-alka2-tanvi"
+    },
+    {
+      "id": "ft-rs-alka2-tanvi-girisha",
+      "name": "Girisha ji",
+      "name_hi": "गिरिशा जी",
+      "parent_id": "ft-rs-alka2-tanvi"
+    },
+    {
+      "id": "ft-rs-arun",
+      "name": "Arun ji family (Sarita ji)",
+      "name_hi": "अरुण जी परिवार (सरिता जी)",
+      "parent_id": "ft-ramswaroop"
+    },
+    {
+      "id": "ft-rs-arun-shailya",
+      "name": "Shailya ji",
+      "name_hi": "शैल्या जी",
+      "parent_id": "ft-rs-arun"
+    },
+    {
+      "id": "ft-rs-arun-dev",
+      "name": "Dev ji",
+      "name_hi": "देव जी",
+      "parent_id": "ft-rs-arun"
+    },
+    {
+      "id": "ft-rs-ashok",
+      "name": "Ashok ji family (Madhu ji)",
+      "name_hi": "अशोक जी परिवार (मधु जी)",
+      "parent_id": "ft-ramswaroop"
+    },
+    {
+      "id": "ft-rs-ashok-krisha",
+      "name": "Krisha ji",
+      "name_hi": "कृषा जी",
+      "parent_id": "ft-rs-ashok"
+    },
+    {
+      "id": "ft-rs-ashok-shreya",
+      "name": "Shreya ji",
+      "name_hi": "श्रेया जी",
+      "parent_id": "ft-rs-ashok"
+    },
+    {
+      "id": "ft-rs-ashok-dhairya",
+      "name": "Dhairya ji",
+      "name_hi": "धैर्य जी",
+      "parent_id": "ft-rs-ashok"
+    },
+    {
+      "id": "ft-sugandh",
+      "name": "Sugandhchand ji Panchariya ji family (Sita ji)",
+      "name_hi": "सुगंधचंद जी पंचारिया जी परिवार (सीता जी)",
+      "parent_id": "ft-panchariya-root"
+    },
+    {
+      "id": "ft-sugandh-dinesh",
+      "name": "Dinesh ji family (Saroj ji, Sapna ji)",
+      "name_hi": "दिनेश जी परिवार (सरोज जी, सपना जी)",
+      "parent_id": "ft-sugandh"
+    },
+    {
+      "id": "ft-sugandh-dinesh-monam",
+      "name": "Monam ji family (Ankit ji)",
+      "name_hi": "मोनम जी परिवार (अंकित जी)",
+      "parent_id": "ft-sugandh-dinesh"
+    },
+    {
+      "id": "ft-sugandh-dinesh-monam-sanvi",
+      "name": "Sanvi ji",
+      "name_hi": "सान्वी जी",
+      "parent_id": "ft-sugandh-dinesh-monam"
+    },
+    {
+      "id": "ft-sugandh-dinesh-monam-mridha",
+      "name": "Mridha ji",
+      "name_hi": "मृधा जी",
+      "parent_id": "ft-sugandh-dinesh-monam"
+    },
+    {
+      "id": "ft-sugandh-dinesh-akshay",
+      "name": "Akshay ji",
+      "name_hi": "अक्षय जी",
+      "parent_id": "ft-sugandh-dinesh"
+    },
+    {
+      "id": "ft-sugandh-dinesh-akash",
+      "name": "Akash ji family (Isha ji)",
+      "name_hi": "आकाश जी परिवार (ईशा जी)",
+      "parent_id": "ft-sugandh-dinesh"
+    },
+    {
+      "id": "ft-sugandh-naresh",
+      "name": "Naresh ji family (Nitu ji)",
+      "name_hi": "नरेश जी परिवार (नीतू जी)",
+      "parent_id": "ft-sugandh"
+    },
+    {
+      "id": "ft-sugandh-naresh-tushar",
+      "name": "Tushar ji family (Kajal ji)",
+      "name_hi": "तुषार जी परिवार (काजल जी)",
+      "parent_id": "ft-sugandh-naresh"
+    },
+    {
+      "id": "ft-sugandh-naresh-tushar-vidit",
+      "name": "Vidit ji",
+      "name_hi": "विदित जी",
+      "parent_id": "ft-sugandh-naresh-tushar"
+    },
+    {
+      "id": "ft-sugandh-naresh-jitesh",
+      "name": "Jitesh ji family (Vaibhavi ji)",
+      "name_hi": "जितेश जी परिवार (वैभवी जी)",
+      "parent_id": "ft-sugandh-naresh"
+    },
+    {
+      "id": "ft-sugnibai",
+      "name": "Sugni bai ji family (Omkar ji)",
+      "name_hi": "सुगनी बाई जी परिवार (ओमकार जी)",
+      "parent_id": "ft-panchariya-root"
+    },
+    {
+      "id": "ft-sugnibai-poonamchand",
+      "name": "Poonamchand ji",
+      "name_hi": "पूनमचंद जी",
+      "parent_id": "ft-sugnibai"
+    },
+    {
+      "id": "ft-sugnibai-raju",
+      "name": "Raju ji",
+      "name_hi": "राजू जी",
+      "parent_id": "ft-sugnibai-poonamchand"
+    },
+    {
+      "id": "ft-sugnibai-santosh",
+      "name": "Santosh ji",
+      "name_hi": "संतोष जी",
+      "parent_id": "ft-sugnibai-raju"
+    },
+    {
+      "id": "ft-sugnibai-manoj",
+      "name": "Manoj ji",
+      "name_hi": "मनोज जी",
+      "parent_id": "ft-sugnibai-santosh"
+    },
+    {
+      "id": "ft-nandkishore",
+      "name": "Nandkishore ji Panchariya ji family (Padmadevi ji)",
+      "name_hi": "नंदकिशोर जी पंचारिया जी परिवार (पद्मदेवी जी)",
+      "parent_id": "ft-panchariya-root"
+    },
+    {
+      "id": "ft-nk-rekha",
+      "name": "Rekha ji family (Govind ji)",
+      "name_hi": "रेखा जी परिवार (गोविंद जी)",
+      "parent_id": "ft-nandkishore"
+    },
+    {
+      "id": "ft-nk-rekha-atharva",
+      "name": "Atharva ji",
+      "name_hi": "अथर्व जी",
+      "parent_id": "ft-nk-rekha"
+    },
+    {
+      "id": "ft-nk-manish",
+      "name": "Manish ji family (Sangeeta ji)",
+      "name_hi": "मनीष जी परिवार (संगीता जी)",
+      "parent_id": "ft-nandkishore"
+    },
+    {
+      "id": "ft-nk-manish-rishabh",
+      "name": "Rishabh ji",
+      "name_hi": "ऋषभ जी",
+      "parent_id": "ft-nk-manish"
+    },
+    {
+      "id": "ft-nk-manish-mohit",
+      "name": "Mohit ji",
+      "name_hi": "मोहित जी",
+      "parent_id": "ft-nk-manish-rishabh"
+    },
+    {
+      "id": "ft-anandi",
+      "name": "Anandi bai ji family (Ugalkishore ji)",
+      "name_hi": "आनंदी बाई जी परिवार (उगलकिशोर जी)",
+      "parent_id": "ft-panchariya-root"
+    },
+    {
+      "id": "ft-anandi-sushil",
+      "name": "Sushil ji",
+      "name_hi": "सुशील जी",
+      "parent_id": "ft-anandi"
+    },
+    {
+      "id": "ft-anandi-asha",
+      "name": "Asha ji",
+      "name_hi": "आशा जी",
+      "parent_id": "ft-anandi-sushil"
+    },
+    {
+      "id": "ft-anandi-mita",
+      "name": "Mita ji",
+      "name_hi": "मीता जी",
+      "parent_id": "ft-anandi-asha"
+    },
+    {
+      "id": "ft-shyam",
+      "name": "Shyam ji Panchariya ji family (Usha ji)",
+      "name_hi": "श्याम जी पंचारिया जी परिवार (उषा जी)",
+      "parent_id": "ft-panchariya-root"
+    },
+    {
+      "id": "ft-shyam-asha",
+      "name": "Asha ji family (Mahendra ji)",
+      "name_hi": "आशा जी परिवार (महेंद्र जी)",
+      "parent_id": "ft-shyam"
+    },
+    {
+      "id": "ft-shyam-asha-ruchita",
+      "name": "Ruchita ji",
+      "name_hi": "रुचिता जी",
+      "parent_id": "ft-shyam-asha"
+    },
+    {
+      "id": "ft-shyam-asha-rohit",
+      "name": "Rohit ji",
+      "name_hi": "रोहित जी",
+      "parent_id": "ft-shyam-asha-ruchita"
+    },
+    {
+      "id": "ft-shyam-sonu",
+      "name": "Sonu ji family (Bhushan ji)",
+      "name_hi": "सोनू जी परिवार (भूषण जी)",
+      "parent_id": "ft-shyam"
+    },
+    {
+      "id": "ft-shyam-sonu-shaurya",
+      "name": "Shaurya ji",
+      "name_hi": "शौर्य जी",
+      "parent_id": "ft-shyam-sonu"
+    }
+  ]
+}

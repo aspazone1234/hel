@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"trigger_key":{"$numberInt":"1"}},"name":"trigger_key_1","unique":true,"sparse":true}],"uuid":"4570e15ee7bb4e64b278fe4b57176b8d","collectionName":"wa_triggers","type":"collection"}

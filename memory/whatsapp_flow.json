@@ -1,0 +1,391 @@
+{
+  "version": "7.0",
+  "data_api_version": "3.0",
+  "routing_model": {
+    "WELCOME": ["CATEGORY_STAY_ESSENTIALS", "CATEGORY_FOOD_BEVERAGES", "CATEGORY_HOUSEKEEPING", "CATEGORY_MEDICAL", "CATEGORY_OTHER"],
+    "CATEGORY_STAY_ESSENTIALS": ["SERVICE_DETAILS"],
+    "CATEGORY_FOOD_BEVERAGES": ["SERVICE_DETAILS"],
+    "CATEGORY_HOUSEKEEPING": ["SERVICE_DETAILS"],
+    "CATEGORY_MEDICAL": ["SERVICE_DETAILS"],
+    "CATEGORY_OTHER": ["SERVICE_DETAILS"],
+    "SERVICE_DETAILS": ["REVIEW"],
+    "REVIEW": ["SUCCESS"]
+  },
+  "screens": [
+    {
+      "id": "WELCOME",
+      "title": "Help & Support",
+      "data": {},
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "How can we help you?"
+          },
+          {
+            "type": "TextBody",
+            "text": "Pick a category to see the services available during your stay. We respond to each request with an SLA based on priority."
+          },
+          {
+            "type": "Footer",
+            "label": "Stay Essentials",
+            "on-click-action": {
+              "name": "navigate",
+              "next": { "type": "screen", "name": "CATEGORY_STAY_ESSENTIALS" },
+              "payload": { "category": "stay_essentials" }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "CATEGORY_STAY_ESSENTIALS",
+      "title": "Stay Essentials",
+      "data": {
+        "category": { "type": "string", "__example__": "stay_essentials" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Stay Essentials"
+          },
+          {
+            "type": "Form",
+            "name": "stay_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "service_type",
+                "label": "Select a service",
+                "required": true,
+                "data-source": [
+                  { "id": "drinking_water", "title": "Drinking Water" },
+                  { "id": "daily_items", "title": "Daily Items (Soap, Shampoo)" },
+                  { "id": "bedding", "title": "Bedding / Blanket / Pillow" },
+                  { "id": "mosquito_pest", "title": "Mosquito / Pest Control" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continue",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "SERVICE_DETAILS" },
+                  "payload": {
+                    "category": "stay_essentials",
+                    "service_type": "${form.service_type}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "CATEGORY_FOOD_BEVERAGES",
+      "title": "Food & Beverages",
+      "data": {
+        "category": { "type": "string", "__example__": "food_beverages" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Food & Beverages"
+          },
+          {
+            "type": "Form",
+            "name": "food_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "service_type",
+                "label": "Select a service",
+                "required": true,
+                "data-source": [
+                  { "id": "tea_coffee", "title": "Tea / Coffee (On Availability)" },
+                  { "id": "extra_meal", "title": "Extra Meal Request" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continue",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "SERVICE_DETAILS" },
+                  "payload": {
+                    "category": "food_beverages",
+                    "service_type": "${form.service_type}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "CATEGORY_HOUSEKEEPING",
+      "title": "Housekeeping",
+      "data": {
+        "category": { "type": "string", "__example__": "housekeeping" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Housekeeping"
+          },
+          {
+            "type": "Form",
+            "name": "house_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "service_type",
+                "label": "Select a service",
+                "required": true,
+                "data-source": [
+                  { "id": "room_cleaning", "title": "Room Cleaning" },
+                  { "id": "washroom_cleaning", "title": "Washroom Cleaning" },
+                  { "id": "garbage_pickup", "title": "Garbage Pickup" },
+                  { "id": "room_issue", "title": "Room Issue (Electricity / Water)" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continue",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "SERVICE_DETAILS" },
+                  "payload": {
+                    "category": "housekeeping",
+                    "service_type": "${form.service_type}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "CATEGORY_MEDICAL",
+      "title": "Medical",
+      "data": {
+        "category": { "type": "string", "__example__": "medical" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Medical"
+          },
+          {
+            "type": "TextCaption",
+            "text": "For life-threatening emergencies, please call the front desk immediately."
+          },
+          {
+            "type": "Form",
+            "name": "med_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "service_type",
+                "label": "Select a service",
+                "required": true,
+                "data-source": [
+                  { "id": "first_aid", "title": "First Aid Box" },
+                  { "id": "medicines", "title": "Medicines (Headache / Cold / Fever)" },
+                  { "id": "medical_emergency", "title": "Medical Emergency" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continue",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "SERVICE_DETAILS" },
+                  "payload": {
+                    "category": "medical",
+                    "service_type": "${form.service_type}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "CATEGORY_OTHER",
+      "title": "Other",
+      "data": {
+        "category": { "type": "string", "__example__": "other" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Other"
+          },
+          {
+            "type": "Form",
+            "name": "other_form",
+            "children": [
+              {
+                "type": "RadioButtonsGroup",
+                "name": "service_type",
+                "label": "Select a service",
+                "required": true,
+                "data-source": [
+                  { "id": "lost_found", "title": "Lost & Found" },
+                  { "id": "other_request", "title": "Other Request" }
+                ]
+              },
+              {
+                "type": "Footer",
+                "label": "Continue",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "SERVICE_DETAILS" },
+                  "payload": {
+                    "category": "other",
+                    "service_type": "${form.service_type}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "SERVICE_DETAILS",
+      "title": "Details",
+      "data": {
+        "category": { "type": "string", "__example__": "housekeeping" },
+        "service_type": { "type": "string", "__example__": "room_cleaning" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Tell us a bit more"
+          },
+          {
+            "type": "Form",
+            "name": "details_form",
+            "children": [
+              {
+                "type": "TextInput",
+                "name": "room_or_location",
+                "label": "Room number or location",
+                "required": true,
+                "helper-text": "Example: Room 204, Block B or Hall-2"
+              },
+              {
+                "type": "TextArea",
+                "name": "description",
+                "label": "Describe your request",
+                "required": true,
+                "helper-text": "A short description helps us resolve faster (max 400 chars)",
+                "max-length": 400
+              },
+              {
+                "type": "Footer",
+                "label": "Review",
+                "on-click-action": {
+                  "name": "navigate",
+                  "next": { "type": "screen", "name": "REVIEW" },
+                  "payload": {
+                    "category": "${data.category}",
+                    "service_type": "${data.service_type}",
+                    "room_or_location": "${form.room_or_location}",
+                    "description": "${form.description}"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "REVIEW",
+      "title": "Review",
+      "data": {
+        "category": { "type": "string", "__example__": "housekeeping" },
+        "service_type": { "type": "string", "__example__": "room_cleaning" },
+        "room_or_location": { "type": "string", "__example__": "Room 204" },
+        "description": { "type": "string", "__example__": "Need fresh towels" }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Review your request"
+          },
+          { "type": "TextSubheading", "text": "Category" },
+          { "type": "TextBody", "text": "${data.category}" },
+          { "type": "TextSubheading", "text": "Service" },
+          { "type": "TextBody", "text": "${data.service_type}" },
+          { "type": "TextSubheading", "text": "Location" },
+          { "type": "TextBody", "text": "${data.room_or_location}" },
+          { "type": "TextSubheading", "text": "Description" },
+          { "type": "TextBody", "text": "${data.description}" },
+          {
+            "type": "Footer",
+            "label": "Submit",
+            "on-click-action": {
+              "name": "data_exchange",
+              "payload": {
+                "category": "${data.category}",
+                "service_type": "${data.service_type}",
+                "room_or_location": "${data.room_or_location}",
+                "description": "${data.description}"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "SUCCESS",
+      "title": "Submitted",
+      "terminal": true,
+      "data": {
+        "ticket_id": { "type": "string", "__example__": "TCK-2026-00123" },
+        "sla_minutes": { "type": "number", "__example__": 30 }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          {
+            "type": "TextHeading",
+            "text": "Request submitted"
+          },
+          {
+            "type": "TextBody",
+            "text": "Your ticket ID is ${data.ticket_id}. Expected response time is ${data.sla_minutes} minutes. You will receive updates on WhatsApp."
+          },
+          {
+            "type": "Footer",
+            "label": "Done",
+            "on-click-action": { "name": "complete", "payload": {} }
+          }
+        ]
+      }
+    }
+  ]
+}
