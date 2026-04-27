@@ -25,7 +25,7 @@ export default function DemoSubmissionDisabledPage() {
           style={{ fontFamily: "'Cormorant Garamond', serif" }}
           data-testid="demo-disabled-message"
         >
-          This is just a form submission, not allowed in demo preview.
+          This is just a demo preview. Form submission not allowed.
         </h1>
         <button
           type="button"
