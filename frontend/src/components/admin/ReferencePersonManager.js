@@ -539,7 +539,7 @@ export default function ReferencePersonManager({ user }) {
 
           {!selectedNode ? (
             <p className="text-xs text-[#0B1C3D]/45 italic py-6 text-center">
-              Click any node on the left to edit its rank and relation categories.
+              Click any node on the left to edit its rank.
             </p>
           ) : (
             <div className="space-y-4">

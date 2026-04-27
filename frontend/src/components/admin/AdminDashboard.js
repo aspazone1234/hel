@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Users, Hotel, UserCheck, Plane, AlertTriangle, Clock, ChevronDown, ChevronUp, X, Bell, Star, ListTodo, Headphones, BookOpen, Heart } from "lucide-react";
+import { Users, Hotel, UserCheck, Plane, AlertTriangle, Clock, ChevronDown, ChevronUp, X, Bell, Star, ListTodo, Headphones, BookOpen } from "lucide-react";
 import axios from "axios";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 
@@ -388,9 +388,6 @@ export default function AdminDashboard({ user }) {
         </div>
       )}
 
-      {/* === REFERENCE PERSON × RELATION STATS === */}
-      <RefRelationStatsBlock authHeaders={authHeaders} />
-
       {/* Drill-down Modal */}
       <Dialog open={!!drillModal} onOpenChange={() => setDrillModal(null)}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
@@ -438,126 +435,3 @@ function StatCard({ icon: Icon, label, color, textColor, iconColor, families, pe
   );
 }
 
-function RefRelationStatsBlock({ authHeaders }) {
-  const [stats, setStats] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState({});
-  const [drillModal, setDrillModal] = useState(null);
-  const [drillData, setDrillData] = useState([]);
-  const [drillLoading, setDrillLoading] = useState(false);
-
-  useEffect(() => {
-    axios.get(`${API}/api/admin/ref-relation-stats`, { headers: authHeaders() })
-      .then(r => setStats(r.data || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [authHeaders]);
-
-  const toggleExpand = (name) => setExpanded(prev => ({ ...prev, [name]: !prev[name] }));
-
-  const openDrill = async (field, value, title) => {
-    setDrillModal(title);
-    setDrillLoading(true);
-    try {
-      const { data } = await axios.get(`${API}/api/admin/dashboard/drill-down`, {
-        headers: authHeaders(), params: { field, value },
-      });
-      setDrillData(data);
-    } catch { setDrillData([]); }
-    setDrillLoading(false);
-  };
-
-  if (loading) return null;
-  if (stats.length === 0) return null;
-
-  return (
-    <>
-      <div className="bg-white rounded-2xl border border-[#D4AF37]/20 overflow-hidden" data-testid="ref-relation-stats">
-        <div className="bg-gradient-to-r from-[#0B1C3D] to-[#1a3a6b] text-[#F8F1E5] px-4 py-3 flex items-center gap-2">
-          <Heart size={16} className="text-[#D4AF37]" />
-          <span className="font-semibold text-sm">Reference Person &times; Relation</span>
-          <span className="text-xs text-[#F8F1E5]/60 ml-1">(Approved only, excludes pending)</span>
-        </div>
-        <div className="divide-y divide-[#D4AF37]/10">
-          {stats.map(ref => (
-            <div key={ref.name}>
-              <button
-                onClick={() => toggleExpand(ref.name)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-[#F8F1E5]/40 transition text-left"
-                data-testid={`ref-stat-${ref.name}`}
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-[#0B1C3D] text-sm truncate">{ref.name}</p>
-                  <div className="flex gap-3 mt-0.5 flex-wrap">
-                    <button onClick={(e) => { e.stopPropagation(); openDrill("reference_person", ref.name, `All guests of ${ref.name}`); }}
-                      className="text-xs text-blue-600 hover:underline">
-                      Total: {ref.total_families} fam / {ref.total_people} people
-                    </button>
-                    <span className="text-xs text-green-600">Arrived: {ref.arrived_families} fam</span>
-                    <span className="text-xs text-blue-500">Expected: {ref.expected_families} fam</span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0 ml-2">
-                  <span className="bg-[#D4AF37]/20 text-[#0B1C3D] font-bold text-sm px-3 py-1 rounded-full">{ref.total_families}</span>
-                  {expanded[ref.name] ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-                </div>
-              </button>
-              {expanded[ref.name] && (
-                <div className="bg-gray-50 px-4 pb-3">
-                  <div className="space-y-1">
-                    {ref.relations.map(rel => (
-                      <div key={rel.name} className="flex items-center justify-between py-1.5 px-3 bg-white rounded-lg border border-gray-100">
-                        <span className="text-xs text-gray-700 font-medium">{rel.name}</span>
-                        <div className="flex gap-2 items-center">
-                          <button
-                            onClick={() => openDrill("ref_relation", `${ref.name}|${rel.name}`, `${ref.name} — ${rel.name}`)}
-                            className="text-xs font-bold text-indigo-600 hover:underline cursor-pointer bg-indigo-50 px-2 py-0.5 rounded-full"
-                          >
-                            {rel.families} fam / {rel.people}p
-                          </button>
-                          <span className="text-[10px] text-green-600">{rel.arrived_families}A</span>
-                          <span className="text-[10px] text-blue-500">{rel.expected_families}E</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Drill-down Modal for Ref-Relation */}
-      <Dialog open={!!drillModal} onOpenChange={() => setDrillModal(null)}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-[#0B1C3D]">{drillModal}</DialogTitle>
-          </DialogHeader>
-          {drillLoading ? (
-            <p className="text-center text-gray-500 py-4">Loading...</p>
-          ) : drillData.length === 0 ? (
-            <p className="text-center text-gray-400 py-4">No records found</p>
-          ) : (
-            <div className="space-y-2" data-testid="ref-drill-down-list">
-              {drillData.map((r, i) => (
-                <div key={i} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
-                  <div>
-                    <p className="font-medium text-[#0B1C3D] text-sm">{r.head_name} <span className="font-normal text-gray-400 text-xs">· {r.primary_mobile}</span></p>
-                    <p className="text-xs text-gray-500">{r.num_people} people {r.rooms?.length > 0 && `• Room: ${r.rooms.join(", ")}`}</p>
-                    {r.relation_category && <p className="text-xs text-indigo-500">Relation: {r.relation_category}</p>}
-                  </div>
-                  <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${
-                    r.arrival_status === "arrived" ? "bg-green-100 text-green-700" :
-                    r.arrival_status === "departed" ? "bg-gray-100 text-gray-600" :
-                    "bg-blue-100 text-blue-700"
-                  }`}>{r.arrival_status}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
