@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import axios from "axios";
 import Fuse from "fuse.js";
 import { Tree } from "react-d3-tree";
-import { Search, Check, X, RefreshCw, Hand, Move, ZoomIn, Sparkles } from "lucide-react";
+import { Search, Check, X, RefreshCw, Hand, Move, ZoomIn } from "lucide-react";
 import { Input } from "./ui/input";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -228,6 +228,7 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
     change: "\u091A\u092F\u0928 \u092C\u0926\u0932\u0947\u0902",
     othersTitle: "\u0915\u094D\u092F\u093E \u0906\u092A\u0915\u093E \u0938\u0902\u092C\u0902\u0927 \u0915\u093F\u0938\u0940 \u0905\u0928\u094D\u092F \u0936\u094D\u0930\u0947\u0923\u0940 \u092E\u0947\u0902 \u0939\u0948?",  // क्या आपका संबंध किसी अन्य श्रेणी में है?
     othersBtn: "\u0905\u0928\u094D\u092F",  // अन्य
+    othersClickHere: "\u092F\u0939\u093E\u0901 \u0915\u094D\u0932\u093F\u0915 \u0915\u0930\u0947\u0902",  // यहाँ क्लिक करें
     othersPlaceholder: "\u0938\u092E\u093E\u091C",  // समाज
     othersConfirm: "\u091C\u094B\u095C\u0947\u0902",  // जोड़ें
     othersCancel: "\u0930\u0926\u094D\u0926 \u0915\u0930\u0947\u0902",
@@ -242,6 +243,7 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
     change: "Change selection",
     othersTitle: "Is your relation in some other category?",
     othersBtn: "Others",
+    othersClickHere: "Click here",
     othersPlaceholder: "samaaj",
     othersConfirm: "Add",
     othersCancel: "Cancel",
@@ -296,15 +298,12 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
     <div className="space-y-4" data-testid="relation-details-picker">
       <ScopedTreeStyles />
 
-      {/* Title */}
-      <div>
-        <h3 className="text-base sm:text-lg font-bold text-[#0B1C3D]" data-testid="ref-title">{copy.title}</h3>
-        {!hasSelection && !otherMode && (
-          <p className="text-xs sm:text-sm text-[#0B1C3D]/60 mt-1.5 leading-relaxed" data-testid="ref-subtext">
-            {copy.sub}
-          </p>
-        )}
-      </div>
+      {/* Subtext only — no duplicate title (the parent page owns the heading) */}
+      {!hasSelection && !otherMode && (
+        <p className="text-xs sm:text-sm text-[#0B1C3D]/60 leading-relaxed" data-testid="ref-subtext">
+          {copy.sub}
+        </p>
+      )}
 
       {/* STATE A: primary search block + secondary Others node */}
       {!hasSelection && (
@@ -373,22 +372,22 @@ export default function ReferenceTreePicker({ value, onChange, lang = "hi", hide
             </div>
           )}
 
-          {/* Secondary small node: Others */}
+          {/* Secondary inline link: "<question>? Others → Click here" */}
           {!otherMode && (
-            <div
-              className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-dashed border-[#0B1C3D]/15 bg-[#F8F1E5]/30 text-[11px] sm:text-xs text-[#0B1C3D]/70"
+            <p
+              className="text-xs sm:text-sm text-[#0B1C3D]/70 leading-snug text-left"
               data-testid="ref-others-cta"
             >
-              <span className="leading-snug">{copy.othersTitle}</span>
+              {copy.othersTitle}{" "}
               <button
                 type="button"
                 onClick={() => { setOtherMode(true); setOtherInput(""); }}
-                className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-[#0B1C3D]/15 text-[11px] font-semibold text-[#0B1C3D] hover:bg-[#0B1C3D] hover:text-[#F8F1E5] transition-colors"
+                className="text-[#0B1C3D] underline underline-offset-2 decoration-[#0B1C3D]/40 hover:decoration-[#0B1C3D] font-semibold bg-transparent p-0 inline"
                 data-testid="ref-others-open"
               >
-                <Sparkles size={11} /> {copy.othersBtn}
+                {copy.othersBtn} {"\u2192"} {copy.othersClickHere}
               </button>
-            </div>
+            </p>
           )}
 
           {/* Others input mode */}

@@ -35,7 +35,7 @@ export default function Demo1Page() {
       <div className="max-w-2xl mx-auto px-4">
         {/* Demo banner */}
         <div
-          className="mb-4 rounded-xl border border-[#D4AF37]/40 bg-[#0B1C3D] text-[#F8F1E5] px-4 py-2 flex items-center justify-between gap-3 shadow-sm"
+          className="mb-3 rounded-xl border border-[#D4AF37]/40 bg-[#0B1C3D] text-[#F8F1E5] px-4 py-2 shadow-sm"
           data-testid="demo1-banner"
         >
           <div className="flex items-center gap-2 min-w-0">
@@ -46,15 +46,21 @@ export default function Demo1Page() {
                 : "Relation Details — standalone preview"}
             </span>
           </div>
+        </div>
+
+        {/* Text-based language toggle — shown in the OPPOSITE language */}
+        <p className="mb-4 text-xs sm:text-sm text-[#0B1C3D]/70 text-left">
           <button
             type="button"
             onClick={() => setLang(l => (l === "hi" ? "en" : "hi"))}
-            className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#D4AF37] text-[#0B1C3D] text-[11px] font-bold hover:bg-[#E9C558] transition-colors"
+            className="text-[#0B1C3D] underline underline-offset-2 decoration-[#0B1C3D]/40 hover:decoration-[#0B1C3D] font-semibold bg-transparent p-0 inline"
             data-testid="demo1-lang-toggle"
           >
-            {isHi ? "EN" : "HI"}
+            {isHi
+              ? "Click here for English"
+              : "\u0939\u093F\u0928\u094D\u0926\u0940 \u0915\u0947 \u0932\u093F\u090F \u092F\u0939\u093E\u0901 \u0915\u094D\u0932\u093F\u0915 \u0915\u0930\u0947\u0902"}
           </button>
-        </div>
+        </p>
 
         {/* Card */}
         <div className="bg-white rounded-2xl shadow-lg border border-[#D4AF37]/20 p-5 sm:p-7">
@@ -105,26 +111,6 @@ export default function Demo1Page() {
             >
               {isHi ? "\u0905\u0917\u0932\u093E" : "Next"} <ArrowRight size={15} />
             </button>
-          </div>
-
-          {/* Snapshot panel for demo visibility */}
-          <div
-            className="mt-5 rounded-xl bg-[#F8F1E5]/60 border border-[#D4AF37]/15 p-3 text-[11px] sm:text-xs text-[#0B1C3D]/70"
-            data-testid="demo1-snapshot"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-semibold text-[#0B1C3D]">
-                {isHi ? "\u091A\u092F\u0928 \u0938\u094D\u0925\u093F\u0924\u093F" : "Current selection"}
-              </span>
-              <code className="text-[10px] break-all text-[#0B1C3D]/55">
-                {relationId || (isHi ? "\u2014 \u0915\u094B\u0908 \u091A\u092F\u0928 \u0928\u0939\u0940\u0902 \u2014" : "— none —")}
-              </code>
-            </div>
-            {relationName && (
-              <div className="mt-1 text-[#0B1C3D]">
-                {isHi ? "\u0928\u093E\u092E" : "Name"}: <span className="font-semibold">{relationName}</span>
-              </div>
-            )}
           </div>
         </div>
 
