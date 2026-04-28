@@ -359,6 +359,18 @@ export default function RegisterPage() {
             <ChevronLeft size={16} /> {t.register.backHome}
           </Link>
 
+          {/* OTP help GIF — mobile only, only on the OTP-verify step.
+              Tells the user "copy the OTP from your phone's WhatsApp notifications".
+              Aspect ratio preserved via object-contain. */}
+          {otpPhase === "otp_sent" && (
+            <img
+              src={`${process.env.REACT_APP_BACKEND_URL}/api/static/media/otp_help_animation.gif`}
+              alt="Copy OTP from WhatsApp notifications"
+              className="md:hidden block w-full max-h-72 object-contain mx-auto mb-4"
+              data-testid="otp-help-gif"
+            />
+          )}
+
           <div className="bg-white rounded-2xl p-6 sm:p-8 border border-[#D4AF37]/20 shadow-lg">
             <div className="flex items-center justify-between mb-6">
               <h1 className="text-2xl font-bold text-[#0B1C3D]" style={{ fontFamily: lang === "hi" ? fontHi : "'Cormorant Garamond', serif" }}>
@@ -852,6 +864,13 @@ export default function RegisterPage() {
                   : isEditMode
                     ? (lang === "hi" ? "\u092A\u0902\u091C\u0940\u0915\u0930\u0923 \u0905\u092A\u0921\u0947\u091F \u0915\u0930\u0947\u0902" : "Update Registration")
                     : t.register.submit}
+              </Button>
+
+              {/* Allow going back from Summary to fix a mistake. The Submit button
+                  above remains the primary CTA — this Previous button is secondary. */}
+              <Button onClick={handlePrev} variant="outline" data-testid="summary-prev-btn"
+                className="w-full border-[#D4AF37]/30 text-[#0B1C3D] hover:bg-[#D4AF37]/10">
+                <ArrowLeft size={16} className="mr-2" /> {t.register.previous}
               </Button>
             </div>
           )}
