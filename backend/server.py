@@ -715,6 +715,18 @@ async def create_relation_category(body: RelationCategoryCreate, request: Reques
     await log_audit("create", "relation_category", doc["id"], body.name, "Relation category created", user["name"])
     return doc
 
+@api_router.put("/admin/relation-categories/{cat_id}")
+async def update_relation_category(cat_id: str, body: RelationCategoryCreate, request: Request):
+    user = await require_superadmin(request)
+    update_fields = {}
+    if body.name:
+        update_fields["name"] = body.name
+    update_fields["description"] = body.description
+    await db.relation_categories.update_one({"id": cat_id}, {"$set": update_fields})
+    await log_audit("update", "relation_category", cat_id, body.name, "Relation category updated", user["name"])
+    updated = await db.relation_categories.find_one({"id": cat_id}, {"_id": 0})
+    return updated
+
 @api_router.delete("/admin/relation-categories/{cat_id}")
 async def delete_relation_category(cat_id: str, request: Request):
     user = await require_superadmin(request)

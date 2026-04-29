@@ -79,6 +79,7 @@ export default function RegisterPage() {
 
   // Reference data
   const [refPersons, setRefPersons] = useState([]);
+  const [relationCatsGlobal, setRelationCatsGlobal] = useState([]);
   // Geo data
   const [countries, setCountries] = useState([]);
   const [geoStates, setGeoStates] = useState([]);
@@ -101,6 +102,7 @@ export default function RegisterPage() {
 
   useEffect(() => {
     axios.get(`${API}/reference-persons/public`).then(r => setRefPersons(r.data)).catch(() => {});
+    axios.get(`${API}/relation-categories/public`).then(r => setRelationCatsGlobal(r.data || [])).catch(() => {});
     axios.get(`${API}/geo/countries`).then(r => setCountries(r.data)).catch(() => {});
     // Check URL params for returning user from MyRegistrationPage edit
     const urlParams = new URLSearchParams(window.location.search);
@@ -806,15 +808,35 @@ export default function RegisterPage() {
                 const rp = refPersons.find(p => p.id === form.reference_person_id);
                 const cats = rp?.relation_categories || [];
                 if (!form.reference_person_id || cats.length === 0) return null;
+                // Build lookup map: category name → description from global list
+                const catDescMap = {};
+                relationCatsGlobal.forEach(gc => { if (gc.description) catDescMap[gc.name] = gc.description; });
                 return (
                   <div>
                     <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0938\u0947 \u0938\u092E\u094D\u092C\u0928\u094D\u0927 *" : "Relation with Reference Person *"}</Label>
                     <Select value={form.relation_category} onValueChange={v => set("relation_category", v)}>
                       <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="relation-category-select">
-                        <SelectValue placeholder={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />
+                        {(() => {
+                          if (!form.relation_category) {
+                            return <SelectValue placeholder={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />;
+                          }
+                          return <span className="truncate text-left">{form.relation_category}</span>;
+                        })()}
                       </SelectTrigger>
                       <SelectContent>
-                        {cats.map((c, i) => <SelectItem key={`${c}-${i}`} value={c}>{c}</SelectItem>)}
+                        {cats.map((c, i) => {
+                          const desc = catDescMap[c] || "";
+                          return (
+                            <SelectItem key={`${c}-${i}`} value={c} className={`py-2.5 ${i % 2 === 1 ? "bg-[#F8F1E5]/50" : ""}`}>
+                              <div className="flex flex-col leading-tight">
+                                <span className="text-sm text-[#0B1C3D] font-medium">{c}</span>
+                                {desc && (
+                                  <span className="text-[11px] text-[#0B1C3D]/55 mt-0.5">{desc}</span>
+                                )}
+                              </div>
+                            </SelectItem>
+                          );
+                        })}
                       </SelectContent>
                     </Select>
                   </div>

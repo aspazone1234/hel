@@ -15,7 +15,7 @@ import json
 from datetime import datetime
 
 class KathaAPITester:
-    def __init__(self, base_url="https://dharma-connect-13.preview.emergentagent.com"):
+    def __init__(self, base_url="https://registration-hub-71.preview.emergentagent.com"):
         self.base_url = base_url
         self.token = None
         self.tests_run = 0

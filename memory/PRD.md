@@ -21,9 +21,19 @@ tickets/SLA escalation, rooms, custom fields, admin dashboards.
 - Smoke test: `GET /api/` → 200, `/` → 200, `POST /api/auth/login` with super admin → 200 with token
 - DB restored with `mongorestore --db test_database --drop`
 
+## Completed Features (Latest)
+- **2026-04-29**: Relation Category two-line dropdown (secondary text/subtitle) — same pattern as Reference Person dropdown
+  - Backend: Added `PUT /api/admin/relation-categories/{cat_id}` for updating name/description
+  - Frontend RegisterPage: Fetches global `relation-categories/public`, shows descriptions in dropdown
+  - Frontend Demo2Page: Static descriptions shown in two-line dropdown
+  - Admin ReferencePersonManager: Added collapsible "Relation Category Descriptions" section for managing subtitles
+- **2026-04-19 to 2026-04-28**: Reference Person two-line dropdown, Demo pages, GA4, Room Management, Command Centre updates, Bulk Messaging fix, WhatsApp Flow fixes, Help Centre bifurcation, and more (see handoff summary)
+
 ## Pending / Backlog
-User will drive next feature requests on the newly restored codebase.
-Previous Katha 2026 P1/P2 items are no longer tracked (complete replacement).
+- P1: Verify real WhatsApp Business API / OTP in production (user redeploy action)
+- P2: Push notifications for status changes
+- P2: Advanced analytics dashboard
+- Refactoring: Break `server.py` (~6000 lines) into `/routes/` modules
 
 ## Credentials
 See `/app/memory/test_credentials.md`.

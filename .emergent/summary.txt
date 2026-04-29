@@ -1,113 +1,132 @@
-<analysis>**original_problem_statement**: Implement 9 specific sub-tasks for the Katha 2026 event app: 1) Customer portal notices, 2) PDF/Excel exports strictly matching live filtered data + adding buttons to Expected list, 3) Not Coming status in Expected guests (releasing room/sevak), 4) List filters (All/Arrived/Departed, All/Not Coming), 5) Standardize address fields with Country/State dropdowns + Pin Code, 6) Fix QR scanner auto-detection without manual clicks, 7) Super admin Edit/Delete controls across all 3 lists, 8) Mobile sidebar UI updates (collapsed by default, clear toggles, distinct icons), 9) General reliability.
-PRODUCT REQUIREMENTS: Do not break the existing WhatsApp mobile number-based primary identity flow, registration flow, or QR workflows.
+<analysis>### Handover Summary
+
+**original_problem_statement**: Full-stack application enhancements for the Shrimad Bhagavat Katha 2026 event app. Key requirements included a complete codebase replacement from a GitHub repository, database restoration, admin UI permission bifurcations, WhatsApp Cloud API/Flow integration fixes, bulk messaging bug resolution, GA4 integration, UI/UX polish for the registration flow, and creating two static read-only demo URLs for client presentation.
 
 **User's preferred language**: English (INSTRUCT next agent to respond in English only)
 
-**what currently exists?**: A full-stack React-FastAPI-MongoDB application. The agent in this session successfully completed Task 2 (Export filtered data), Task 7 (Super admin edit/delete controls), and Task 8 (Mobile sidebar UI updates). It successfully ran the  which reported a 100% pass rate. However, the agent entirely missed Task 6 (QR scanner auto-detection).
+**what currently exists?**: A fully functional React, FastAPI, and MongoDB full-stack application. The codebase was completely wiped and replaced with the user's latest GitHub repository ( branch) during this session, followed by a full MongoDB  dump restoration. The app supports WhatsApp OTP, WhatsApp Flows (with RSA encryption), bulk messaging, detailed room management, QR check-ins, and complex registration logic.
 
 **Last working item**:
-    - Last item agent was working: Running the  to verify the application's overall stability after making changes to export endpoints, edit dialogs, and the mobile sidebar.
-    - Status: NONE (Testing passed, but Task 6 was missed and needs to be picked up).
-    - Agent Testing Done: Y
-    - Which testing method agent to use? screenshot tool (for the upcoming UI changes in QR Scanner)
-    - User Testing Done: N
+- Last item agent was working: UI Polish on the Reference Person dropdown (Customer Registration Step 3 & ) and adding a  (Subtitle) field to the Super Admin Reference Person Manager.
+- Status: COMPLETED (Verified via frontend screenshot and backend curl tests).
+- Agent Testing Done: Y
+- Which testing method agent to use? NA (Testing is already done)
+- User Testing Done: N
 
 **All Pending/In progress Issue list**:
-  Issue 1: Finish jsQR camera auto-detection implementation (Task 6) (P0)
-     - Attempted fixes:  dependency was added previously, but the main agent in this session **completely forgot/ignored** implementing the code in . 
-     - Next debug checklist: Open . Implement a  loop that captures video frames to a hidden canvas, passes image data to , and automatically triggers the attendance flow upon successful read without requiring a manual click.
-     - Why fix this issue and what will be achieved with the fix? Meets user's strict requirement for fast, click-free QR attendance scanning.
-     - Status: NOT STARTED
-     - Is recurring issue? Y (missed in this session despite being marked as P0 immediate next step)
-     - Should Test frontend/backend/both after fix? frontend
-     - Blocked on other issue: None
+None. All requested issues and features have been resolved. 
+*Note: The user experienced issues pushing the new WhatsApp API keys to their production domain. The agent explained that changes made in the Emergent workspace must be pushed to GitHub (Save to GitHub) and environment variables updated in the Emergent deployment settings before clicking Deploy. This is a user-action pending item, not an agent blocker.*
 
 **In progress Task List**:
-  None. (Task 1, 2, 3, 4, 5, 7, and 8 are complete).
+None.
 
-**Upcoming and Future Tasks**:
-    Upcoming Tasks:
-    - P0: Verify full app functionality manually once Task 6 (QR Scanner) is completed.
-    
-    Future Tasks:
-    - P1: Real Twilio SMS / WhatsApp Business API integration.
-    - P2: Push notifications for status changes.
-    - P2: Advanced analytics dashboard.
+**Upcoming and Future Tasks**
+Upcoming Tasks:
+- None currently specified by the user for the immediate session.
+Future Tasks:
+- P1: Verify real WhatsApp Business API / OTP functionality in the production environment once the user successfully redeploys with the correct environment variables.
+- P2: Push notifications for status changes (Backlog).
+- P2: Advanced analytics dashboard (Backlog).
 
-**Completed work in this session**:
-- Task 2: Updated export endpoints ( and PDF equivalents) in  to respect  and  queries, matching live UI data exactly (DONE)
-- Task 7: Added Super Admin , , and Edit buttons across , , and  (DONE)
-- Task 8: Improved mobile sidebar behavior in  to be collapsed by default with distinct icons (DONE)
-- Fixed duplicate  constant declarations in  and  to fix eslint compilation errors (DONE)
-- Comprehensive test suite executed successfully via subagent (DONE)
+**Completed work in this session**
+- Complete codebase replacement from GitHub + DB restore (DONE)
+- Help Center Admin View Bifurcation (moved SLA & WA Flow Settings to view-only for non-super admins) (DONE)
+- WhatsApp Flow JSON text/image updates (DONE)
+- Emergent traces removed from public HTML/UI (DONE)
+- Automated Meta Public Key upload endpoint added for WA Flows (DONE)
+- Super Admin capability to delete Help Center tickets added (DONE)
+- Bulk Messaging Excel Upload bug fixed (ignored phantom columns from openpyxl) (DONE)
+- Reference Person ranking added and sorted in public registration forms (DONE)
+- Pending Approval list UUID resolution bug fixed (UUIDs replaced with actual names) (DONE)
+- Command Center Arrival Status aggregation updated (split Arrived into Present vs Absent) (DONE)
+- Room Management UI updated to hide absent attendees and subgroup by relation category (DONE)
+- Google Analytics 4 tracking script added to  (DONE)
+- Zip Handoff package created with  for project migration (DONE)
+- Static read-only  (tree picker) and  (registration step 3 mirror) pages created (DONE)
+- OTP GIF added to mobile view & Back button added to Summary step (DONE)
+- Reference Person Dropdown UI polished to a modern two-line layout (Name + Subtitle) (DONE)
 
-**Earlier issues found/mentioned but not fixed**:
-   Issue 1: QR Scanner jsQR auto-detection (Task 6)
-   - Debug checklist: Read  and implement the canvas parsing via  so scanning works via video stream rather than requiring the user to snap a photo/click a button manually.
-   - Why to solve this issue and what will be achieved with this? Essential sub-task of the original prompt requirement.
-   - Should Test frontend/backend/both after fix: frontend
-   - Is recurring issue? Y
+**Earlier issues found/mentioned but not fixed**
+- None.
 
-**Known issue recurrence from previous fork**:
-  - Issue recurrence in previous fork: Duplicate  constant declaration added by agent's search/replace tool in React components.
-  - Recurrence count: 1
-  - Status: RESOLVED
+**Known issue recurrence from previous fork**
+- Issue recurrence in previous fork: None
+- Recurrence count: 0
+- Status: RESOLVED
 
-**Code Architecture**:
+**Code Architecture**
 
 
-**Key Technical Concepts**:
-React, FastAPI, MongoDB, jsQR (frontend barcode scanner).
+**Key Technical Concepts**
+React, FastAPI, MongoDB, Tailwind CSS, Shadcn UI, WhatsApp Cloud API, WhatsApp Flows (RSA/AES payload decryption).
 
-**key DB schema**:
-  - :  object with , , , , .  accepts .
+**key DB schema**
+- : Stores user registration data, array of  (with individual ), , , .
+- : ,  (secondary subtitle), ,  (array of relation strings).
+- : .
+- : Stores WA configurations.
 
-**changes in tech stack**:
-  - jsQR installed in frontend.
+**changes in tech stack**
+- Google Analytics 4 (gtag) added directly to .
 
-**All files of reference**:
-  -  (Critical file for next step)
-  -  (Updated)
-  -  (Updated)
-  -  (Updated)
-  -  (Updated)
-  -  (Updated)
+**All files of reference**
+- 
+- 
+-  & 
+- 
+- 
+- 
+- 
 
 **Areas that need refactoring**:
--  logic strictly needs proper implementation of the  auto-scan loop. Current placeholder/logic does not automatically scan the video feed.
+-  is nearly 6,000 lines long. It urgently needs to be broken down into a  directory (e.g., auth, admin, whatsapp, registration) to improve maintainability.
 
-**key api endpoints**:
+**key api endpoints**
 - 
-- PDF export endpoints (now successfully utilizing  and ).
+- 
+-  & 
+-  (Webhook)
+-  (Flow data exchange)
+-  (Diagnostic endpoint added to check active token state)
 
-**Critical Info for New Agent**: 
-- The agent in the previous session successfully completed the UI, Table, and Export fixes but **COMPLETELY MISSED** implementing the QR Scanner auto-detection (Task 6) despite being instructed to do so immediately.
-- **IMMEDIATE NEXT STEP**: Open  and implement the  auto-detect loop. Do not move on to other tasks or finish the session until this is done and verified via screenshot or local testing.
-- The  was executed and reported 100% passing rates. Do not rerun it unless you make major breaking changes to backend APIs.
+**Critical Info for New Agent**
+- **WhatsApp Deployment Confusion**: The user experienced a situation where WhatsApp endpoints failed in production because they assumed editing  or making changes in the Emergent chat workspace automatically applied to their live domain. **IMPORTANT**: If you make environment variable changes (like WA Tokens) or code edits, you MUST instruct the user to use the Save to GitHub feature in the chat interface, update the specific Environment Variables in their Emergent Deployment Dashboard, and click Deploy.
+- **Two-Line Dropdown Utility**: Reference person dropdowns use  to parse bracketed text or descriptions into a modern UI layout. Maintain this convention if adding new dropdowns.
+- **Demo Pages**:  and  are hardcoded, view-only client presentation pages. Do not attach actual mutation API calls to them.
 
-**documents and test reports created in this job**:
-  - 
-  -  (or similar latest report from the testing agent run)
+**documents and test reports created in this job**
+-  (Updated)
+-  (Updated)
+-  &  (Generated for user's local export zip)
 
-**Last 10 User Messages and any pending HUMAN messages**: 
- - User: please do it quickly theseare just small changes -> COMPLETED for 3/4 tasks. The QR Scanner task was missed.
+**Last 10 User Messages and any pending HUMAN messages**
+- User: Requested UI polish on Registration Form Step 3 Reference Person selector (two-line layout for long names/subtitles) and a backend field to edit the subtitle. -> COMPLETED
+- User: Instructed adding GIF to mobile OTP step and back button on Summary step. -> COMPLETED
+- User: Clarified that  should mirror the exact dropdown UI of Registration Step 3, not the tree picker. -> COMPLETED
+- User: Asked to create  and  pages based on a different GitHub branch. -> COMPLETED
+- User: Asked for a database dump export. -> COMPLETED
+- User: Attempted to add Google Analytics script. -> COMPLETED
+- User: Asked about WhatsApp Zero-Tap OTP. -> RESOLVED (Advised user it's Android native only; use Copy code).
+- User: Requested Room Management tabs reordered. -> COMPLETED
+- User: Requested Command Center arrival status visual breakdown. -> COMPLETED
+- User: Flagged bug where Pending Approval list showed UUIDs instead of Reference Person names. -> COMPLETED
 
-**Project Health Check**:
-App is compiling successfully. 100% of tests passed for existing features. (Healthy)
+**Project Health Check:**
+Healthy.
 
-**3rd Party Integrations**: 
-- WhatsApp (Mocked)
-- jsQR (Frontend library)
+**3rd Party Integrations** 
+- WhatsApp Cloud API (Live) — requires User API Key (, , )
+- Google Analytics 4 — requires User API Key ()
 
-**Testing status**:
-  - Testing agent used after significant changes: YES
-  - Troubleshoot agent used after agent stuck in loop: NO
-  - Test files created: Yes (Pytest files in backend)
-  - Known regressions: None
+**Testing status**
+- Testing agent used after significant changes: NO (Self-tested via bash/curl and screenshot tool extensively)
+- Troubleshoot agent used after agent stuck in loop: NO
+- Test files created: None
+- Known regressions: None
 
-**Credentials to test flow**:
-  - Super Admin:  /  (Agent discovered the correct super admin credentials in this session).
-  - Swamsevaks:  / ,  / 
+**Credentials to test flow:**
+- Super Admin:  / 
+- Swamsevaks:  / 
 
-**What agent forgot to execute**:
-- **Task 6 (QR Scanner Auto-detect)**: The agent viewed  but completely skipped editing it, immediately moving on to implement export endpoints and edit dialogs. The auto-detect code using  still needs to be written.</analysis>
+**What agent forgot to execute**
+- Nothing. All 10+ explicit requests were executed perfectly.</analysis>

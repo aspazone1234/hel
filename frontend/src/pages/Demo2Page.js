@@ -40,6 +40,12 @@ const STATIC_REFERENCE_PERSONS = [
   { id: "rp-samaj",  name: "Samaj",                                                           rank: 22, relation_categories: [] },
 ];
 
+// Static descriptions for demo (mirrors what would come from the global relation_categories collection)
+const STATIC_RELATION_DESCRIPTIONS = {
+  "Sasural Side": "In-laws / ससुराल पक्ष",
+  "Samdhi": "समधी सम्बन्ध",
+};
+
 export default function Demo2Page() {
   const [lang, setLang] = useState("hi");
   const [referencePersonId, setReferencePersonId] = useState("");
@@ -106,10 +112,27 @@ export default function Demo2Page() {
                 </Label>
                 <Select value={relationCategory} onValueChange={setRelationCategory}>
                   <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="demo2-relation-category-select">
-                    <SelectValue placeholder={isHi ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />
+                    {(() => {
+                      if (!relationCategory) {
+                        return <SelectValue placeholder={isHi ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />;
+                      }
+                      return <span className="truncate text-left">{relationCategory}</span>;
+                    })()}
                   </SelectTrigger>
                   <SelectContent>
-                    {cats.map((c, i) => <SelectItem key={`${c}-${i}`} value={c}>{c}</SelectItem>)}
+                    {cats.map((c, i) => {
+                      const desc = STATIC_RELATION_DESCRIPTIONS[c] || "";
+                      return (
+                        <SelectItem key={`${c}-${i}`} value={c} className={`py-2.5 ${i % 2 === 1 ? "bg-[#F8F1E5]/50" : ""}`}>
+                          <div className="flex flex-col leading-tight">
+                            <span className="text-sm text-[#0B1C3D] font-medium">{c}</span>
+                            {desc && (
+                              <span className="text-[11px] text-[#0B1C3D]/55 mt-0.5">{desc}</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
