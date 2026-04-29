@@ -12,6 +12,7 @@ import { Textarea } from "../components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { toast } from "sonner";
 import { useLang } from "@/context/LanguageContext";
+import { splitReferenceLabel } from "@/lib/referenceLabel";
 import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -766,10 +767,36 @@ export default function RegisterPage() {
                   onValueChange={v => { set("reference_person_id", v); set("relation_category", ""); }}
                 >
                   <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="reference-person-select">
-                    <SelectValue placeholder={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Select reference person"} />
+                    {(() => {
+                      // Custom trigger renderer: show only the primary line in
+                      // the closed dropdown so long names + brackets don't wrap
+                      // ugly on mobile. The dropdown still shows both lines.
+                      const sel = refPersons.find(p => p.id === form.reference_person_id);
+                      if (!sel) {
+                        return <SelectValue placeholder={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Select reference person"} />;
+                      }
+                      const { primary } = splitReferenceLabel(sel);
+                      return <span className="truncate text-left">{primary}</span>;
+                    })()}
                   </SelectTrigger>
                   <SelectContent>
-                    {refPersons.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                    {refPersons.map((p, i) => {
+                      const { primary, secondary } = splitReferenceLabel(p);
+                      return (
+                        <SelectItem
+                          key={p.id}
+                          value={p.id}
+                          className={`py-2.5 ${i % 2 === 1 ? "bg-[#F8F1E5]/50" : ""}`}
+                        >
+                          <div className="flex flex-col leading-tight">
+                            <span className="text-sm text-[#0B1C3D] font-medium">{primary}</span>
+                            {secondary && (
+                              <span className="text-[11px] text-[#0B1C3D]/55 mt-0.5">{secondary}</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>

@@ -20,9 +20,11 @@ export default function ReferencePersonManager({ user }) {
   const [persons, setPersons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
   const [newCategoriesText, setNewCategoriesText] = useState("");
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState("");
+  const [editDescription, setEditDescription] = useState("");
   const [addCatText, setAddCatText] = useState({}); // { [personId]: "text" }
 
   const authHeaders = useCallback(() => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` }), []);
@@ -46,10 +48,10 @@ export default function ReferencePersonManager({ user }) {
     const cats = newCategoriesText.split(",").map(c => c.trim()).filter(Boolean);
     try {
       await axios.post(`${API}/admin/reference-persons`,
-        { name: newName.trim(), description: "", relation_categories: cats },
+        { name: newName.trim(), description: newDescription.trim(), relation_categories: cats },
         { headers: authHeaders() });
       toast.success("Reference person added");
-      setNewName(""); setNewCategoriesText("");
+      setNewName(""); setNewDescription(""); setNewCategoriesText("");
       fetchAll();
     } catch (e) {
       if (e.response?.status !== 403) toast.error("Failed to add");
@@ -60,7 +62,7 @@ export default function ReferencePersonManager({ user }) {
     if (!editName.trim()) return;
     try {
       await axios.put(`${API}/admin/reference-persons/${id}`,
-        { name: editName.trim() },
+        { name: editName.trim(), description: editDescription },
         { headers: authHeaders() });
       toast.success("Updated");
       setEditId(null);
@@ -153,9 +155,13 @@ export default function ReferencePersonManager({ user }) {
             placeholder="Reference person name"
             className="md:col-span-4 bg-white border-[#D4AF37]/20"
             data-testid="ref-person-name-input" />
+          <Input value={newDescription} onChange={e => setNewDescription(e.target.value)}
+            placeholder="Subtitle (e.g. spouse name) — optional"
+            className="md:col-span-3 bg-white border-[#D4AF37]/20"
+            data-testid="ref-person-description-input" />
           <Input value={newCategoriesText} onChange={e => setNewCategoriesText(e.target.value)}
             placeholder="Relation categories (comma-separated, optional)"
-            className="md:col-span-6 bg-white border-[#D4AF37]/20"
+            className="md:col-span-3 bg-white border-[#D4AF37]/20"
             data-testid="ref-person-cats-input" />
           <Button onClick={addPerson}
             className="md:col-span-2 bg-[#D4AF37] text-[#0B1C3D] font-semibold"
@@ -165,6 +171,7 @@ export default function ReferencePersonManager({ user }) {
         </div>
         <p className="text-[11px] text-gray-500 mt-2">
           Leave the categories blank if this reference person doesn't need a relation dropdown on the registration form.
+          &nbsp;•&nbsp;<b>Subtitle</b>: shown as a smaller second line under the name on the customer dropdown (e.g. spouse name).
           &nbsp;•&nbsp;<b>Rank</b>: lower numbers appear higher in the registration form dropdown (e.g. <code>1</code> is top-most).
         </p>
       </div>
@@ -179,14 +186,20 @@ export default function ReferencePersonManager({ user }) {
               data-testid={`ref-person-${p.id}`}>
               <div className="flex items-start justify-between gap-3 mb-3">
                 {editId === p.id ? (
-                  <div className="flex items-center gap-2 flex-1">
-                    <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-8 text-sm bg-white" data-testid={`edit-name-input-${p.id}`} />
-                    <Button size="sm" onClick={() => saveRename(p.id)} className="h-8 bg-green-600 text-white" data-testid={`save-name-${p.id}`}><Save size={12} /></Button>
-                    <Button size="sm" variant="outline" onClick={() => setEditId(null)} className="h-8"><X size={12} /></Button>
+                  <div className="flex flex-col gap-2 flex-1">
+                    <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-8 text-sm bg-white" data-testid={`edit-name-input-${p.id}`} placeholder="Name" />
+                    <Input value={editDescription} onChange={e => setEditDescription(e.target.value)} className="h-8 text-sm bg-white" data-testid={`edit-description-input-${p.id}`} placeholder="Subtitle (shown smaller under the name)" />
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => saveRename(p.id)} className="h-8 bg-green-600 text-white" data-testid={`save-name-${p.id}`}><Save size={12} className="mr-1" /> Save</Button>
+                      <Button size="sm" variant="outline" onClick={() => setEditId(null)} className="h-8"><X size={12} className="mr-1" /> Cancel</Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex-1">
                     <p className="font-semibold text-[#0B1C3D]" data-testid={`ref-person-name-${p.id}`}>{p.name}</p>
+                    {p.description && (
+                      <p className="text-xs text-[#0B1C3D]/55 mt-0.5" data-testid={`ref-person-description-${p.id}`}>{p.description}</p>
+                    )}
                     <p className="text-[11px] text-gray-400 mt-0.5">
                       {(p.relation_categories || []).length === 0
                         ? "No relation categories — registrants won't pick a relation for this person"
@@ -208,7 +221,7 @@ export default function ReferencePersonManager({ user }) {
                         data-testid={`rank-input-${p.id}`}
                       />
                     </div>
-                    <Button size="sm" variant="ghost" onClick={() => { setEditId(p.id); setEditName(p.name); }} className="h-7 w-7 p-0" data-testid={`edit-ref-${p.id}`}>
+                    <Button size="sm" variant="ghost" onClick={() => { setEditId(p.id); setEditName(p.name); setEditDescription(p.description || ""); }} className="h-7 w-7 p-0" data-testid={`edit-ref-${p.id}`}>
                       <Edit2 size={12} />
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => deletePerson(p.id)} className="h-7 w-7 p-0 text-red-500 hover:text-red-700" data-testid={`delete-ref-${p.id}`}>
