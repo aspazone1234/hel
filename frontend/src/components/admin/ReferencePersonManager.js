@@ -25,6 +25,8 @@ export default function ReferencePersonManager({ user }) {
   const [editId, setEditId] = useState(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editNameHi, setEditNameHi] = useState("");
+  const [editDescHi, setEditDescHi] = useState("");
   const [addCatText, setAddCatText] = useState({}); // { [personId]: "text" }
 
   // Global relation category management
@@ -32,8 +34,12 @@ export default function ReferencePersonManager({ user }) {
   const [showCatSection, setShowCatSection] = useState(false);
   const [editCatId, setEditCatId] = useState(null);
   const [editCatDesc, setEditCatDesc] = useState("");
+  const [editCatNameHi, setEditCatNameHi] = useState("");
+  const [editCatDescHi, setEditCatDescHi] = useState("");
   const [newCatName, setNewCatName] = useState("");
   const [newCatDesc, setNewCatDesc] = useState("");
+  const [newCatNameHi, setNewCatNameHi] = useState("");
+  const [newCatDescHi, setNewCatDescHi] = useState("");
 
   const authHeaders = useCallback(() => ({ Authorization: `Bearer ${localStorage.getItem("admin_token")}` }), []);
 
@@ -65,10 +71,10 @@ export default function ReferencePersonManager({ user }) {
     if (!newCatName.trim()) return;
     try {
       await axios.post(`${API}/admin/relation-categories`,
-        { name: newCatName.trim(), description: newCatDesc.trim() },
+        { name: newCatName.trim(), name_hi: newCatNameHi.trim(), description: newCatDesc.trim(), description_hi: newCatDescHi.trim() },
         { headers: authHeaders() });
       toast.success("Relation category added");
-      setNewCatName(""); setNewCatDesc("");
+      setNewCatName(""); setNewCatDesc(""); setNewCatNameHi(""); setNewCatDescHi("");
       fetchGlobalCats();
     } catch (e) {
       if (e.response?.status !== 403) toast.error("Failed to add category");
@@ -78,9 +84,9 @@ export default function ReferencePersonManager({ user }) {
   const saveGlobalCatDesc = async (cat) => {
     try {
       await axios.put(`${API}/admin/relation-categories/${cat.id}`,
-        { name: cat.name, description: editCatDesc },
+        { name: cat.name, name_hi: editCatNameHi, description: editCatDesc, description_hi: editCatDescHi },
         { headers: authHeaders() });
-      toast.success("Description updated");
+      toast.success("Updated");
       setEditCatId(null);
       fetchGlobalCats();
     } catch (e) {
@@ -118,7 +124,7 @@ export default function ReferencePersonManager({ user }) {
     if (!editName.trim()) return;
     try {
       await axios.put(`${API}/admin/reference-persons/${id}`,
-        { name: editName.trim(), description: editDescription },
+        { name: editName.trim(), description: editDescription, name_hi: editNameHi, description_hi: editDescHi },
         { headers: authHeaders() });
       toast.success("Updated");
       setEditId(null);
@@ -243,8 +249,10 @@ export default function ReferencePersonManager({ user }) {
               <div className="flex items-start justify-between gap-3 mb-3">
                 {editId === p.id ? (
                   <div className="flex flex-col gap-2 flex-1">
-                    <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-8 text-sm bg-white" data-testid={`edit-name-input-${p.id}`} placeholder="Name" />
-                    <Input value={editDescription} onChange={e => setEditDescription(e.target.value)} className="h-8 text-sm bg-white" data-testid={`edit-description-input-${p.id}`} placeholder="Subtitle (shown smaller under the name)" />
+                    <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-8 text-sm bg-white" data-testid={`edit-name-input-${p.id}`} placeholder="Name (English)" />
+                    <Input value={editDescription} onChange={e => setEditDescription(e.target.value)} className="h-8 text-sm bg-white" data-testid={`edit-description-input-${p.id}`} placeholder="Subtitle (English, optional)" />
+                    <Input value={editNameHi} onChange={e => setEditNameHi(e.target.value)} className="h-8 text-sm bg-white border-orange-200" data-testid={`edit-name-hi-input-${p.id}`} placeholder="हिंदी नाम (Hindi name, optional)" />
+                    <Input value={editDescHi} onChange={e => setEditDescHi(e.target.value)} className="h-8 text-sm bg-white border-orange-200" data-testid={`edit-desc-hi-input-${p.id}`} placeholder="हिंदी उपशीर्षक (Hindi subtitle, optional)" />
                     <div className="flex gap-2">
                       <Button size="sm" onClick={() => saveRename(p.id)} className="h-8 bg-green-600 text-white" data-testid={`save-name-${p.id}`}><Save size={12} className="mr-1" /> Save</Button>
                       <Button size="sm" variant="outline" onClick={() => setEditId(null)} className="h-8"><X size={12} className="mr-1" /> Cancel</Button>
@@ -255,6 +263,13 @@ export default function ReferencePersonManager({ user }) {
                     <p className="font-semibold text-[#0B1C3D]" data-testid={`ref-person-name-${p.id}`}>{p.name}</p>
                     {p.description && (
                       <p className="text-xs text-[#0B1C3D]/55 mt-0.5" data-testid={`ref-person-description-${p.id}`}>{p.description}</p>
+                    )}
+                    {(p.name_hi || p.description_hi) && (
+                      <p className="text-[11px] text-orange-600/70 mt-0.5">
+                        {p.name_hi && <span>HI: {p.name_hi}</span>}
+                        {p.name_hi && p.description_hi && <span> · </span>}
+                        {p.description_hi && <span>{p.description_hi}</span>}
+                      </p>
                     )}
                     <p className="text-[11px] text-gray-400 mt-0.5">
                       {(p.relation_categories || []).length === 0
@@ -277,7 +292,7 @@ export default function ReferencePersonManager({ user }) {
                         data-testid={`rank-input-${p.id}`}
                       />
                     </div>
-                    <Button size="sm" variant="ghost" onClick={() => { setEditId(p.id); setEditName(p.name); setEditDescription(p.description || ""); }} className="h-7 w-7 p-0" data-testid={`edit-ref-${p.id}`}>
+                    <Button size="sm" variant="ghost" onClick={() => { setEditId(p.id); setEditName(p.name); setEditDescription(p.description || ""); setEditNameHi(p.name_hi || ""); setEditDescHi(p.description_hi || ""); }} className="h-7 w-7 p-0" data-testid={`edit-ref-${p.id}`}>
                       <Edit2 size={12} />
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => deletePerson(p.id)} className="h-7 w-7 p-0 text-red-500 hover:text-red-700" data-testid={`delete-ref-${p.id}`}>
@@ -340,7 +355,7 @@ export default function ReferencePersonManager({ user }) {
         >
           <Tag className="text-[#B8860B]" size={18} />
           <h3 className="text-lg font-bold text-[#0B1C3D]" style={{ fontFamily: "'Cormorant Garamond', serif" }}>
-            Relation Category Descriptions
+            Relation Category Translations
           </h3>
           {showCatSection ? <ChevronUp size={16} className="ml-auto text-gray-400" /> : <ChevronDown size={16} className="ml-auto text-gray-400" />}
         </button>
@@ -348,28 +363,37 @@ export default function ReferencePersonManager({ user }) {
         {showCatSection && (
           <div className="space-y-3">
             <p className="text-xs text-gray-500 mb-3">
-              Add an optional subtitle/description to relation categories. This secondary text appears below the category name in the customer registration form's dropdown.
+              Manage relation categories with optional subtitles and Hindi translations. When the user switches to Hindi on the registration form, the Hindi name and subtitle will be shown instead.
             </p>
 
             {/* Add new global category */}
             {isSuper && (
               <div className="bg-white rounded-xl border border-[#D4AF37]/15 p-4 mb-4">
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
                   <Input value={newCatName} onChange={e => setNewCatName(e.target.value)}
-                    placeholder="Category name"
-                    className="md:col-span-4 bg-white border-[#D4AF37]/20"
+                    placeholder="Category name (English)"
+                    className="bg-white border-[#D4AF37]/20"
                     data-testid="global-cat-name-input" />
                   <Input value={newCatDesc} onChange={e => setNewCatDesc(e.target.value)}
-                    placeholder="Subtitle (optional)"
-                    className="md:col-span-5 bg-white border-[#D4AF37]/20"
-                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addGlobalCat(); } }}
+                    placeholder="Subtitle (English, optional)"
+                    className="bg-white border-[#D4AF37]/20"
                     data-testid="global-cat-desc-input" />
-                  <Button onClick={addGlobalCat}
-                    className="md:col-span-3 bg-[#D4AF37] text-[#0B1C3D] font-semibold"
-                    data-testid="add-global-cat-btn">
-                    <Plus size={14} className="mr-1" /> Add Category
-                  </Button>
                 </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+                  <Input value={newCatNameHi} onChange={e => setNewCatNameHi(e.target.value)}
+                    placeholder="हिंदी नाम (Hindi name, optional)"
+                    className="bg-white border-orange-200"
+                    data-testid="global-cat-name-hi-input" />
+                  <Input value={newCatDescHi} onChange={e => setNewCatDescHi(e.target.value)}
+                    placeholder="हिंदी उपशीर्षक (Hindi subtitle, optional)"
+                    className="bg-white border-orange-200"
+                    data-testid="global-cat-desc-hi-input" />
+                </div>
+                <Button onClick={addGlobalCat}
+                  className="bg-[#D4AF37] text-[#0B1C3D] font-semibold"
+                  data-testid="add-global-cat-btn">
+                  <Plus size={14} className="mr-1" /> Add Category
+                </Button>
               </div>
             )}
 
@@ -379,30 +403,47 @@ export default function ReferencePersonManager({ user }) {
             ) : (
               <div className="space-y-2">
                 {globalCats.map(cat => (
-                  <div key={cat.id} className="bg-white rounded-lg border border-[#D4AF37]/10 px-4 py-3 flex items-center gap-3" data-testid={`global-cat-${cat.id}`}>
+                  <div key={cat.id} className="bg-white rounded-lg border border-[#D4AF37]/10 px-4 py-3" data-testid={`global-cat-${cat.id}`}>
                     {editCatId === cat.id ? (
-                      <div className="flex-1 flex flex-col sm:flex-row gap-2">
-                        <span className="text-sm font-medium text-[#0B1C3D] shrink-0 self-center">{cat.name}</span>
-                        <Input
-                          value={editCatDesc}
-                          onChange={e => setEditCatDesc(e.target.value)}
-                          placeholder="Subtitle (shown below the name in dropdown)"
-                          className="h-8 text-sm bg-white border-[#D4AF37]/20 flex-1"
-                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); saveGlobalCatDesc(cat); } }}
-                          data-testid={`edit-cat-desc-input-${cat.id}`}
-                          autoFocus
-                        />
-                        <div className="flex gap-1">
-                          <Button size="sm" onClick={() => saveGlobalCatDesc(cat)} className="h-8 bg-green-600 text-white" data-testid={`save-cat-desc-${cat.id}`}>
-                            <Save size={12} className="mr-1" /> Save
-                          </Button>
-                          <Button size="sm" variant="outline" onClick={() => setEditCatId(null)} className="h-8">
-                            <X size={12} />
-                          </Button>
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-[#0B1C3D] mb-1">{cat.name}</p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <Input
+                            value={editCatDesc}
+                            onChange={e => setEditCatDesc(e.target.value)}
+                            placeholder="Subtitle (English)"
+                            className="h-8 text-sm bg-white border-[#D4AF37]/20"
+                            data-testid={`edit-cat-desc-input-${cat.id}`}
+                            autoFocus
+                          />
+                          <Input
+                            value={editCatNameHi}
+                            onChange={e => setEditCatNameHi(e.target.value)}
+                            placeholder="हिंदी नाम (Hindi name)"
+                            className="h-8 text-sm bg-white border-orange-200"
+                            data-testid={`edit-cat-name-hi-input-${cat.id}`}
+                          />
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <Input
+                            value={editCatDescHi}
+                            onChange={e => setEditCatDescHi(e.target.value)}
+                            placeholder="हिंदी उपशीर्षक (Hindi subtitle)"
+                            className="h-8 text-sm bg-white border-orange-200"
+                            data-testid={`edit-cat-desc-hi-input-${cat.id}`}
+                          />
+                          <div className="flex gap-1 justify-end">
+                            <Button size="sm" onClick={() => saveGlobalCatDesc(cat)} className="h-8 bg-green-600 text-white" data-testid={`save-cat-desc-${cat.id}`}>
+                              <Save size={12} className="mr-1" /> Save
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => setEditCatId(null)} className="h-8">
+                              <X size={12} />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     ) : (
-                      <>
+                      <div className="flex items-center gap-3">
                         <div className="flex-1">
                           <p className="text-sm font-medium text-[#0B1C3D]">{cat.name}</p>
                           {cat.description ? (
@@ -410,10 +451,17 @@ export default function ReferencePersonManager({ user }) {
                           ) : (
                             <p className="text-[11px] text-gray-300 italic mt-0.5">No subtitle</p>
                           )}
+                          {(cat.name_hi || cat.description_hi) && (
+                            <p className="text-[11px] text-orange-600/70 mt-0.5">
+                              {cat.name_hi && <span>HI: {cat.name_hi}</span>}
+                              {cat.name_hi && cat.description_hi && <span> · </span>}
+                              {cat.description_hi && <span>{cat.description_hi}</span>}
+                            </p>
+                          )}
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
-                            onClick={() => { setEditCatId(cat.id); setEditCatDesc(cat.description || ""); }}
+                            onClick={() => { setEditCatId(cat.id); setEditCatDesc(cat.description || ""); setEditCatNameHi(cat.name_hi || ""); setEditCatDescHi(cat.description_hi || ""); }}
                             data-testid={`edit-cat-${cat.id}`}>
                             <Edit2 size={12} />
                           </Button>
@@ -425,7 +473,7 @@ export default function ReferencePersonManager({ user }) {
                             </Button>
                           )}
                         </div>
-                      </>
+                      </div>
                     )}
                   </div>
                 ))}

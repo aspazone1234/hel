@@ -770,20 +770,17 @@ export default function RegisterPage() {
                 >
                   <SelectTrigger className="mt-1.5 bg-white border-[#D4AF37]/20" data-testid="reference-person-select">
                     {(() => {
-                      // Custom trigger renderer: show only the primary line in
-                      // the closed dropdown so long names + brackets don't wrap
-                      // ugly on mobile. The dropdown still shows both lines.
                       const sel = refPersons.find(p => p.id === form.reference_person_id);
                       if (!sel) {
                         return <SelectValue placeholder={lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Select reference person"} />;
                       }
-                      const { primary } = splitReferenceLabel(sel);
+                      const { primary } = splitReferenceLabel(sel, lang);
                       return <span className="truncate text-left">{primary}</span>;
                     })()}
                   </SelectTrigger>
                   <SelectContent>
                     {refPersons.map((p, i) => {
-                      const { primary, secondary } = splitReferenceLabel(p);
+                      const { primary, secondary } = splitReferenceLabel(p, lang);
                       return (
                         <SelectItem
                           key={p.id}
@@ -808,9 +805,14 @@ export default function RegisterPage() {
                 const rp = refPersons.find(p => p.id === form.reference_person_id);
                 const cats = rp?.relation_categories || [];
                 if (!form.reference_person_id || cats.length === 0) return null;
-                // Build lookup map: category name → description from global list
+                // Build lookup maps from global list
+                const catNameHiMap = {};
                 const catDescMap = {};
-                relationCatsGlobal.forEach(gc => { if (gc.description) catDescMap[gc.name] = gc.description; });
+                relationCatsGlobal.forEach(gc => {
+                  if (lang === "hi" && gc.name_hi) catNameHiMap[gc.name] = gc.name_hi;
+                  const desc = (lang === "hi" && gc.description_hi) ? gc.description_hi : (gc.description || "");
+                  if (desc) catDescMap[gc.name] = desc;
+                });
                 return (
                   <div>
                     <Label className="text-[#0B1C3D]/70 text-sm">{lang === "hi" ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u0938\u0947 \u0938\u092E\u094D\u092C\u0928\u094D\u0927 *" : "Relation with Reference Person *"}</Label>
@@ -820,16 +822,18 @@ export default function RegisterPage() {
                           if (!form.relation_category) {
                             return <SelectValue placeholder={lang === "hi" ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />;
                           }
-                          return <span className="truncate text-left">{form.relation_category}</span>;
+                          const displayName = catNameHiMap[form.relation_category] || form.relation_category;
+                          return <span className="truncate text-left">{displayName}</span>;
                         })()}
                       </SelectTrigger>
                       <SelectContent>
                         {cats.map((c, i) => {
+                          const displayName = catNameHiMap[c] || c;
                           const desc = catDescMap[c] || "";
                           return (
                             <SelectItem key={`${c}-${i}`} value={c} className={`py-2.5 ${i % 2 === 1 ? "bg-[#F8F1E5]/50" : ""}`}>
                               <div className="flex flex-col leading-tight">
-                                <span className="text-sm text-[#0B1C3D] font-medium">{c}</span>
+                                <span className="text-sm text-[#0B1C3D] font-medium">{displayName}</span>
                                 {desc && (
                                   <span className="text-[11px] text-[#0B1C3D]/55 mt-0.5">{desc}</span>
                                 )}

@@ -45,6 +45,19 @@ const STATIC_RELATION_DESCRIPTIONS = {
   "Sasural Side": "In-laws / ससुराल पक्ष",
   "Samdhi": "समधी सम्बन्ध",
 };
+const STATIC_RELATION_NAMES_HI = {
+  "Business Associates": "व्यापारिक सहयोगी",
+  "Friends": "मित्र",
+  "Sasural Side": "ससुराल पक्ष",
+  "Neighbors": "पड़ोसी",
+  "Other Relatives": "अन्य रिश्तेदार",
+  "Other": "अन्य",
+  "Samdhi": "समधी",
+};
+const STATIC_RELATION_DESCRIPTIONS_HI = {
+  "Sasural Side": "ससुराल पक्ष के सदस्य",
+  "Samdhi": "समधी सम्बन्ध",
+};
 
 export default function Demo2Page() {
   const [lang, setLang] = useState("hi");
@@ -79,13 +92,13 @@ export default function Demo2Page() {
                   {(() => {
                     const sel = STATIC_REFERENCE_PERSONS.find(p => p.id === referencePersonId);
                     if (!sel) return <SelectValue placeholder={isHi ? "\u0938\u0902\u0926\u0930\u094D\u092D \u0935\u094D\u092F\u0915\u094D\u0924\u093F \u091A\u0941\u0928\u0947\u0902" : "Select reference person"} />;
-                    const { primary } = splitReferenceLabel(sel);
+                    const { primary } = splitReferenceLabel(sel, lang);
                     return <span className="truncate text-left">{primary}</span>;
                   })()}
                 </SelectTrigger>
                 <SelectContent>
                   {STATIC_REFERENCE_PERSONS.map((p, i) => {
-                    const { primary, secondary } = splitReferenceLabel(p);
+                    const { primary, secondary } = splitReferenceLabel(p, lang);
                     return (
                       <SelectItem
                         key={p.id}
@@ -116,16 +129,18 @@ export default function Demo2Page() {
                       if (!relationCategory) {
                         return <SelectValue placeholder={isHi ? "\u0938\u092E\u094D\u092C\u0928\u094D\u0927 \u091A\u0941\u0928\u0947\u0902" : "Select relation"} />;
                       }
-                      return <span className="truncate text-left">{relationCategory}</span>;
+                      const displayName = (isHi && STATIC_RELATION_NAMES_HI[relationCategory]) ? STATIC_RELATION_NAMES_HI[relationCategory] : relationCategory;
+                      return <span className="truncate text-left">{displayName}</span>;
                     })()}
                   </SelectTrigger>
                   <SelectContent>
                     {cats.map((c, i) => {
-                      const desc = STATIC_RELATION_DESCRIPTIONS[c] || "";
+                      const displayName = (isHi && STATIC_RELATION_NAMES_HI[c]) ? STATIC_RELATION_NAMES_HI[c] : c;
+                      const desc = isHi ? (STATIC_RELATION_DESCRIPTIONS_HI[c] || STATIC_RELATION_DESCRIPTIONS[c] || "") : (STATIC_RELATION_DESCRIPTIONS[c] || "");
                       return (
                         <SelectItem key={`${c}-${i}`} value={c} className={`py-2.5 ${i % 2 === 1 ? "bg-[#F8F1E5]/50" : ""}`}>
                           <div className="flex flex-col leading-tight">
-                            <span className="text-sm text-[#0B1C3D] font-medium">{c}</span>
+                            <span className="text-sm text-[#0B1C3D] font-medium">{displayName}</span>
                             {desc && (
                               <span className="text-[11px] text-[#0B1C3D]/55 mt-0.5">{desc}</span>
                             )}

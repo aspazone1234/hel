@@ -22,11 +22,16 @@ tickets/SLA escalation, rooms, custom fields, admin dashboards.
 - DB restored with `mongorestore --db test_database --drop`
 
 ## Completed Features (Latest)
+- **2026-04-29**: Hindi translations for Reference Person & Relation Category dropdowns
+  - Backend: Added `name_hi`, `description_hi` fields to both `reference_persons` and `relation_categories` models and CRUD endpoints
+  - Frontend: `splitReferenceLabel` now accepts `lang` param; both dropdowns show Hindi names/subtitles when user toggles to Hindi
+  - Admin: Edit forms for both reference persons and relation categories now include Hindi name and Hindi subtitle fields
+  - Demo2Page: Static Hindi translations for relation categories
 - **2026-04-29**: Relation Category two-line dropdown (secondary text/subtitle) — same pattern as Reference Person dropdown
   - Backend: Added `PUT /api/admin/relation-categories/{cat_id}` for updating name/description
   - Frontend RegisterPage: Fetches global `relation-categories/public`, shows descriptions in dropdown
   - Frontend Demo2Page: Static descriptions shown in two-line dropdown
-  - Admin ReferencePersonManager: Added collapsible "Relation Category Descriptions" section for managing subtitles
+  - Admin ReferencePersonManager: Added collapsible "Relation Category Translations" section for managing subtitles + Hindi
 - **2026-04-19 to 2026-04-28**: Reference Person two-line dropdown, Demo pages, GA4, Room Management, Command Centre updates, Bulk Messaging fix, WhatsApp Flow fixes, Help Centre bifurcation, and more (see handoff summary)
 
 ## Pending / Backlog

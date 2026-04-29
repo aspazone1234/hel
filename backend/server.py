@@ -222,19 +222,25 @@ class RoomShift(BaseModel):
 
 class ReferencePersonCreate(BaseModel):
     name: str
+    name_hi: str = ""
     description: str = ""
+    description_hi: str = ""
     relation_categories: List[str] = []  # per-person relation category names
     rank: int = 100  # Lower rank = appears higher in the list (defaults new entries to 100)
 
 class ReferencePersonUpdate(BaseModel):
     name: Optional[str] = None
+    name_hi: Optional[str] = None
     description: Optional[str] = None
+    description_hi: Optional[str] = None
     relation_categories: Optional[List[str]] = None
     rank: Optional[int] = None
 
 class RelationCategoryCreate(BaseModel):
     name: str
+    name_hi: str = ""
     description: str = ""
+    description_hi: str = ""
 
 class AdminCreate(BaseModel):
     username: str
@@ -670,7 +676,9 @@ async def create_reference_person(body: ReferencePersonCreate, request: Request)
     doc = {
         "id": str(uuid.uuid4()),
         "name": body.name,
+        "name_hi": body.name_hi,
         "description": body.description,
+        "description_hi": body.description_hi,
         "relation_categories": [c.strip() for c in (body.relation_categories or []) if c.strip()],
         "rank": int(body.rank) if body.rank is not None else 100,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -709,7 +717,7 @@ async def list_relation_categories(request: Request):
 @api_router.post("/admin/relation-categories")
 async def create_relation_category(body: RelationCategoryCreate, request: Request):
     user = await require_superadmin(request)
-    doc = {"id": str(uuid.uuid4()), "name": body.name, "description": body.description, "created_at": datetime.now(timezone.utc).isoformat()}
+    doc = {"id": str(uuid.uuid4()), "name": body.name, "name_hi": body.name_hi, "description": body.description, "description_hi": body.description_hi, "created_at": datetime.now(timezone.utc).isoformat()}
     await db.relation_categories.insert_one(doc)
     doc.pop("_id", None)
     await log_audit("create", "relation_category", doc["id"], body.name, "Relation category created", user["name"])
@@ -721,7 +729,9 @@ async def update_relation_category(cat_id: str, body: RelationCategoryCreate, re
     update_fields = {}
     if body.name:
         update_fields["name"] = body.name
+    update_fields["name_hi"] = body.name_hi
     update_fields["description"] = body.description
+    update_fields["description_hi"] = body.description_hi
     await db.relation_categories.update_one({"id": cat_id}, {"$set": update_fields})
     await log_audit("update", "relation_category", cat_id, body.name, "Relation category updated", user["name"])
     updated = await db.relation_categories.find_one({"id": cat_id}, {"_id": 0})
